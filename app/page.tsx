@@ -1,211 +1,336 @@
 'use client';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 const SHEET_SIZES = [
-  { name: '23 × 36"', length: 23, width: 36 },
-  { name: '25 × 36"', length: 25, width: 36 },
-  { name: '20 × 30"', length: 20, width: 30 },
-  { name: '20 × 28"', length: 20, width: 28 },
-  { name: '31.5 × 41.5"', length: 31.5, width: 41.5 },
-  { name: '25 × 38"', length: 25, width: 38 },
-  { name: '22 × 28"', length: 22, width: 28 },
+  { name: '23 × 36"', label: 'Double Crown', length: 23, width: 36 },
+  { name: '25 × 36"', label: 'Double Quad', length: 25, width: 36 },
+  { name: '20 × 30"', label: 'Double Crown B', length: 20, width: 30 },
+  { name: '20 × 28"', label: 'Super Royal', length: 20, width: 28 },
+  { name: '31.5 × 41.5"', label: 'Packaging Large', length: 31.5, width: 41.5 },
+  { name: '25 × 38"', label: 'Packaging Standard', length: 25, width: 38 },
+  { name: '22 × 28"', label: 'Packaging Small', length: 22, width: 28 },
+  { name: '22.5 × 35"', label: 'Double Demy', length: 22.5, width: 35 },
+  { name: '18 × 23"', label: 'Small Offset', length: 18, width: 23 },
 ];
 
-const GSM_OPTIONS = [60, 70, 80, 90, 100, 115, 120, 130, 150, 170, 200, 250, 300, 350, 400];
+const GSM_OPTIONS = [
+  { value: 60, label: '60 GSM — Newsprint' },
+  { value: 70, label: '70 GSM — Bond' },
+  { value: 80, label: '80 GSM — Office' },
+  { value: 90, label: '90 GSM — Maplitho' },
+  { value: 100, label: '100 GSM — Offset' },
+  { value: 115, label: '115 GSM — Art' },
+  { value: 120, label: '120 GSM — Art' },
+  { value: 130, label: '130 GSM — Art Coated' },
+  { value: 150, label: '150 GSM — Art Coated' },
+  { value: 170, label: '170 GSM — Art Card' },
+  { value: 200, label: '200 GSM — Art Card' },
+  { value: 250, label: '250 GSM — Board' },
+  { value: 300, label: '300 GSM — Board' },
+  { value: 350, label: '350 GSM — Board' },
+  { value: 400, label: '400 GSM — Board' },
+];
+
+const PACKING_OPTIONS = [
+  { value: 100, label: '100 sheets / pack' },
+  { value: 200, label: '200 sheets / pack' },
+  { value: 250, label: '250 sheets / pack' },
+  { value: 500, label: '500 sheets / ream' },
+];
+
+interface Result {
+  pricePerSheet: string;
+  pricePerRream: string;
+  totalSheets: number;
+  totalWeight: string;
+  finalPrice: string;
+}
 
 export default function Home() {
   const [size, setSize] = useState(SHEET_SIZES[0]);
   const [gsm, setGsm] = useState(130);
-  const [ratePerKg, setRatePerKg] = useState('');
   const [quantity, setQuantity] = useState('');
   const [packingSize, setPackingSize] = useState(500);
-  const [markup, setMarkup] = useState('');
-  const [tax, setTax] = useState('');
-  const [result, setResult] = useState<any>(null);
+  const [result, setResult] = useState<Result | null>(null);
+  const [calculating, setCalculating] = useState(false);
+
+  // Admin-only values — hardcoded for now, will come from database later
+  const RATE_PER_KG = 70;
+  const MARKUP = 25;
+  const TAX = 18;
+
+  useEffect(() => {
+    if (!quantity || parseInt(quantity) <= 0) {
+      setResult(null);
+      return;
+    }
+    const timer = setTimeout(() => {
+      calculate();
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [size, gsm, quantity, packingSize]);
 
   const calculate = () => {
-    const rate = parseFloat(ratePerKg);
     const qty = parseInt(quantity);
-    if (!rate || !qty) return;
+    if (!qty || qty <= 0) return;
 
-    // Core formula — invisible to customer
+    setCalculating(true);
+
     const BASE_FACTOR = 0.2666;
-    const BASE_SQIN = 828; // 23x36
+    const BASE_SQIN = 828;
     const factor = (size.length * size.width * BASE_FACTOR) / BASE_SQIN;
     const weightPerRream = factor * gsm;
-    const costPerRream = weightPerRream * rate;
+    const costPerRream = weightPerRream * RATE_PER_KG;
     const costPerSheet = costPerRream / 500;
 
-    // Reams needed — always round UP
-    const reamsNeeded = Math.ceil(qty / packingSize);
     const totalSheets = qty;
     const totalWeight = (weightPerRream / 500) * totalSheets;
     const rawCost = costPerSheet * totalSheets;
 
-    // Markup and tax
-    const markupVal = markup ? parseFloat(markup) / 100 : 0;
-    const taxVal = tax ? parseFloat(tax) / 100 : 0;
-    const afterMarkup = rawCost * (1 + markupVal);
-    const finalPrice = afterMarkup * (1 + taxVal);
+    const afterMarkup = rawCost * (1 + MARKUP / 100);
+    const finalPrice = afterMarkup * (1 + TAX / 100);
 
-    setResult({
-      costPerSheet: costPerSheet.toFixed(4),
-      costPerRream: costPerRream.toFixed(2),
-      weightPerRream: weightPerRream.toFixed(2),
-      reamsNeeded,
-      totalSheets,
-      totalWeight: totalWeight.toFixed(2),
-      rawCost: rawCost.toFixed(2),
-      finalPrice: finalPrice.toFixed(2),
-      pricePerSheet: (finalPrice / totalSheets).toFixed(4),
-    });
+    setTimeout(() => {
+      setResult({
+        pricePerSheet: costPerSheet.toFixed(4),
+        pricePerRream: (finalPrice / Math.ceil(qty / packingSize)).toFixed(2),
+        totalSheets,
+        totalWeight: totalWeight.toFixed(2),
+        finalPrice: finalPrice.toFixed(2),
+      });
+      setCalculating(false);
+    }, 300);
   };
 
   return (
-    <main style={{ minHeight: '100vh', background: '#f5f5f5', padding: '40px 20px' }}>
-      <div style={{ maxWidth: 600, margin: '0 auto' }}>
+    <>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap');
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: 'DM Sans', sans-serif; background: #F7F6F3; }
+        .page { min-height: 100vh; padding: 32px 16px 64px; }
+        .container { max-width: 520px; margin: 0 auto; }
 
-        {/* Header */}
-        <div style={{ background: '#1a1a2e', borderRadius: 12, padding: '24px', marginBottom: 24, textAlign: 'center' }}>
-          <h1 style={{ color: '#fff', margin: 0, fontSize: 28, fontWeight: 700 }}>Paper Calculator</h1>
-          <p style={{ color: '#aaa', margin: '8px 0 0', fontSize: 14 }}>Get instant paper pricing</p>
+        .header { margin-bottom: 32px; }
+        .header-top { display: flex; align-items: center; gap: 12px; margin-bottom: 6px; }
+        .logo-dot { width: 10px; height: 10px; background: #C84B31; border-radius: 50%; flex-shrink: 0; }
+        .brand { font-size: 13px; font-weight: 500; color: #888; letter-spacing: 0.08em; text-transform: uppercase; }
+        .title { font-size: 30px; font-weight: 600; color: #1A1A1A; letter-spacing: -0.02em; line-height: 1.2; }
+        .subtitle { font-size: 14px; color: #888; margin-top: 6px; font-weight: 400; }
+
+        .card { background: #fff; border-radius: 16px; padding: 28px; margin-bottom: 16px; border: 1px solid #EBEBEB; }
+
+        .section-label { font-size: 11px; font-weight: 600; color: #999; letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 16px; }
+
+        .field { margin-bottom: 18px; }
+        .field:last-child { margin-bottom: 0; }
+        .field-label { font-size: 13px; font-weight: 500; color: #555; margin-bottom: 7px; display: flex; justify-content: space-between; align-items: center; }
+        .field-hint { font-size: 11px; color: #AAA; font-weight: 400; }
+
+        select, input[type="number"] {
+          width: 100%;
+          padding: 11px 14px;
+          border: 1.5px solid #E8E8E8;
+          border-radius: 10px;
+          font-size: 14px;
+          font-family: 'DM Sans', sans-serif;
+          color: #1A1A1A;
+          background: #FAFAFA;
+          outline: none;
+          transition: border-color 0.15s, background 0.15s;
+          appearance: none;
+          -webkit-appearance: none;
+        }
+        select { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%23999' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 14px center; padding-right: 36px; }
+        select:focus, input[type="number"]:focus { border-color: #C84B31; background: #fff; }
+        input[type="number"]::placeholder { color: #CCC; }
+        input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; }
+
+        .size-select-wrap { position: relative; }
+        .size-sublabel { font-size: 11px; color: #AAA; margin-top: 5px; font-family: 'DM Mono', monospace; }
+
+        .qty-input-wrap { position: relative; }
+        .qty-suffix { position: absolute; right: 14px; top: 50%; transform: translateY(-50%); font-size: 13px; color: #AAA; pointer-events: none; }
+
+        .divider { height: 1px; background: #F0F0F0; margin: 20px 0; }
+
+        .result-card { background: #1A1A1A; border-radius: 16px; padding: 28px; margin-bottom: 16px; overflow: hidden; position: relative; }
+        .result-card::before { content: ''; position: absolute; top: -40px; right: -40px; width: 160px; height: 160px; background: #C84B31; border-radius: 50%; opacity: 0.08; }
+
+        .result-label { font-size: 11px; font-weight: 600; color: #666; letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 6px; }
+        .result-total-label { font-size: 13px; color: #666; margin-bottom: 4px; }
+        .result-total-price { font-size: 42px; font-weight: 600; color: #fff; letter-spacing: -0.03em; font-family: 'DM Mono', monospace; line-height: 1; margin-bottom: 24px; }
+        .result-currency { font-size: 24px; vertical-align: super; font-weight: 400; margin-right: 2px; }
+
+        .result-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        .result-item { background: rgba(255,255,255,0.06); border-radius: 10px; padding: 14px; }
+        .result-item-label { font-size: 11px; color: #666; margin-bottom: 4px; }
+        .result-item-value { font-size: 18px; font-weight: 500; color: #fff; font-family: 'DM Mono', monospace; }
+
+        .details-card { background: #fff; border-radius: 16px; border: 1px solid #EBEBEB; overflow: hidden; }
+        .detail-row { display: flex; justify-content: space-between; align-items: center; padding: 14px 20px; border-bottom: 1px solid #F5F5F5; }
+        .detail-row:last-child { border-bottom: none; }
+        .detail-key { font-size: 13px; color: #888; }
+        .detail-val { font-size: 13px; font-weight: 500; color: #1A1A1A; font-family: 'DM Mono', monospace; }
+
+        .calculating { opacity: 0.5; transition: opacity 0.2s; }
+        .pulse { animation: pulse 1s ease-in-out infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 0.5; } 50% { opacity: 1; } }
+
+        .empty-state { text-align: center; padding: 40px 20px; }
+        .empty-icon { font-size: 32px; margin-bottom: 12px; }
+        .empty-text { font-size: 14px; color: #BBB; }
+
+        .footer { text-align: center; margin-top: 32px; }
+        .footer-text { font-size: 12px; color: #CCC; }
+
+        @media (max-width: 480px) {
+          .result-total-price { font-size: 34px; }
+          .card { padding: 20px; }
+        }
+      `}</style>
+
+      <main className="page">
+        <div className="container">
+
+          {/* Header */}
+          <div className="header">
+            <div className="header-top">
+              <div className="logo-dot" />
+              <span className="brand">PrintCalc</span>
+            </div>
+            <h1 className="title">Paper Price<br />Calculator</h1>
+            <p className="subtitle">Instant pricing for any sheet size and GSM</p>
+          </div>
+
+          {/* Input Card */}
+          <div className="card">
+            <p className="section-label">Job Details</p>
+
+            {/* Sheet Size */}
+            <div className="field">
+              <div className="field-label">
+                Sheet size
+                <span className="field-hint">inches</span>
+              </div>
+              <div className="size-select-wrap">
+                <select
+                  value={size.name}
+                  onChange={e => setSize(SHEET_SIZES.find(s => s.name === e.target.value) || SHEET_SIZES[0])}
+                >
+                  {SHEET_SIZES.map(s => (
+                    <option key={s.name} value={s.name}>{s.name} — {s.label}</option>
+                  ))}
+                </select>
+              </div>
+              <p className="size-sublabel">{size.length}" × {size.width}" = {(size.length * size.width).toFixed(0)} sq in</p>
+            </div>
+
+            {/* GSM */}
+            <div className="field">
+              <div className="field-label">Paper type / GSM</div>
+              <select value={gsm} onChange={e => setGsm(parseInt(e.target.value))}>
+                {GSM_OPTIONS.map(g => (
+                  <option key={g.value} value={g.value}>{g.label}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="divider" />
+
+            {/* Quantity */}
+            <div className="field">
+              <div className="field-label">
+                Quantity
+                <span className="field-hint">sheets</span>
+              </div>
+              <div className="qty-input-wrap">
+                <input
+                  type="number"
+                  placeholder="Enter number of sheets"
+                  value={quantity}
+                  onChange={e => setQuantity(e.target.value)}
+                  min="1"
+                />
+                {quantity && <span className="qty-suffix">sheets</span>}
+              </div>
+            </div>
+
+            {/* Packing Size */}
+            <div className="field">
+              <div className="field-label">Packing unit</div>
+              <select value={packingSize} onChange={e => setPackingSize(parseInt(e.target.value))}>
+                {PACKING_OPTIONS.map(p => (
+                  <option key={p.value} value={p.value}>{p.label}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {/* Results */}
+          {result ? (
+            <div className={calculating ? 'calculating' : ''}>
+              {/* Total Price Card */}
+              <div className="result-card">
+                <p className="result-total-label">Total price</p>
+                <p className="result-total-price">
+                  <span className="result-currency">₹</span>
+                  {parseFloat(result.finalPrice).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </p>
+                <div className="result-grid">
+                  <div className="result-item">
+                    <p className="result-item-label">Per sheet</p>
+                    <p className="result-item-value">₹{result.pricePerSheet}</p>
+                  </div>
+                  <div className="result-item">
+                    <p className="result-item-label">Per ream</p>
+                    <p className="result-item-value">₹{result.pricePerRream}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Details */}
+              <div className="details-card">
+                <div className="detail-row">
+                  <span className="detail-key">Total sheets</span>
+                  <span className="detail-val">{result.totalSheets.toLocaleString('en-IN')}</span>
+                </div>
+                <div className="detail-row">
+                  <span className="detail-key">Total weight</span>
+                  <span className="detail-val">{result.totalWeight} kg</span>
+                </div>
+                <div className="detail-row">
+                  <span className="detail-key">Sheet size</span>
+                  <span className="detail-val">{size.name}</span>
+                </div>
+                <div className="detail-row">
+                  <span className="detail-key">GSM</span>
+                  <span className="detail-val">{gsm} gsm</span>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="card empty-state">
+              {calculating ? (
+                <>
+                  <p className="empty-icon pulse">⚡</p>
+                  <p className="empty-text">Calculating...</p>
+                </>
+              ) : (
+                <>
+                  <p className="empty-icon">📄</p>
+                  <p className="empty-text">Enter quantity above to see instant pricing</p>
+                </>
+              )}
+            </div>
+          )}
+
+          <div className="footer">
+            <p className="footer-text">Prices update automatically as you type</p>
+          </div>
+
         </div>
-
-        {/* Form */}
-        <div style={{ background: '#fff', borderRadius: 12, padding: 24, marginBottom: 24, boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}>
-          <h2 style={{ fontSize: 16, fontWeight: 600, marginBottom: 20, color: '#333' }}>Enter Job Details</h2>
-
-          {/* Sheet Size */}
-          <div style={{ marginBottom: 16 }}>
-            <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: '#555', marginBottom: 6 }}>Sheet Size</label>
-            <select
-              value={size.name}
-              onChange={e => setSize(SHEET_SIZES.find(s => s.name === e.target.value) || SHEET_SIZES[0])}
-              style={{ width: '100%', padding: '10px 12px', border: '1px solid #ddd', borderRadius: 8, fontSize: 14, background: '#fafafa' }}
-            >
-              {SHEET_SIZES.map(s => <option key={s.name} value={s.name}>{s.name}</option>)}
-            </select>
-          </div>
-
-          {/* GSM */}
-          <div style={{ marginBottom: 16 }}>
-            <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: '#555', marginBottom: 6 }}>GSM</label>
-            <select
-              value={gsm}
-              onChange={e => setGsm(parseInt(e.target.value))}
-              style={{ width: '100%', padding: '10px 12px', border: '1px solid #ddd', borderRadius: 8, fontSize: 14, background: '#fafafa' }}
-            >
-              {GSM_OPTIONS.map(g => <option key={g} value={g}>{g} GSM</option>)}
-            </select>
-          </div>
-
-          {/* Rate per kg */}
-          <div style={{ marginBottom: 16 }}>
-            <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: '#555', marginBottom: 6 }}>Rate per kg (₹)</label>
-            <input
-              type="number"
-              placeholder="e.g. 70"
-              value={ratePerKg}
-              onChange={e => setRatePerKg(e.target.value)}
-              style={{ width: '100%', padding: '10px 12px', border: '1px solid #ddd', borderRadius: 8, fontSize: 14, background: '#fafafa', boxSizing: 'border-box' }}
-            />
-          </div>
-
-          {/* Quantity */}
-          <div style={{ marginBottom: 16 }}>
-            <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: '#555', marginBottom: 6 }}>Quantity (sheets)</label>
-            <input
-              type="number"
-              placeholder="e.g. 1000"
-              value={quantity}
-              onChange={e => setQuantity(e.target.value)}
-              style={{ width: '100%', padding: '10px 12px', border: '1px solid #ddd', borderRadius: 8, fontSize: 14, background: '#fafafa', boxSizing: 'border-box' }}
-            />
-          </div>
-
-          {/* Packing Size */}
-          <div style={{ marginBottom: 16 }}>
-            <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: '#555', marginBottom: 6 }}>Packing Size (sheets per ream)</label>
-            <select
-              value={packingSize}
-              onChange={e => setPackingSize(parseInt(e.target.value))}
-              style={{ width: '100%', padding: '10px 12px', border: '1px solid #ddd', borderRadius: 8, fontSize: 14, background: '#fafafa' }}
-            >
-              <option value={100}>100 sheets per pack</option>
-              <option value={200}>200 sheets per pack</option>
-              <option value={250}>250 sheets per pack</option>
-              <option value={500}>500 sheets per ream</option>
-            </select>
-          </div>
-
-          {/* Markup and Tax — side by side */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 20 }}>
-            <div>
-              <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: '#555', marginBottom: 6 }}>Markup %</label>
-              <input
-                type="number"
-                placeholder="e.g. 25"
-                value={markup}
-                onChange={e => setMarkup(e.target.value)}
-                style={{ width: '100%', padding: '10px 12px', border: '1px solid #ddd', borderRadius: 8, fontSize: 14, background: '#fafafa', boxSizing: 'border-box' }}
-              />
-            </div>
-            <div>
-              <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: '#555', marginBottom: 6 }}>Tax %</label>
-              <input
-                type="number"
-                placeholder="e.g. 18"
-                value={tax}
-                onChange={e => setTax(e.target.value)}
-                style={{ width: '100%', padding: '10px 12px', border: '1px solid #ddd', borderRadius: 8, fontSize: 14, background: '#fafafa', boxSizing: 'border-box' }}
-              />
-            </div>
-          </div>
-
-          {/* Calculate Button */}
-          <button
-            onClick={calculate}
-            style={{ width: '100%', padding: '14px', background: '#1a1a2e', color: '#fff', border: 'none', borderRadius: 8, fontSize: 16, fontWeight: 600, cursor: 'pointer' }}
-          >
-            Calculate Price
-          </button>
-        </div>
-
-        {/* Results */}
-        {result && (
-          <div style={{ background: '#fff', borderRadius: 12, padding: 24, boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}>
-            <h2 style={{ fontSize: 16, fontWeight: 600, marginBottom: 20, color: '#333' }}>Price Breakdown</h2>
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
-              <div style={{ background: '#f0f4ff', borderRadius: 8, padding: 16 }}>
-                <p style={{ margin: 0, fontSize: 12, color: '#666' }}>Price per sheet</p>
-                <p style={{ margin: '4px 0 0', fontSize: 22, fontWeight: 700, color: '#1a1a2e' }}>₹{result.pricePerSheet}</p>
-              </div>
-              <div style={{ background: '#f0f4ff', borderRadius: 8, padding: 16 }}>
-                <p style={{ margin: 0, fontSize: 12, color: '#666' }}>Price per ream</p>
-                <p style={{ margin: '4px 0 0', fontSize: 22, fontWeight: 700, color: '#1a1a2e' }}>₹{result.costPerRream}</p>
-              </div>
-            </div>
-
-            <div style={{ background: '#f9f9f9', borderRadius: 8, padding: 16, marginBottom: 12 }}>
-              
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-                <span style={{ fontSize: 13, color: '#666' }}>Total sheets</span>
-                <span style={{ fontSize: 13, fontWeight: 600 }}>{result.totalSheets} sheets</span>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ fontSize: 13, color: '#666' }}>Total weight</span>
-                <span style={{ fontSize: 13, fontWeight: 600 }}>{result.totalWeight} kg</span>
-              </div>
-            </div>
-
-            <div style={{ background: '#1a1a2e', borderRadius: 8, padding: 16, textAlign: 'center' }}>
-              <p style={{ margin: 0, fontSize: 13, color: '#aaa' }}>Total Price</p>
-              <p style={{ margin: '4px 0 0', fontSize: 32, fontWeight: 700, color: '#fff' }}>₹{result.finalPrice}</p>
-            </div>
-          </div>
-        )}
-      </div>
-    </main>
+      </main>
+    </>
   );
 }
