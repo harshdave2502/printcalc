@@ -8,8 +8,6 @@ interface SheetSize {
   length_inch: number;
   width_inch: number;
   factor: number;
-  is_active: boolean;
-  sort_order: number;
 }
 
 interface PaperStock {
@@ -20,7 +18,6 @@ interface PaperStock {
   rate_per_kg: number;
   packing_size: number;
   in_stock: boolean;
-  sort_order: number;
 }
 
 interface Result {
@@ -34,7 +31,6 @@ interface Result {
   inStock: boolean;
 }
 
-// Admin-only settings — will come from subscriber profile in Phase 3
 const MARKUP = 25;
 const TAX = 18;
 
@@ -48,54 +44,39 @@ export default function Home() {
   const [calculating, setCalculating] = useState(false);
   const [showConverter, setShowConverter] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  const [user, setUser] = useState<any>(null);
 
-  // Load data from Supabase on page load
   useEffect(() => {
     loadData();
+    checkUser();
   }, []);
+
+  const checkUser = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    setUser(user);
+  };
 
   const loadData = async () => {
     setLoading(true);
-    try {
-      const { data: sizes, error: sizeError } = await supabase
-        .from('sheet_sizes')
-        .select('*')
-        .eq('is_active', true)
-        .order('sort_order');
+    const { data: sizes } = await supabase
+      .from('sheet_sizes').select('*').eq('is_active', true).order('sort_order');
+    const { data: papers } = await supabase
+      .from('paper_stocks').select('*').order('sort_order');
 
-      const { data: papers, error: paperError } = await supabase
-        .from('paper_stocks')
-        .select('*')
-        .order('sort_order');
-
-      if (sizeError || paperError) {
-        setError('Failed to load data. Please refresh.');
-        return;
-      }
-
-      setSheetSizes(sizes || []);
-      setPaperStocks(papers || []);
-
-      if (sizes && sizes.length > 0) setSize(sizes[0]);
-      if (papers && papers.length > 0) setSelectedPaper(papers[0]);
-    } catch (err) {
-      setError('Connection error. Please refresh.');
-    } finally {
-      setLoading(false);
-    }
+    setSheetSizes(sizes || []);
+    setPaperStocks(papers || []);
+    if (sizes && sizes.length > 0) setSize(sizes[0]);
+    if (papers && papers.length > 0) setSelectedPaper(papers[0]);
+    setLoading(false);
   };
 
-  // Auto-calculate when inputs change
   useEffect(() => {
     if (!quantity || parseInt(quantity) <= 0 || !size || !selectedPaper) {
       setResult(null);
       return;
     }
     setCalculating(true);
-    const timer = setTimeout(() => {
-      calculate();
-    }, 400);
+    const timer = setTimeout(() => { calculate(); }, 400);
     return () => clearTimeout(timer);
   }, [size, selectedPaper, quantity]);
 
@@ -107,10 +88,8 @@ export default function Home() {
     const weightPerRream = selectedPaper.gsm * size.factor;
     const costPerRream = weightPerRream * selectedPaper.rate_per_kg;
     const costPerSheet = costPerRream / 500;
-
-    const totalSheets = qty;
-    const totalWeight = (weightPerRream / 500) * totalSheets;
-    const rawCost = costPerSheet * totalSheets;
+    const totalWeight = (weightPerRream / 500) * qty;
+    const rawCost = costPerSheet * qty;
     const afterMarkup = rawCost * (1 + MARKUP / 100);
     const taxAmount = afterMarkup * (TAX / 100);
     const finalPrice = afterMarkup + taxAmount;
@@ -118,7 +97,7 @@ export default function Home() {
     setResult({
       pricePerSheet: costPerSheet.toFixed(4),
       pricePerRream: costPerRream.toFixed(2),
-      totalSheets,
+      totalSheets: qty,
       totalWeight: totalWeight.toFixed(2),
       rawCost: rawCost.toFixed(2),
       taxAmount: taxAmount.toFixed(2),
@@ -128,35 +107,20 @@ export default function Home() {
     setCalculating(false);
   };
 
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    setUser(null);
+  };
+
   const inchToMm = (inch: number) => (inch * 25.4).toFixed(1);
   const inchToCm = (inch: number) => (inch * 2.54).toFixed(1);
-
   const categories = [...new Set(paperStocks.map(p => p.category))];
 
-  if (loading) {
-    return (
-      <main style={{ minHeight: '100vh', background: '#F7F6F3', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <div style={{ textAlign: 'center' }}>
-          <p style={{ fontSize: 32, marginBottom: 12 }}>⚡</p>
-          <p style={{ fontSize: 14, color: '#888', fontFamily: 'sans-serif' }}>Loading calculator...</p>
-        </div>
-      </main>
-    );
-  }
-
-  if (error) {
-    return (
-      <main style={{ minHeight: '100vh', background: '#F7F6F3', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <div style={{ textAlign: 'center', padding: 20 }}>
-          <p style={{ fontSize: 32, marginBottom: 12 }}>⚠️</p>
-          <p style={{ fontSize: 14, color: '#E53E3E', fontFamily: 'sans-serif' }}>{error}</p>
-          <button onClick={loadData} style={{ marginTop: 12, padding: '8px 20px', background: '#1A1A1A', color: '#fff', border: 'none', borderRadius: 8, cursor: 'pointer', fontFamily: 'sans-serif' }}>
-            Try again
-          </button>
-        </div>
-      </main>
-    );
-  }
+  if (loading) return (
+    <main style={{ minHeight: '100vh', background: '#F7F6F3', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <p style={{ color: '#888', fontFamily: 'sans-serif' }}>Loading...</p>
+    </main>
+  );
 
   return (
     <>
@@ -164,13 +128,24 @@ export default function Home() {
         @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap');
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { font-family: 'DM Sans', sans-serif; background: #F7F6F3; }
-        .page { min-height: 100vh; padding: 32px 16px 64px; }
+        .topbar { background: #1A1A1A; height: 52px; display: flex; align-items: center; justify-content: space-between; padding: 0 24px; }
+        .topbar-brand { display: flex; align-items: center; gap: 8px; }
+        .topbar-dot { width: 8px; height: 8px; background: #C84B31; border-radius: 50%; }
+        .topbar-name { font-size: 13px; font-weight: 500; color: #fff; letter-spacing: 0.04em; }
+        .topbar-right { display: flex; align-items: center; gap: 10px; }
+        .topbar-link { font-size: 13px; color: #AAA; text-decoration: none; padding: 6px 14px; border-radius: 6px; transition: color 0.15s; }
+        .topbar-link:hover { color: #fff; }
+        .topbar-btn { font-size: 13px; font-weight: 500; color: #fff; background: #C84B31; border: none; padding: 7px 16px; border-radius: 6px; cursor: pointer; font-family: inherit; text-decoration: none; display: inline-block; transition: opacity 0.15s; }
+        .topbar-btn:hover { opacity: 0.85; }
+        .topbar-user { font-size: 12px; color: #888; }
+        .topbar-logout { font-size: 13px; color: #888; background: none; border: none; cursor: pointer; font-family: inherit; padding: 6px 14px; }
+        .topbar-logout:hover { color: #fff; }
+        .topbar-dashboard { font-size: 13px; color: #AAA; text-decoration: none; padding: 6px 14px; border-radius: 6px; }
+        .topbar-dashboard:hover { color: #fff; }
+        .page { min-height: calc(100vh - 52px); padding: 32px 16px 64px; }
         .container { max-width: 520px; margin: 0 auto; }
-        .header { margin-bottom: 32px; }
-        .header-top { display: flex; align-items: center; gap: 12px; margin-bottom: 6px; }
-        .logo-dot { width: 10px; height: 10px; background: #C84B31; border-radius: 50%; flex-shrink: 0; }
-        .brand { font-size: 13px; font-weight: 500; color: #888; letter-spacing: 0.08em; text-transform: uppercase; }
-        .title { font-size: 30px; font-weight: 600; color: #1A1A1A; letter-spacing: -0.02em; line-height: 1.2; }
+        .header { margin-bottom: 28px; }
+        .title { font-size: 28px; font-weight: 600; color: #1A1A1A; letter-spacing: -0.02em; line-height: 1.2; margin-top: 24px; }
         .subtitle { font-size: 14px; color: #888; margin-top: 6px; }
         .card { background: #fff; border-radius: 16px; padding: 28px; margin-bottom: 16px; border: 1px solid #EBEBEB; }
         .section-label { font-size: 11px; font-weight: 600; color: #999; letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 16px; }
@@ -178,13 +153,7 @@ export default function Home() {
         .field:last-child { margin-bottom: 0; }
         .field-label { font-size: 13px; font-weight: 500; color: #555; margin-bottom: 7px; display: flex; justify-content: space-between; align-items: center; }
         .field-hint { font-size: 11px; color: #AAA; font-weight: 400; }
-        select, input[type="number"] {
-          width: 100%; padding: 11px 14px; border: 1.5px solid #E8E8E8;
-          border-radius: 10px; font-size: 14px; font-family: 'DM Sans', sans-serif;
-          color: #1A1A1A; background: #FAFAFA; outline: none;
-          transition: border-color 0.15s, background 0.15s;
-          appearance: none; -webkit-appearance: none;
-        }
+        select, input[type="number"] { width: 100%; padding: 11px 14px; border: 1.5px solid #E8E8E8; border-radius: 10px; font-size: 14px; font-family: 'DM Sans', sans-serif; color: #1A1A1A; background: #FAFAFA; outline: none; transition: border-color 0.15s; appearance: none; -webkit-appearance: none; }
         select { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%23999' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 14px center; padding-right: 36px; }
         select:focus, input[type="number"]:focus { border-color: #C84B31; background: #fff; }
         input[type="number"]::placeholder { color: #CCC; }
@@ -199,7 +168,7 @@ export default function Home() {
         .stock-badge { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 4px; font-size: 10px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; }
         .badge-out { background: #FFF0F0; color: #E53E3E; border: 1px solid #FEB2B2; }
         .badge-in { background: #F0FFF4; color: #38A169; border: 1px solid #9AE6B4; }
-        .out-of-stock-select { border-color: #FEB2B2 !important; color: #E53E3E !important; }
+        .out-of-stock-select { border-color: #FEB2B2 !important; }
         .qty-input-wrap { position: relative; }
         .qty-suffix { position: absolute; right: 14px; top: 50%; transform: translateY(-50%); font-size: 13px; color: #AAA; pointer-events: none; }
         .divider { height: 1px; background: #F0F0F0; margin: 20px 0; }
@@ -226,8 +195,6 @@ export default function Home() {
         .gst-key { font-size: 13px; color: #92400E; }
         .gst-val { font-size: 13px; font-weight: 600; color: #92400E; font-family: 'DM Mono', monospace; }
         .calculating { opacity: 0.5; transition: opacity 0.2s; }
-        .pulse { animation: pulse 1s ease-in-out infinite; }
-        @keyframes pulse { 0%, 100% { opacity: 0.5; } 50% { opacity: 1; } }
         .empty-state { text-align: center; padding: 40px 20px; }
         .empty-icon { font-size: 32px; margin-bottom: 12px; }
         .empty-text { font-size: 14px; color: #BBB; }
@@ -236,17 +203,36 @@ export default function Home() {
         @media (max-width: 480px) {
           .result-total-price { font-size: 34px; }
           .card { padding: 20px; }
+          .topbar { padding: 0 16px; }
         }
       `}</style>
+
+      {/* Top Navigation Bar */}
+      <div className="topbar">
+        <div className="topbar-brand">
+          <div className="topbar-dot" />
+          <span className="topbar-name">PrintCalc</span>
+        </div>
+        <div className="topbar-right">
+          {user ? (
+            <>
+              <a href="/dashboard" className="topbar-dashboard">Dashboard</a>
+              <span className="topbar-user">{user.email}</span>
+              <button className="topbar-logout" onClick={handleLogout}>Logout</button>
+            </>
+          ) : (
+            <>
+              <a href="/login" className="topbar-link">Login</a>
+              <a href="/signup" className="topbar-btn">Sign up free</a>
+            </>
+          )}
+        </div>
+      </div>
 
       <main className="page">
         <div className="container">
 
           <div className="header">
-            <div className="header-top">
-              <div className="logo-dot" />
-              <span className="brand">PrintCalc</span>
-            </div>
             <h1 className="title">Paper Price<br />Calculator</h1>
             <p className="subtitle">Instant pricing for any sheet size and paper type</p>
           </div>
@@ -415,22 +401,13 @@ export default function Home() {
             </div>
           ) : (
             <div className="card empty-state">
-              {calculating ? (
-                <>
-                  <p className="empty-icon pulse">⚡</p>
-                  <p className="empty-text">Calculating...</p>
-                </>
-              ) : (
-                <>
-                  <p className="empty-icon">📄</p>
-                  <p className="empty-text">Enter quantity above to see instant pricing</p>
-                </>
-              )}
+              <p className="empty-icon">📄</p>
+              <p className="empty-text">Enter quantity above to see instant pricing</p>
             </div>
           )}
 
           <div className="footer">
-            <p className="footer-text">Live data from database · GST @ {TAX}%</p>
+            <p className="footer-text">Live data · GST @ {TAX}% · Prices update automatically</p>
           </div>
 
         </div>
