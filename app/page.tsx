@@ -1,80 +1,27 @@
 'use client';
 import { useState, useEffect } from 'react';
+import { supabase } from './supabase';
 
-const SHEET_SIZES = [
-  { name: '23 × 36"', length: 23, width: 36 },
-  { name: '25 × 36"', length: 25, width: 36 },
-  { name: '20 × 30"', length: 20, width: 30 },
-  { name: '20 × 28"', length: 20, width: 28 },
-  { name: '31.5 × 41.5"', length: 31.5, width: 41.5 },
-  { name: '25 × 38"', length: 25, width: 38 },
-  { name: '22 × 28"', length: 22, width: 28 },
-  { name: '22.5 × 35"', length: 22.5, width: 35 },
-  { name: '18 × 23"', length: 18, width: 23 },
-];
+interface SheetSize {
+  id: string;
+  name: string;
+  length_inch: number;
+  width_inch: number;
+  factor: number;
+  is_active: boolean;
+  sort_order: number;
+}
 
-// Paper catalogue — in future this comes from Supabase database
-// inStock: false = shows OUT OF STOCK badge but price still visible
-const PAPER_CATALOGUE = [
-  // Maplitho
-  { id: 'map60', category: 'Maplitho', gsm: 60, label: 'Maplitho 60 GSM', ratePerKg: 68, inStock: true },
-  { id: 'map70', category: 'Maplitho', gsm: 70, label: 'Maplitho 70 GSM', ratePerKg: 70, inStock: true },
-  { id: 'map80', category: 'Maplitho', gsm: 80, label: 'Maplitho 80 GSM', ratePerKg: 72, inStock: true },
-  // Art Paper
-  { id: 'art80', category: 'Art Paper', gsm: 80, label: 'Art Paper 80 GSM', ratePerKg: 85, inStock: true },
-  { id: 'art90', category: 'Art Paper', gsm: 90, label: 'Art Paper 90 GSM', ratePerKg: 87, inStock: true },
-  { id: 'art100', category: 'Art Paper', gsm: 100, label: 'Art Paper 100 GSM', ratePerKg: 89, inStock: true },
-  { id: 'art130', category: 'Art Paper', gsm: 130, label: 'Art Paper 130 GSM', ratePerKg: 92, inStock: true },
-  // Art Card 170-230
-  { id: 'ac170', category: 'Art Card', gsm: 170, label: 'Art Card 170 GSM', ratePerKg: 95, inStock: true },
-  { id: 'ac200', category: 'Art Card', gsm: 200, label: 'Art Card 200 GSM', ratePerKg: 97, inStock: false },
-  { id: 'ac210', category: 'Art Card', gsm: 210, label: 'Art Card 210 GSM', ratePerKg: 98, inStock: true },
-  { id: 'ac230', category: 'Art Card', gsm: 230, label: 'Art Card 230 GSM', ratePerKg: 99, inStock: true },
-  // Art Card Heavy 250-380
-  { id: 'ach250', category: 'Art Card Heavy', gsm: 250, label: 'Art Card 250 GSM', ratePerKg: 102, inStock: true },
-  { id: 'ach280', category: 'Art Card Heavy', gsm: 280, label: 'Art Card 280 GSM', ratePerKg: 104, inStock: true },
-  { id: 'ach300', category: 'Art Card Heavy', gsm: 300, label: 'Art Card 300 GSM', ratePerKg: 106, inStock: true },
-  { id: 'ach350', category: 'Art Card Heavy', gsm: 350, label: 'Art Card 350 GSM', ratePerKg: 108, inStock: false },
-  { id: 'ach380', category: 'Art Card Heavy', gsm: 380, label: 'Art Card 380 GSM', ratePerKg: 110, inStock: true },
-  // Art Card Extra Heavy 400-500
-  { id: 'ace400', category: 'Art Card Extra Heavy', gsm: 400, label: 'Art Card 400 GSM', ratePerKg: 114, inStock: true },
-  { id: 'ace450', category: 'Art Card Extra Heavy', gsm: 450, label: 'Art Card 450 GSM', ratePerKg: 116, inStock: true },
-  { id: 'ace500', category: 'Art Card Extra Heavy', gsm: 500, label: 'Art Card 500 GSM', ratePerKg: 118, inStock: false },
-  // FBB / Ultima / SBS
-  { id: 'fbb200', category: 'FBB / Ultima / SBS', gsm: 200, label: 'FBB / Ultima / SBS 200 GSM', ratePerKg: 120, inStock: true },
-  { id: 'fbb230', category: 'FBB / Ultima / SBS', gsm: 230, label: 'FBB / Ultima / SBS 230 GSM', ratePerKg: 122, inStock: true },
-  { id: 'fbb250', category: 'FBB / Ultima / SBS', gsm: 250, label: 'FBB / Ultima / SBS 250 GSM', ratePerKg: 124, inStock: true },
-  { id: 'fbb280', category: 'FBB / Ultima / SBS', gsm: 280, label: 'FBB / Ultima / SBS 280 GSM', ratePerKg: 126, inStock: true },
-  { id: 'fbb300', category: 'FBB / Ultima / SBS', gsm: 300, label: 'FBB / Ultima / SBS 300 GSM', ratePerKg: 128, inStock: false },
-  { id: 'fbb320', category: 'FBB / Ultima / SBS', gsm: 320, label: 'FBB / Ultima / SBS 320 GSM', ratePerKg: 130, inStock: true },
-  { id: 'fbb350', category: 'FBB / Ultima / SBS', gsm: 350, label: 'FBB / Ultima / SBS 350 GSM', ratePerKg: 132, inStock: true },
-  { id: 'fbb380', category: 'FBB / Ultima / SBS', gsm: 380, label: 'FBB / Ultima / SBS 380 GSM', ratePerKg: 134, inStock: true },
-  { id: 'fbb400', category: 'FBB / Ultima / SBS', gsm: 400, label: 'FBB / Ultima / SBS 400 GSM', ratePerKg: 136, inStock: true },
-  // Duplex Grey Back
-  { id: 'dgb200', category: 'Duplex Grey Back', gsm: 200, label: 'Duplex Grey Back 200 GSM', ratePerKg: 58, inStock: true },
-  { id: 'dgb230', category: 'Duplex Grey Back', gsm: 230, label: 'Duplex Grey Back 230 GSM', ratePerKg: 59, inStock: true },
-  { id: 'dgb250', category: 'Duplex Grey Back', gsm: 250, label: 'Duplex Grey Back 250 GSM', ratePerKg: 60, inStock: true },
-  { id: 'dgb280', category: 'Duplex Grey Back', gsm: 280, label: 'Duplex Grey Back 280 GSM', ratePerKg: 61, inStock: false },
-  { id: 'dgb300', category: 'Duplex Grey Back', gsm: 300, label: 'Duplex Grey Back 300 GSM', ratePerKg: 62, inStock: true },
-  { id: 'dgb320', category: 'Duplex Grey Back', gsm: 320, label: 'Duplex Grey Back 320 GSM', ratePerKg: 63, inStock: true },
-  { id: 'dgb350', category: 'Duplex Grey Back', gsm: 350, label: 'Duplex Grey Back 350 GSM', ratePerKg: 64, inStock: true },
-  { id: 'dgb380', category: 'Duplex Grey Back', gsm: 380, label: 'Duplex Grey Back 380 GSM', ratePerKg: 65, inStock: true },
-  { id: 'dgb400', category: 'Duplex Grey Back', gsm: 400, label: 'Duplex Grey Back 400 GSM', ratePerKg: 66, inStock: true },
-  // Duplex White Back
-  { id: 'dwb200', category: 'Duplex White Back', gsm: 200, label: 'Duplex White Back 200 GSM', ratePerKg: 62, inStock: true },
-  { id: 'dwb230', category: 'Duplex White Back', gsm: 230, label: 'Duplex White Back 230 GSM', ratePerKg: 63, inStock: true },
-  { id: 'dwb250', category: 'Duplex White Back', gsm: 250, label: 'Duplex White Back 250 GSM', ratePerKg: 64, inStock: true },
-  { id: 'dwb280', category: 'Duplex White Back', gsm: 280, label: 'Duplex White Back 280 GSM', ratePerKg: 65, inStock: true },
-  { id: 'dwb300', category: 'Duplex White Back', gsm: 300, label: 'Duplex White Back 300 GSM', ratePerKg: 66, inStock: false },
-  { id: 'dwb320', category: 'Duplex White Back', gsm: 320, label: 'Duplex White Back 320 GSM', ratePerKg: 67, inStock: true },
-  { id: 'dwb350', category: 'Duplex White Back', gsm: 350, label: 'Duplex White Back 350 GSM', ratePerKg: 68, inStock: true },
-  { id: 'dwb380', category: 'Duplex White Back', gsm: 380, label: 'Duplex White Back 380 GSM', ratePerKg: 69, inStock: true },
-  { id: 'dwb400', category: 'Duplex White Back', gsm: 400, label: 'Duplex White Back 400 GSM', ratePerKg: 70, inStock: true },
-];
-
-// Admin-only settings — will come from Supabase in next phase
-const MARKUP = 25;
-const TAX = 18;
+interface PaperStock {
+  id: string;
+  category: string;
+  label: string;
+  gsm: number;
+  rate_per_kg: number;
+  packing_size: number;
+  in_stock: boolean;
+  sort_order: number;
+}
 
 interface Result {
   pricePerSheet: string;
@@ -82,22 +29,66 @@ interface Result {
   totalSheets: number;
   totalWeight: string;
   rawCost: string;
-  markupAmount: string;
   taxAmount: string;
   finalPrice: string;
   inStock: boolean;
 }
 
+// Admin-only settings — will come from subscriber profile in Phase 3
+const MARKUP = 25;
+const TAX = 18;
+
 export default function Home() {
-  const [size, setSize] = useState(SHEET_SIZES[0]);
-  const [selectedPaper, setSelectedPaper] = useState(PAPER_CATALOGUE[3]); // Art Paper 80gsm default
+  const [sheetSizes, setSheetSizes] = useState<SheetSize[]>([]);
+  const [paperStocks, setPaperStocks] = useState<PaperStock[]>([]);
+  const [size, setSize] = useState<SheetSize | null>(null);
+  const [selectedPaper, setSelectedPaper] = useState<PaperStock | null>(null);
   const [quantity, setQuantity] = useState('');
   const [result, setResult] = useState<Result | null>(null);
   const [calculating, setCalculating] = useState(false);
   const [showConverter, setShowConverter] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
+  // Load data from Supabase on page load
   useEffect(() => {
-    if (!quantity || parseInt(quantity) <= 0) {
+    loadData();
+  }, []);
+
+  const loadData = async () => {
+    setLoading(true);
+    try {
+      const { data: sizes, error: sizeError } = await supabase
+        .from('sheet_sizes')
+        .select('*')
+        .eq('is_active', true)
+        .order('sort_order');
+
+      const { data: papers, error: paperError } = await supabase
+        .from('paper_stocks')
+        .select('*')
+        .order('sort_order');
+
+      if (sizeError || paperError) {
+        setError('Failed to load data. Please refresh.');
+        return;
+      }
+
+      setSheetSizes(sizes || []);
+      setPaperStocks(papers || []);
+
+      if (sizes && sizes.length > 0) setSize(sizes[0]);
+      if (papers && papers.length > 0) setSelectedPaper(papers[0]);
+    } catch (err) {
+      setError('Connection error. Please refresh.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Auto-calculate when inputs change
+  useEffect(() => {
+    if (!quantity || parseInt(quantity) <= 0 || !size || !selectedPaper) {
       setResult(null);
       return;
     }
@@ -109,21 +100,18 @@ export default function Home() {
   }, [size, selectedPaper, quantity]);
 
   const calculate = () => {
+    if (!size || !selectedPaper) return;
     const qty = parseInt(quantity);
     if (!qty || qty <= 0) return;
 
-    const BASE_FACTOR = 0.2666;
-    const BASE_SQIN = 828;
-    const factor = (size.length * size.width * BASE_FACTOR) / BASE_SQIN;
-    const weightPerRream = factor * selectedPaper.gsm;
-    const costPerRream = weightPerRream * selectedPaper.ratePerKg;
+    const weightPerRream = selectedPaper.gsm * size.factor;
+    const costPerRream = weightPerRream * selectedPaper.rate_per_kg;
     const costPerSheet = costPerRream / 500;
 
     const totalSheets = qty;
     const totalWeight = (weightPerRream / 500) * totalSheets;
     const rawCost = costPerSheet * totalSheets;
-    const markupAmount = rawCost * (MARKUP / 100);
-    const afterMarkup = rawCost + markupAmount;
+    const afterMarkup = rawCost * (1 + MARKUP / 100);
     const taxAmount = afterMarkup * (TAX / 100);
     const finalPrice = afterMarkup + taxAmount;
 
@@ -133,16 +121,42 @@ export default function Home() {
       totalSheets,
       totalWeight: totalWeight.toFixed(2),
       rawCost: rawCost.toFixed(2),
-      markupAmount: markupAmount.toFixed(2),
       taxAmount: taxAmount.toFixed(2),
       finalPrice: finalPrice.toFixed(2),
-      inStock: selectedPaper.inStock,
+      inStock: selectedPaper.in_stock,
     });
     setCalculating(false);
   };
 
   const inchToMm = (inch: number) => (inch * 25.4).toFixed(1);
   const inchToCm = (inch: number) => (inch * 2.54).toFixed(1);
+
+  const categories = [...new Set(paperStocks.map(p => p.category))];
+
+  if (loading) {
+    return (
+      <main style={{ minHeight: '100vh', background: '#F7F6F3', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ textAlign: 'center' }}>
+          <p style={{ fontSize: 32, marginBottom: 12 }}>⚡</p>
+          <p style={{ fontSize: 14, color: '#888', fontFamily: 'sans-serif' }}>Loading calculator...</p>
+        </div>
+      </main>
+    );
+  }
+
+  if (error) {
+    return (
+      <main style={{ minHeight: '100vh', background: '#F7F6F3', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ textAlign: 'center', padding: 20 }}>
+          <p style={{ fontSize: 32, marginBottom: 12 }}>⚠️</p>
+          <p style={{ fontSize: 14, color: '#E53E3E', fontFamily: 'sans-serif' }}>{error}</p>
+          <button onClick={loadData} style={{ marginTop: 12, padding: '8px 20px', background: '#1A1A1A', color: '#fff', border: 'none', borderRadius: 8, cursor: 'pointer', fontFamily: 'sans-serif' }}>
+            Try again
+          </button>
+        </div>
+      </main>
+    );
+  }
 
   return (
     <>
@@ -185,7 +199,6 @@ export default function Home() {
         .stock-badge { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 4px; font-size: 10px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; }
         .badge-out { background: #FFF0F0; color: #E53E3E; border: 1px solid #FEB2B2; }
         .badge-in { background: #F0FFF4; color: #38A169; border: 1px solid #9AE6B4; }
-        .paper-select-wrap { position: relative; }
         .out-of-stock-select { border-color: #FEB2B2 !important; color: #E53E3E !important; }
         .qty-input-wrap { position: relative; }
         .qty-suffix { position: absolute; right: 14px; top: 50%; transform: translateY(-50%); font-size: 13px; color: #AAA; pointer-events: none; }
@@ -206,12 +219,12 @@ export default function Home() {
         .detail-key { font-size: 13px; color: #888; }
         .detail-val { font-size: 13px; font-weight: 500; color: #1A1A1A; font-family: 'DM Mono', monospace; }
         .gst-card { background: #FFFBEB; border: 1px solid #FDE68A; border-radius: 16px; overflow: hidden; }
+        .gst-header { padding: 10px 20px; background: #FDE68A; }
+        .gst-header-text { font-size: 11px; font-weight: 600; color: #78350F; letter-spacing: 0.08em; text-transform: uppercase; }
         .gst-row { display: flex; justify-content: space-between; align-items: center; padding: 13px 20px; border-bottom: 1px solid #FDE68A; }
         .gst-row:last-child { border-bottom: none; }
         .gst-key { font-size: 13px; color: #92400E; }
         .gst-val { font-size: 13px; font-weight: 600; color: #92400E; font-family: 'DM Mono', monospace; }
-        .gst-header { padding: 10px 20px; background: #FDE68A; }
-        .gst-header-text { font-size: 11px; font-weight: 600; color: #78350F; letter-spacing: 0.08em; text-transform: uppercase; }
         .calculating { opacity: 0.5; transition: opacity 0.2s; }
         .pulse { animation: pulse 1s ease-in-out infinite; }
         @keyframes pulse { 0%, 100% { opacity: 0.5; } 50% { opacity: 1; } }
@@ -248,35 +261,39 @@ export default function Home() {
                 <span className="field-hint">inches</span>
               </div>
               <select
-                value={size.name}
-                onChange={e => setSize(SHEET_SIZES.find(s => s.name === e.target.value) || SHEET_SIZES[0])}
+                value={size?.id || ''}
+                onChange={e => {
+                  const s = sheetSizes.find(s => s.id === e.target.value);
+                  if (s) setSize(s);
+                }}
               >
-                {SHEET_SIZES.map(s => (
-                  <option key={s.name} value={s.name}>{s.name}</option>
+                {sheetSizes.map(s => (
+                  <option key={s.id} value={s.id}>{s.name}</option>
                 ))}
               </select>
-              <div className="size-meta">
-                <span className="size-sublabel">
-                  {size.length}" × {size.width}" = {(size.length * size.width).toFixed(0)} sq in
-                </span>
-                <button className="convert-btn" onClick={() => setShowConverter(!showConverter)}>
-                  {showConverter ? 'Hide converter' : 'Convert to MM / CM'}
-                </button>
-              </div>
-
-              {showConverter && (
+              {size && (
+                <div className="size-meta">
+                  <span className="size-sublabel">
+                    {size.length_inch}" × {size.width_inch}" = {(size.length_inch * size.width_inch).toFixed(0)} sq in
+                  </span>
+                  <button className="convert-btn" onClick={() => setShowConverter(!showConverter)}>
+                    {showConverter ? 'Hide converter' : 'Convert to MM / CM'}
+                  </button>
+                </div>
+              )}
+              {showConverter && size && (
                 <div className="converter-box">
                   <div className="conv-item">
                     <p className="conv-unit">Inches</p>
-                    <p className="conv-val">{size.length}" × {size.width}"</p>
+                    <p className="conv-val">{size.length_inch}" × {size.width_inch}"</p>
                   </div>
                   <div className="conv-item">
                     <p className="conv-unit">MM</p>
-                    <p className="conv-val">{inchToMm(size.length)} × {inchToMm(size.width)}</p>
+                    <p className="conv-val">{inchToMm(size.length_inch)} × {inchToMm(size.width_inch)}</p>
                   </div>
                   <div className="conv-item">
                     <p className="conv-unit">CM</p>
-                    <p className="conv-val">{inchToCm(size.length)} × {inchToCm(size.width)}</p>
+                    <p className="conv-val">{inchToCm(size.length_inch)} × {inchToCm(size.width_inch)}</p>
                   </div>
                 </div>
               )}
@@ -286,31 +303,30 @@ export default function Home() {
             <div className="field">
               <div className="field-label">
                 Paper type
-                {selectedPaper.inStock
-                  ? <span className="stock-badge badge-in">● In stock</span>
-                  : <span className="stock-badge badge-out">● Out of stock</span>
-                }
+                {selectedPaper && (
+                  selectedPaper.in_stock
+                    ? <span className="stock-badge badge-in">● In stock</span>
+                    : <span className="stock-badge badge-out">● Out of stock</span>
+                )}
               </div>
-              <div className="paper-select-wrap">
-                <select
-                  value={selectedPaper.id}
-                  onChange={e => {
-                    const p = PAPER_CATALOGUE.find(p => p.id === e.target.value);
-                    if (p) setSelectedPaper(p);
-                  }}
-                  className={!selectedPaper.inStock ? 'out-of-stock-select' : ''}
-                >
-                  {['Maplitho', 'Art Paper', 'Art Card', 'Art Card Heavy', 'Art Card Extra Heavy', 'FBB / Ultima / SBS', 'Duplex Grey Back', 'Duplex White Back'].map(cat => (
-                    <optgroup key={cat} label={`── ${cat} ──`}>
-                      {PAPER_CATALOGUE.filter(p => p.category === cat).map(p => (
-                        <option key={p.id} value={p.id}>
-                          {p.label}{!p.inStock ? ' — OUT OF STOCK' : ''}
-                        </option>
-                      ))}
-                    </optgroup>
-                  ))}
-                </select>
-              </div>
+              <select
+                value={selectedPaper?.id || ''}
+                onChange={e => {
+                  const p = paperStocks.find(p => p.id === e.target.value);
+                  if (p) setSelectedPaper(p);
+                }}
+                className={selectedPaper && !selectedPaper.in_stock ? 'out-of-stock-select' : ''}
+              >
+                {categories.map(cat => (
+                  <optgroup key={cat} label={`── ${cat} ──`}>
+                    {paperStocks.filter(p => p.category === cat).map(p => (
+                      <option key={p.id} value={p.id}>
+                        {p.label}{!p.in_stock ? ' — OUT OF STOCK' : ''}
+                      </option>
+                    ))}
+                  </optgroup>
+                ))}
+              </select>
             </div>
 
             <div className="divider" />
@@ -337,8 +353,6 @@ export default function Home() {
           {/* Results */}
           {result ? (
             <div className={calculating ? 'calculating' : ''}>
-
-              {/* Total Price */}
               <div className="result-card">
                 {!result.inStock && (
                   <div className="result-out-of-stock">
@@ -362,7 +376,6 @@ export default function Home() {
                 </div>
               </div>
 
-              {/* Details */}
               <div className="details-card">
                 <div className="detail-row">
                   <span className="detail-key">Total sheets</span>
@@ -374,15 +387,14 @@ export default function Home() {
                 </div>
                 <div className="detail-row">
                   <span className="detail-key">Sheet size</span>
-                  <span className="detail-val">{size.name}</span>
+                  <span className="detail-val">{size?.name}</span>
                 </div>
                 <div className="detail-row">
                   <span className="detail-key">Paper</span>
-                  <span className="detail-val">{selectedPaper.label}</span>
+                  <span className="detail-val">{selectedPaper?.label}</span>
                 </div>
               </div>
 
-              {/* GST Breakdown */}
               <div className="gst-card">
                 <div className="gst-header">
                   <p className="gst-header-text">GST / Tax Breakdown</p>
@@ -400,7 +412,6 @@ export default function Home() {
                   <span className="gst-val" style={{ fontSize: 15 }}>₹{parseFloat(result.finalPrice).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
                 </div>
               </div>
-
             </div>
           ) : (
             <div className="card empty-state">
@@ -419,7 +430,7 @@ export default function Home() {
           )}
 
           <div className="footer">
-            <p className="footer-text">Prices update automatically as you type · GST @ {TAX}%</p>
+            <p className="footer-text">Live data from database · GST @ {TAX}%</p>
           </div>
 
         </div>
