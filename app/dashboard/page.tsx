@@ -29,7 +29,6 @@ interface PaperStock {
   stock_qty: number | null;
 }
 
-// GSM ranges per category — shown in Paper Rates tab
 const GSM_RANGES: Record<string, string> = {
   'Maplitho': '60 GSM – 80 GSM',
   'Art Paper': '80 GSM – 130 GSM',
@@ -39,6 +38,35 @@ const GSM_RANGES: Record<string, string> = {
   'FBB / Ultima / SBS': '200 GSM – 400 GSM',
   'Duplex Grey Back': '200 GSM – 400 GSM',
   'Duplex White Back': '200 GSM – 400 GSM',
+};
+
+const SAMPLE_CUSTOMERS = [
+  { id: '1', name: 'Raj Printers', email: 'raj@rajprinters.com', phone: '9876543210', company: 'Raj Printers Pvt Ltd', total_quotes: 12, total_orders: 5, last_active: '2 days ago' },
+  { id: '2', name: 'Mumbai Print House', email: 'info@mumbaiprint.com', phone: '9123456789', company: 'Mumbai Print House', total_quotes: 8, total_orders: 3, last_active: '5 days ago' },
+  { id: '3', name: 'Sharma Packaging', email: 'sharma@packaging.com', phone: '9988776655', company: 'Sharma Packaging Works', total_quotes: 20, total_orders: 14, last_active: 'Today' },
+];
+
+const SAMPLE_QUOTES = [
+  { id: 'Q001', customer: 'Raj Printers', paper: 'Art Card 300 GSM', size: '23 × 36"', qty: 5000, amount: '₹18,450', date: '20 Mar 2026', status: 'Sent' },
+  { id: 'Q002', customer: 'Mumbai Print House', paper: 'Maplitho 70 GSM', size: '25 × 36"', qty: 10000, amount: '₹12,200', date: '19 Mar 2026', status: 'Converted' },
+  { id: 'Q003', customer: 'Sharma Packaging', paper: 'FBB 300 GSM', size: '31.5 × 41.5"', qty: 2000, amount: '₹24,800', date: '18 Mar 2026', status: 'Draft' },
+  { id: 'Q004', customer: 'Raj Printers', paper: 'Art Paper 130 GSM', size: '23 × 36"', qty: 8000, amount: '₹15,600', date: '17 Mar 2026', status: 'Expired' },
+];
+
+const SAMPLE_ORDERS = [
+  { id: 'ORD001', customer: 'Mumbai Print House', paper: 'Maplitho 70 GSM', qty: 10000, amount: '₹12,200', date: '19 Mar 2026', status: 'In Production' },
+  { id: 'ORD002', customer: 'Sharma Packaging', paper: 'FBB 250 GSM', qty: 5000, amount: '₹31,500', date: '15 Mar 2026', status: 'Ready' },
+  { id: 'ORD003', customer: 'Raj Printers', paper: 'Art Card 250 GSM', qty: 3000, amount: '₹9,800', date: '10 Mar 2026', status: 'Delivered' },
+];
+
+const STATUS_COLOR: Record<string, string> = {
+  'Draft': '#888', 'Sent': '#185FA5', 'Converted': '#38A169', 'Expired': '#E53E3E',
+  'Pending': '#D97706', 'In Production': '#185FA5', 'Ready': '#6B46C1', 'Delivered': '#38A169',
+};
+
+const STATUS_BG: Record<string, string> = {
+  'Draft': '#F5F5F5', 'Sent': '#EEF4FA', 'Converted': '#F0FFF4', 'Expired': '#FFF0F0',
+  'Pending': '#FFFBEB', 'In Production': '#EEF4FA', 'Ready': '#F5F0FF', 'Delivered': '#F0FFF4',
 };
 
 export default function DashboardPage() {
@@ -51,6 +79,7 @@ export default function DashboardPage() {
   const [editingStock, setEditingStock] = useState<PaperStock | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState('');
+  const [selectedCustomer, setSelectedCustomer] = useState<any>(null);
 
   useEffect(() => { loadDashboard(); }, []);
 
@@ -58,74 +87,35 @@ export default function DashboardPage() {
     setLoading(true);
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) { window.location.href = '/login'; return; }
-
-    const { data: profile } = await supabase
-      .from('subscribers').select('*').eq('id', user.id).single();
+    const { data: profile } = await supabase.from('subscribers').select('*').eq('id', user.id).single();
     if (profile) setSubscriber(profile);
-
-    const { data: cats } = await supabase
-      .from('paper_categories').select('*')
-      .eq('subscriber_id', user.id).order('category');
+    const { data: cats } = await supabase.from('paper_categories').select('*').eq('subscriber_id', user.id).order('category');
     setPaperCategories(cats || []);
-
-    const { data: stocks } = await supabase
-      .from('paper_stocks').select('*')
-      .eq('subscriber_id', user.id).order('sort_order');
+    const { data: stocks } = await supabase.from('paper_stocks').select('*').eq('subscriber_id', user.id).order('sort_order');
     setPaperStocks(stocks || []);
-
     setLoading(false);
   };
 
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
-    window.location.href = '/login';
-  };
+  const handleLogout = async () => { await supabase.auth.signOut(); window.location.href = '/login'; };
 
   const handleSaveCategory = async (cat: PaperCategory) => {
     setSaving(true);
-    const { error } = await supabase
-      .from('paper_categories')
-      .update({ rate_per_kg: cat.rate_per_kg })
-      .eq('id', cat.id);
-    if (!error) {
-      setPaperCategories(prev => prev.map(c => c.id === cat.id ? cat : c));
-      setSaveMsg('Rate saved!');
-      setTimeout(() => setSaveMsg(''), 2000);
-    }
-    setSaving(false);
-    setEditingCategory(null);
+    const { error } = await supabase.from('paper_categories').update({ rate_per_kg: cat.rate_per_kg }).eq('id', cat.id);
+    if (!error) { setPaperCategories(prev => prev.map(c => c.id === cat.id ? cat : c)); setSaveMsg('Rate saved!'); setTimeout(() => setSaveMsg(''), 2000); }
+    setSaving(false); setEditingCategory(null);
   };
 
   const handleSaveStock = async (stock: PaperStock) => {
     setSaving(true);
-    const { error } = await supabase
-      .from('paper_stocks')
-      .update({
-        packing_size: stock.packing_size,
-        in_stock: stock.in_stock,
-        stock_qty: stock.stock_qty,
-      })
-      .eq('id', stock.id);
-    if (!error) {
-      setPaperStocks(prev => prev.map(s => s.id === stock.id ? stock : s));
-      setSaveMsg('Stock saved!');
-      setTimeout(() => setSaveMsg(''), 2000);
-    }
-    setSaving(false);
-    setEditingStock(null);
+    const { error } = await supabase.from('paper_stocks').update({ packing_size: stock.packing_size, in_stock: stock.in_stock, stock_qty: stock.stock_qty }).eq('id', stock.id);
+    if (!error) { setPaperStocks(prev => prev.map(s => s.id === stock.id ? stock : s)); setSaveMsg('Saved!'); setTimeout(() => setSaveMsg(''), 2000); }
+    setSaving(false); setEditingStock(null);
   };
 
   const handleSaveSettings = async () => {
     if (!subscriber) return;
     setSaving(true);
-    const { error } = await supabase
-      .from('subscribers')
-      .update({
-        business_name: subscriber.business_name,
-        markup_percent: subscriber.markup_percent,
-        tax_percent: subscriber.tax_percent,
-      })
-      .eq('id', subscriber.id);
+    const { error } = await supabase.from('subscribers').update({ business_name: subscriber.business_name, markup_percent: subscriber.markup_percent, tax_percent: subscriber.tax_percent }).eq('id', subscriber.id);
     if (!error) { setSaveMsg('Settings saved!'); setTimeout(() => setSaveMsg(''), 2000); }
     setSaving(false);
   };
@@ -136,7 +126,22 @@ export default function DashboardPage() {
     </main>
   );
 
-  const categories = [...new Set(paperStocks.map(p => p.category))];
+  const stockCategories = [...new Set(paperStocks.map(p => p.category))];
+  const tabs = [
+    { id: 'overview', label: 'Overview' },
+    { id: 'customers', label: 'Customers' },
+    { id: 'quotes', label: 'Quotes' },
+    { id: 'orders', label: 'Orders' },
+    { id: 'rates', label: 'Paper Rates' },
+    { id: 'stocks', label: 'Stock Management' },
+    { id: 'settings', label: 'Settings' },
+  ];
+
+  const StatusBadge = ({ status }: { status: string }) => (
+    <span style={{ padding: '3px 10px', borderRadius: 4, fontSize: 11, fontWeight: 600, background: STATUS_BG[status], color: STATUS_COLOR[status] }}>
+      {status}
+    </span>
+  );
 
   return (
     <>
@@ -144,316 +149,450 @@ export default function DashboardPage() {
         @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap');
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { font-family: 'DM Sans', sans-serif; background: #F7F6F3; }
-        .nav { background: #1A1A1A; padding: 0 24px; display: flex; align-items: center; justify-content: space-between; height: 56px; }
+        .nav { background: #1A1A1A; padding: 0 24px; display: flex; align-items: center; justify-content: space-between; height: 56px; position: sticky; top: 0; z-index: 100; }
         .nav-brand { display: flex; align-items: center; gap: 8px; }
         .nav-dot { width: 8px; height: 8px; background: #C84B31; border-radius: 50%; }
         .nav-name { font-size: 14px; font-weight: 500; color: #fff; }
         .nav-right { display: flex; align-items: center; gap: 16px; }
-        .nav-biz { font-size: 13px; color: #888; }
-        .nav-logout { font-size: 13px; color: #888; background: none; border: none; cursor: pointer; font-family: inherit; }
-        .nav-logout:hover { color: #fff; }
-        .tabs { background: #fff; border-bottom: 1px solid #EBEBEB; padding: 0 24px; display: flex; }
-        .tab { padding: 14px 20px; font-size: 13px; font-weight: 500; color: #888; cursor: pointer; border-bottom: 2px solid transparent; background: none; border-top: none; border-left: none; border-right: none; font-family: inherit; }
+        .nav-link { font-size: 13px; color: #888; text-decoration: none; }
+        .nav-link:hover { color: #fff; }
+        .nav-btn { font-size: 13px; color: #888; background: none; border: none; cursor: pointer; font-family: inherit; }
+        .nav-btn:hover { color: #fff; }
+        .plan-badge { display: inline-block; padding: 3px 10px; background: #EEF4FA; color: #185FA5; border-radius: 4px; font-size: 11px; font-weight: 600; text-transform: uppercase; }
+        .tabs-wrap { background: #fff; border-bottom: 1px solid #EBEBEB; padding: 0 24px; display: flex; overflow-x: auto; scrollbar-width: none; }
+        .tabs-wrap::-webkit-scrollbar { display: none; }
+        .tab { padding: 14px 18px; font-size: 13px; font-weight: 500; color: #888; cursor: pointer; border-bottom: 2px solid transparent; background: none; border-top: none; border-left: none; border-right: none; font-family: inherit; white-space: nowrap; flex-shrink: 0; }
         .tab.active { color: #1A1A1A; border-bottom-color: #C84B31; }
-        .content { max-width: 960px; margin: 0 auto; padding: 32px 24px; }
+        .tab:hover { color: #1A1A1A; }
+        .content { max-width: 1000px; margin: 0 auto; padding: 32px 24px; }
         .card { background: #fff; border-radius: 12px; border: 1px solid #EBEBEB; padding: 24px; margin-bottom: 16px; }
         .card-title { font-size: 15px; font-weight: 600; color: #1A1A1A; margin-bottom: 4px; }
         .card-sub { font-size: 12px; color: #AAA; margin-bottom: 20px; }
         .field { margin-bottom: 14px; }
         .field label { display: block; font-size: 12px; font-weight: 500; color: #888; margin-bottom: 5px; text-transform: uppercase; letter-spacing: 0.05em; }
-        input[type="text"], input[type="number"] { padding: 9px 12px; border: 1.5px solid #E8E8E8; border-radius: 8px; font-size: 13px; font-family: 'DM Sans', sans-serif; color: #1A1A1A; background: #FAFAFA; outline: none; }
+        input[type="text"], input[type="number"], input[type="email"] { padding: 9px 12px; border: 1.5px solid #E8E8E8; border-radius: 8px; font-size: 13px; font-family: 'DM Sans', sans-serif; color: #1A1A1A; background: #FAFAFA; outline: none; }
         input:focus { border-color: #C84B31; background: #fff; }
         input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; }
-        .btn-save { padding: 8px 18px; background: #1A1A1A; color: #fff; border: none; border-radius: 8px; font-size: 12px; font-weight: 500; cursor: pointer; font-family: inherit; }
-        .btn-edit { padding: 5px 12px; background: #F5F5F5; color: #555; border: none; border-radius: 6px; font-size: 12px; cursor: pointer; font-family: inherit; }
+        .btn-primary { padding: 9px 20px; background: #1A1A1A; color: #fff; border: none; border-radius: 8px; font-size: 13px; font-weight: 500; cursor: pointer; font-family: inherit; }
+        .btn-secondary { padding: 8px 16px; background: #F5F5F5; color: #555; border: none; border-radius: 8px; font-size: 13px; cursor: pointer; font-family: inherit; }
+        .btn-sm { padding: 5px 12px; background: #F5F5F5; color: #555; border: none; border-radius: 6px; font-size: 12px; cursor: pointer; font-family: inherit; }
         .btn-cancel { padding: 5px 12px; background: none; color: #888; border: 1px solid #E8E8E8; border-radius: 6px; font-size: 12px; cursor: pointer; font-family: inherit; margin-left: 6px; }
-        .save-msg { color: #38A169; font-size: 13px; margin-left: 12px; }
-        .stat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 16px; }
-        .stat-card { background: #F9F9F9; border-radius: 10px; padding: 16px; }
+        .btn-danger { padding: 9px 20px; background: #FFF0F0; color: #E53E3E; border: 1px solid #FEB2B2; border-radius: 8px; font-size: 13px; cursor: pointer; font-family: inherit; }
+        .save-msg { color: #38A169; font-size: 13px; }
+        .stat-grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 12px; }
+        .stat-grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 12px; }
+        .stat-card { background: #fff; border: 1px solid #EBEBEB; border-radius: 10px; padding: 16px; }
         .stat-label { font-size: 11px; color: #999; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.06em; }
-        .stat-value { font-size: 22px; font-weight: 600; color: #1A1A1A; font-family: 'DM Mono', monospace; }
-        .plan-badge { display: inline-block; padding: 3px 10px; background: #EEF4FA; color: #185FA5; border-radius: 4px; font-size: 11px; font-weight: 600; text-transform: uppercase; }
+        .stat-value { font-size: 24px; font-weight: 600; color: #1A1A1A; font-family: 'DM Mono', monospace; }
+        .stat-sub { font-size: 11px; color: #AAA; margin-top: 4px; }
         .section-header { background: #F9F9F9; border-bottom: 1px solid #F0F0F0; padding: 12px 16px; display: flex; justify-content: space-between; align-items: center; }
         .section-title { font-size: 12px; font-weight: 600; color: #666; text-transform: uppercase; letter-spacing: 0.08em; }
         .table { width: 100%; border-collapse: collapse; }
         .table th { text-align: left; font-size: 11px; font-weight: 600; color: #999; text-transform: uppercase; letter-spacing: 0.06em; padding: 10px 16px; border-bottom: 1px solid #F0F0F0; }
-        .table td { padding: 11px 16px; border-bottom: 1px solid #F8F8F8; font-size: 13px; color: #1A1A1A; vertical-align: middle; }
+        .table td { padding: 12px 16px; border-bottom: 1px solid #F8F8F8; font-size: 13px; color: #1A1A1A; vertical-align: middle; }
         .table tr:last-child td { border-bottom: none; }
+        .table tbody tr:hover td { background: #FAFAFA; }
         .badge-in { display: inline-block; padding: 2px 8px; background: #F0FFF4; color: #38A169; border: 1px solid #9AE6B4; border-radius: 4px; font-size: 11px; font-weight: 600; }
         .badge-out { display: inline-block; padding: 2px 8px; background: #FFF0F0; color: #E53E3E; border: 1px solid #FEB2B2; border-radius: 4px; font-size: 11px; font-weight: 600; }
         .info-box { background: #F0FFF4; border: 1px solid #9AE6B4; border-radius: 8px; padding: 12px 16px; margin-bottom: 16px; font-size: 13px; color: #276749; }
-        .gsm-range { display: inline-block; padding: 2px 8px; background: #F5F0FF; color: #6B46C1; border-radius: 4px; font-size: 11px; font-weight: 500; margin-left: 8px; font-family: 'DM Mono', monospace; }
-        select { padding: 6px 10px; border: 1.5px solid #E8E8E8; border-radius: 6px; font-size: 12px; font-family: inherit; background: #FAFAFA; outline: none; }
-        select:focus { border-color: #C84B31; }
+        .coming-box { background: #FFFBEB; border: 1px solid #FDE68A; border-radius: 8px; padding: 12px 16px; margin-bottom: 16px; font-size: 13px; color: #92400E; }
+        .gsm-range { display: inline-block; padding: 2px 8px; background: #F5F0FF; color: #6B46C1; border-radius: 4px; font-size: 11px; font-weight: 500; font-family: 'DM Mono', monospace; }
+        .select-sm { padding: 5px 8px; border: 1.5px solid #E8E8E8; border-radius: 6px; font-size: 12px; font-family: inherit; background: #FAFAFA; outline: none; }
+        .avatar { width: 36px; height: 36px; background: #1A1A1A; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 13px; font-weight: 600; flex-shrink: 0; }
+        .back-btn { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: #888; background: none; border: none; cursor: pointer; font-family: inherit; margin-bottom: 16px; padding: 0; }
+        .back-btn:hover { color: #1A1A1A; }
+        .quick-links { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 16px; }
+        @media (max-width: 768px) {
+          .stat-grid-4 { grid-template-columns: repeat(2, 1fr); }
+          .stat-grid-3 { grid-template-columns: repeat(2, 1fr); }
+          .content { padding: 20px 16px; }
+        }
       `}</style>
 
-      <div>
-        <nav className="nav">
-          <div className="nav-brand">
-            <div className="nav-dot" />
-            <span className="nav-name">PrintCalc</span>
-          </div>
-          <div className="nav-right">
-            <span className="nav-biz">{subscriber?.business_name}</span>
-            <span className="plan-badge">{subscriber?.plan}</span>
-            <button className="nav-logout" onClick={handleLogout}>Logout</button>
-          </div>
-        </nav>
-
-        <div className="tabs">
-          <button className={`tab ${activeTab === 'overview' ? 'active' : ''}`} onClick={() => setActiveTab('overview')}>Overview</button>
-          <button className={`tab ${activeTab === 'rates' ? 'active' : ''}`} onClick={() => setActiveTab('rates')}>Paper Rates</button>
-          <button className={`tab ${activeTab === 'stocks' ? 'active' : ''}`} onClick={() => setActiveTab('stocks')}>Stock Management</button>
-          <button className={`tab ${activeTab === 'settings' ? 'active' : ''}`} onClick={() => setActiveTab('settings')}>Settings</button>
+      <nav className="nav">
+        <div className="nav-brand">
+          <div className="nav-dot" />
+          <span className="nav-name">PrintCalc</span>
         </div>
+        <div className="nav-right">
+          <a href="/" className="nav-link">← Calculator</a>
+          <span style={{ fontSize: 13, color: '#888' }}>{subscriber?.business_name}</span>
+          <span className="plan-badge">{subscriber?.plan}</span>
+          <button className="nav-btn" onClick={handleLogout}>Logout</button>
+        </div>
+      </nav>
 
-        <div className="content">
-          {saveMsg && <p className="save-msg" style={{ marginBottom: 16 }}>✓ {saveMsg}</p>}
+      <div className="tabs-wrap">
+        {tabs.map(t => (
+          <button key={t.id} className={`tab ${activeTab === t.id ? 'active' : ''}`}
+            onClick={() => { setActiveTab(t.id); setSelectedCustomer(null); }}>
+            {t.label}
+          </button>
+        ))}
+      </div>
 
-          {/* OVERVIEW */}
-          {activeTab === 'overview' && (
-            <div>
-              <div className="stat-grid">
-                <div className="stat-card">
-                  <p className="stat-label">Plan</p>
-                  <p className="stat-value" style={{ fontSize: 16, textTransform: 'capitalize' }}>{subscriber?.plan}</p>
-                </div>
-                <div className="stat-card">
-                  <p className="stat-label">Markup</p>
-                  <p className="stat-value">{subscriber?.markup_percent}%</p>
-                </div>
-                <div className="stat-card">
-                  <p className="stat-label">Tax / GST</p>
-                  <p className="stat-value">{subscriber?.tax_percent}%</p>
-                </div>
-              </div>
-              <div className="card">
-                <p className="card-title">Quick links</p>
-                <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 16 }}>
-                  <a href="/" style={{ padding: '10px 18px', background: '#1A1A1A', color: '#fff', borderRadius: 8, textDecoration: 'none', fontSize: 13, fontWeight: 500 }}>View Calculator</a>
-                  <button onClick={() => setActiveTab('rates')} style={{ padding: '10px 18px', background: '#F5F5F5', color: '#555', border: 'none', borderRadius: 8, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}>Paper Rates</button>
-                  <button onClick={() => setActiveTab('stocks')} style={{ padding: '10px 18px', background: '#F5F5F5', color: '#555', border: 'none', borderRadius: 8, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}>Stock Management</button>
-                  <button onClick={() => setActiveTab('settings')} style={{ padding: '10px 18px', background: '#F5F5F5', color: '#555', border: 'none', borderRadius: 8, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}>Settings</button>
-                </div>
-              </div>
-              <div className="card">
-                <p className="card-title">Account info</p>
-                <table style={{ width: '100%', fontSize: 13, marginTop: 12 }}>
-                  <tbody>
-                    {[
-                      ['Business name', subscriber?.business_name],
-                      ['Email', subscriber?.email],
-                      ['Currency', `${subscriber?.currency_symbol} ${subscriber?.currency}`],
-                      ['Plan', subscriber?.plan],
-                    ].map(([k, v]) => (
-                      <tr key={k} style={{ borderBottom: '1px solid #F5F5F5' }}>
-                        <td style={{ padding: '10px 0', color: '#888', width: '40%' }}>{k}</td>
-                        <td style={{ padding: '10px 0', fontWeight: 500 }}>{v}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
+      <div className="content">
+        {saveMsg && <p className="save-msg" style={{ marginBottom: 16 }}>✓ {saveMsg}</p>}
 
-          {/* PAPER RATES — category level with GSM range */}
-          {activeTab === 'rates' && (
-            <div>
-              <div className="info-box">
-                💡 One rate per kg for each paper category — applies to all GSM variants in that range. Customers never see these rates.
-              </div>
-              <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-                <div className="section-header">
-                  <p className="section-title">Paper Category Rates</p>
-                  <p style={{ fontSize: 12, color: '#AAA' }}>{paperCategories.length} categories</p>
-                </div>
-                <table className="table">
-                  <thead>
-                    <tr>
-                      <th>Paper Category</th>
-                      <th>GSM Range</th>
-                      <th>Rate per kg ({subscriber?.currency_symbol})</th>
-                      <th>Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {paperCategories.map(cat => (
-                      <tr key={cat.id}>
-                        <td style={{ fontWeight: 500 }}>{cat.category}</td>
-                        <td>
-                          <span className="gsm-range">
-                            {GSM_RANGES[cat.category] || '—'}
-                          </span>
-                        </td>
-                        <td>
-                          {editingCategory?.id === cat.id ? (
-                            <input
-                              type="number"
-                              value={editingCategory.rate_per_kg}
-                              onChange={e => setEditingCategory({ ...editingCategory, rate_per_kg: parseFloat(e.target.value) })}
-                              style={{ width: 100 }}
-                            />
-                          ) : (
-                            <span style={{ fontFamily: 'monospace', fontWeight: 500 }}>
-                              {subscriber?.currency_symbol}{cat.rate_per_kg.toFixed(2)}/kg
-                            </span>
-                          )}
-                        </td>
-                        <td>
-                          {editingCategory?.id === cat.id ? (
-                            <>
-                              <button className="btn-save" onClick={() => handleSaveCategory(editingCategory)} disabled={saving}>
-                                {saving ? '...' : 'Save'}
-                              </button>
-                              <button className="btn-cancel" onClick={() => setEditingCategory(null)}>Cancel</button>
-                            </>
-                          ) : (
-                            <button className="btn-edit" onClick={() => setEditingCategory(cat)}>Edit rate</button>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-
-          {/* STOCK MANAGEMENT */}
-          {activeTab === 'stocks' && (
-            <div>
-              <div className="info-box">
-                💡 Stock tracking is optional. Enter total stock in kg — auto marks out of stock when depleted. Leave blank to skip tracking.
-              </div>
-              {categories.map(cat => (
-                <div key={cat} className="card" style={{ padding: 0, overflow: 'hidden', marginBottom: 16 }}>
-                  <div className="section-header">
-                    <p className="section-title">
-                      {cat}
-                      <span className="gsm-range" style={{ marginLeft: 8 }}>
-                        {GSM_RANGES[cat] || ''}
-                      </span>
-                    </p>
-                  </div>
-                  <table className="table">
-                    <thead>
-                      <tr>
-                        <th>Paper</th>
-                        <th>GSM</th>
-                        <th>Packing size</th>
-                        <th>Stock qty (kg) — optional</th>
-                        <th>Status</th>
-                        <th>Action</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {paperStocks.filter(p => p.category === cat).map(stock => (
-                        <tr key={stock.id}>
-                          {editingStock?.id === stock.id ? (
-                            <>
-                              <td>{stock.label}</td>
-                              <td>{stock.gsm}</td>
-                              <td>
-                                <input
-                                  type="number"
-                                  value={editingStock.packing_size}
-                                  onChange={e => setEditingStock({ ...editingStock, packing_size: parseInt(e.target.value) })}
-                                  style={{ width: 70 }}
-                                />
-                              </td>
-                              <td>
-                                <input
-                                  type="number"
-                                  value={editingStock.stock_qty ?? ''}
-                                  placeholder="Optional"
-                                  onChange={e => setEditingStock({ ...editingStock, stock_qty: e.target.value ? parseFloat(e.target.value) : null })}
-                                  style={{ width: 100 }}
-                                />
-                              </td>
-                              <td>
-                                <select
-                                  value={editingStock.in_stock ? 'true' : 'false'}
-                                  onChange={e => setEditingStock({ ...editingStock, in_stock: e.target.value === 'true' })}
-                                >
-                                  <option value="true">In Stock</option>
-                                  <option value="false">Out of Stock</option>
-                                </select>
-                              </td>
-                              <td>
-                                <button className="btn-save" onClick={() => handleSaveStock(editingStock)} disabled={saving}>
-                                  {saving ? '...' : 'Save'}
-                                </button>
-                                <button className="btn-cancel" onClick={() => setEditingStock(null)}>Cancel</button>
-                              </td>
-                            </>
-                          ) : (
-                            <>
-                              <td>{stock.label}</td>
-                              <td style={{ fontFamily: 'monospace' }}>{stock.gsm}</td>
-                              <td style={{ fontFamily: 'monospace' }}>{stock.packing_size} sh</td>
-                              <td style={{ fontFamily: 'monospace', color: stock.stock_qty ? '#1A1A1A' : '#CCC' }}>
-                                {stock.stock_qty ? `${stock.stock_qty} kg` : '—'}
-                              </td>
-                              <td>
-                                {stock.in_stock
-                                  ? <span className="badge-in">In Stock</span>
-                                  : <span className="badge-out">Out of Stock</span>
-                                }
-                              </td>
-                              <td>
-                                <button className="btn-edit" onClick={() => setEditingStock(stock)}>Edit</button>
-                              </td>
-                            </>
-                          )}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+        {/* OVERVIEW */}
+        {activeTab === 'overview' && (
+          <div>
+            <div className="stat-grid-4">
+              {[
+                { label: 'Plan', value: subscriber?.plan, small: true },
+                { label: 'Markup', value: `${subscriber?.markup_percent}%` },
+                { label: 'GST / Tax', value: `${subscriber?.tax_percent}%` },
+                { label: 'Currency', value: `${subscriber?.currency_symbol} ${subscriber?.currency}`, small: true },
+              ].map(s => (
+                <div key={s.label} className="stat-card">
+                  <p className="stat-label">{s.label}</p>
+                  <p className="stat-value" style={{ fontSize: s.small ? 18 : 24, textTransform: 'capitalize' }}>{s.value}</p>
                 </div>
               ))}
             </div>
-          )}
-
-          {/* SETTINGS */}
-          {activeTab === 'settings' && subscriber && (
-            <div>
-              <div className="card">
-                <p className="card-title">Business settings</p>
-                <p className="card-sub">These settings affect all price calculations</p>
-                <div className="field">
-                  <label>Business name</label>
-                  <input type="text" value={subscriber.business_name || ''} onChange={e => setSubscriber({ ...subscriber, business_name: e.target.value })} style={{ width: '100%' }} />
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                  <div className="field">
-                    <label>Markup %</label>
-                    <input type="number" value={subscriber.markup_percent} onChange={e => setSubscriber({ ...subscriber, markup_percent: parseFloat(e.target.value) })} style={{ width: '100%' }} />
-                  </div>
-                  <div className="field">
-                    <label>Tax / GST %</label>
-                    <input type="number" value={subscriber.tax_percent} onChange={e => setSubscriber({ ...subscriber, tax_percent: parseFloat(e.target.value) })} style={{ width: '100%' }} />
-                  </div>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', marginTop: 8 }}>
-                  <button className="btn-save" onClick={handleSaveSettings} disabled={saving}>
-                    {saving ? 'Saving...' : 'Save settings'}
-                  </button>
-                  {saveMsg && <span className="save-msg">✓ {saveMsg}</span>}
-                </div>
+            <div className="stat-grid-4">
+              <div className="stat-card">
+                <p className="stat-label">Customers</p>
+                <p className="stat-value">{SAMPLE_CUSTOMERS.length}</p>
+                <p className="stat-sub">Active accounts</p>
               </div>
-              <div className="card">
-                <p className="card-title">Account</p>
-                <p style={{ fontSize: 13, color: '#888', marginBottom: 16 }}>
-                  Logged in as <strong style={{ color: '#1A1A1A' }}>{subscriber.email}</strong>
-                </p>
-                <button onClick={handleLogout} style={{ padding: '9px 20px', background: '#FFF0F0', color: '#E53E3E', border: '1px solid #FEB2B2', borderRadius: 8, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}>
-                  Logout
-                </button>
+              <div className="stat-card">
+                <p className="stat-label">Quotes</p>
+                <p className="stat-value">{SAMPLE_QUOTES.length}</p>
+                <p className="stat-sub">This month</p>
+              </div>
+              <div className="stat-card">
+                <p className="stat-label">Orders</p>
+                <p className="stat-value">{SAMPLE_ORDERS.length}</p>
+                <p className="stat-sub">This month</p>
+              </div>
+              <div className="stat-card">
+                <p className="stat-label">Revenue</p>
+                <p className="stat-value" style={{ fontSize: 20 }}>₹53.5k</p>
+                <p className="stat-sub">This month</p>
               </div>
             </div>
-          )}
-        </div>
+
+            <div className="card">
+              <p className="card-title">Quick links</p>
+              <div className="quick-links">
+                <a href="/" style={{ padding: '10px 18px', background: '#1A1A1A', color: '#fff', borderRadius: 8, textDecoration: 'none', fontSize: 13, fontWeight: 500 }}>View Calculator</a>
+                {tabs.slice(1).map(t => (
+                  <button key={t.id} className="btn-secondary" onClick={() => setActiveTab(t.id)}>{t.label}</button>
+                ))}
+              </div>
+            </div>
+
+            <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+              <div className="section-header">
+                <p className="section-title">Recent Orders</p>
+                <button className="btn-sm" onClick={() => setActiveTab('orders')}>View all</button>
+              </div>
+              <table className="table">
+                <thead>
+                  <tr><th>Order ID</th><th>Customer</th><th>Amount</th><th>Date</th><th>Status</th></tr>
+                </thead>
+                <tbody>
+                  {SAMPLE_ORDERS.map(o => (
+                    <tr key={o.id}>
+                      <td style={{ fontFamily: 'monospace', color: '#888', fontSize: 12 }}>{o.id}</td>
+                      <td style={{ fontWeight: 500 }}>{o.customer}</td>
+                      <td style={{ fontFamily: 'monospace', fontWeight: 500 }}>{o.amount}</td>
+                      <td style={{ fontSize: 12, color: '#888' }}>{o.date}</td>
+                      <td><StatusBadge status={o.status} /></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* CUSTOMERS */}
+        {activeTab === 'customers' && !selectedCustomer && (
+          <div>
+            <div className="coming-box">⚡ Customer login portal coming in next phase. Sample data shown for UI preview.</div>
+            <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+              <div className="section-header">
+                <p className="section-title">All Customers ({SAMPLE_CUSTOMERS.length})</p>
+                <button className="btn-primary" style={{ padding: '6px 14px', fontSize: 12 }}>+ Add Customer</button>
+              </div>
+              <table className="table">
+                <thead>
+                  <tr><th>Customer</th><th>Contact</th><th>Quotes</th><th>Orders</th><th>Last Active</th><th>Action</th></tr>
+                </thead>
+                <tbody>
+                  {SAMPLE_CUSTOMERS.map(c => (
+                    <tr key={c.id} style={{ cursor: 'pointer' }} onClick={() => setSelectedCustomer(c)}>
+                      <td>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                          <div className="avatar">{c.name[0]}</div>
+                          <div>
+                            <p style={{ fontWeight: 500 }}>{c.name}</p>
+                            <p style={{ fontSize: 11, color: '#AAA' }}>{c.company}</p>
+                          </div>
+                        </div>
+                      </td>
+                      <td>
+                        <p style={{ fontSize: 12 }}>{c.email}</p>
+                        <p style={{ fontSize: 12, color: '#AAA' }}>{c.phone}</p>
+                      </td>
+                      <td style={{ fontFamily: 'monospace', fontWeight: 500 }}>{c.total_quotes}</td>
+                      <td style={{ fontFamily: 'monospace', fontWeight: 500 }}>{c.total_orders}</td>
+                      <td style={{ fontSize: 12, color: '#888' }}>{c.last_active}</td>
+                      <td><button className="btn-sm">View</button></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* CUSTOMER DETAIL */}
+        {activeTab === 'customers' && selectedCustomer && (
+          <div>
+            <button className="back-btn" onClick={() => setSelectedCustomer(null)}>← Back to customers</button>
+            <div className="card">
+              <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 20 }}>
+                <div className="avatar" style={{ width: 48, height: 48, fontSize: 18 }}>{selectedCustomer.name[0]}</div>
+                <div>
+                  <p style={{ fontSize: 18, fontWeight: 600 }}>{selectedCustomer.name}</p>
+                  <p style={{ fontSize: 13, color: '#888' }}>{selectedCustomer.company}</p>
+                </div>
+              </div>
+              <table style={{ width: '100%', fontSize: 13 }}>
+                <tbody>
+                  {[['Email', selectedCustomer.email], ['Phone', selectedCustomer.phone], ['Total Quotes', selectedCustomer.total_quotes], ['Total Orders', selectedCustomer.total_orders], ['Last Active', selectedCustomer.last_active]].map(([k, v]) => (
+                    <tr key={k as string} style={{ borderBottom: '1px solid #F5F5F5' }}>
+                      <td style={{ padding: '10px 0', color: '#888', width: '40%' }}>{k}</td>
+                      <td style={{ padding: '10px 0', fontWeight: 500 }}>{v}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+              <div className="section-header"><p className="section-title">Quote History</p></div>
+              <table className="table">
+                <thead><tr><th>Quote ID</th><th>Paper</th><th>Qty</th><th>Amount</th><th>Date</th><th>Status</th></tr></thead>
+                <tbody>
+                  {SAMPLE_QUOTES.filter(q => q.customer === selectedCustomer.name).map(q => (
+                    <tr key={q.id}>
+                      <td style={{ fontFamily: 'monospace', color: '#888', fontSize: 12 }}>{q.id}</td>
+                      <td>{q.paper}</td>
+                      <td style={{ fontFamily: 'monospace' }}>{q.qty.toLocaleString()}</td>
+                      <td style={{ fontFamily: 'monospace', fontWeight: 500 }}>{q.amount}</td>
+                      <td style={{ fontSize: 12, color: '#888' }}>{q.date}</td>
+                      <td><StatusBadge status={q.status} /></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* QUOTES */}
+        {activeTab === 'quotes' && (
+          <div>
+            <div className="coming-box">⚡ Quote generation, PDF export and email delivery coming in next phase. Sample data shown for UI preview.</div>
+            <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+              <div className="section-header">
+                <p className="section-title">All Quotes ({SAMPLE_QUOTES.length})</p>
+                <button className="btn-primary" style={{ padding: '6px 14px', fontSize: 12 }}>+ New Quote</button>
+              </div>
+              <table className="table">
+                <thead><tr><th>Quote ID</th><th>Customer</th><th>Paper</th><th>Qty</th><th>Amount</th><th>Date</th><th>Status</th><th>PDF</th></tr></thead>
+                <tbody>
+                  {SAMPLE_QUOTES.map(q => (
+                    <tr key={q.id}>
+                      <td style={{ fontFamily: 'monospace', color: '#888', fontSize: 12 }}>{q.id}</td>
+                      <td style={{ fontWeight: 500 }}>{q.customer}</td>
+                      <td style={{ fontSize: 12 }}>{q.paper}</td>
+                      <td style={{ fontFamily: 'monospace' }}>{q.qty.toLocaleString()}</td>
+                      <td style={{ fontFamily: 'monospace', fontWeight: 500 }}>{q.amount}</td>
+                      <td style={{ fontSize: 12, color: '#888' }}>{q.date}</td>
+                      <td><StatusBadge status={q.status} /></td>
+                      <td><button className="btn-sm">↓ PDF</button></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* ORDERS */}
+        {activeTab === 'orders' && (
+          <div>
+            <div className="coming-box">⚡ Live order management with status notifications coming in next phase. Sample data shown for UI preview.</div>
+            <div className="stat-grid-3">
+              {[{ label: 'In Production', value: '1', color: '#185FA5' }, { label: 'Ready for Pickup', value: '1', color: '#6B46C1' }, { label: 'Delivered', value: '1', color: '#38A169' }].map(s => (
+                <div key={s.label} className="stat-card">
+                  <p className="stat-label">{s.label}</p>
+                  <p className="stat-value" style={{ color: s.color }}>{s.value}</p>
+                </div>
+              ))}
+            </div>
+            <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+              <div className="section-header">
+                <p className="section-title">All Orders ({SAMPLE_ORDERS.length})</p>
+              </div>
+              <table className="table">
+                <thead><tr><th>Order ID</th><th>Customer</th><th>Paper</th><th>Qty</th><th>Amount</th><th>Date</th><th>Status</th><th>Update Status</th></tr></thead>
+                <tbody>
+                  {SAMPLE_ORDERS.map(o => (
+                    <tr key={o.id}>
+                      <td style={{ fontFamily: 'monospace', color: '#888', fontSize: 12 }}>{o.id}</td>
+                      <td style={{ fontWeight: 500 }}>{o.customer}</td>
+                      <td style={{ fontSize: 12 }}>{o.paper}</td>
+                      <td style={{ fontFamily: 'monospace' }}>{o.qty.toLocaleString()}</td>
+                      <td style={{ fontFamily: 'monospace', fontWeight: 500 }}>{o.amount}</td>
+                      <td style={{ fontSize: 12, color: '#888' }}>{o.date}</td>
+                      <td><StatusBadge status={o.status} /></td>
+                      <td>
+                        <select className="select-sm">
+                          <option>Pending</option>
+                          <option>In Production</option>
+                          <option>Ready</option>
+                          <option>Delivered</option>
+                        </select>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* PAPER RATES */}
+        {activeTab === 'rates' && (
+          <div>
+            <div className="info-box">💡 One rate per kg for each paper category — applies to all GSM variants. Customers never see these rates.</div>
+            <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+              <div className="section-header">
+                <p className="section-title">Paper Category Rates</p>
+                <p style={{ fontSize: 12, color: '#AAA' }}>{paperCategories.length} categories</p>
+              </div>
+              <table className="table">
+                <thead><tr><th>Paper Category</th><th>GSM Range</th><th>Rate per kg ({subscriber?.currency_symbol})</th><th>Action</th></tr></thead>
+                <tbody>
+                  {paperCategories.map(cat => (
+                    <tr key={cat.id}>
+                      <td style={{ fontWeight: 500 }}>{cat.category}</td>
+                      <td><span className="gsm-range">{GSM_RANGES[cat.category] || '—'}</span></td>
+                      <td>
+                        {editingCategory?.id === cat.id ? (
+                          <input type="number" value={editingCategory.rate_per_kg}
+                            onChange={e => setEditingCategory({ ...editingCategory, rate_per_kg: parseFloat(e.target.value) })}
+                            style={{ width: 100 }} />
+                        ) : (
+                          <span style={{ fontFamily: 'monospace', fontWeight: 500 }}>{subscriber?.currency_symbol}{cat.rate_per_kg.toFixed(2)}/kg</span>
+                        )}
+                      </td>
+                      <td>
+                        {editingCategory?.id === cat.id ? (
+                          <>
+                            <button className="btn-primary" style={{ padding: '6px 14px', fontSize: 12 }} onClick={() => handleSaveCategory(editingCategory)} disabled={saving}>{saving ? '...' : 'Save'}</button>
+                            <button className="btn-cancel" onClick={() => setEditingCategory(null)}>Cancel</button>
+                          </>
+                        ) : (
+                          <button className="btn-sm" onClick={() => setEditingCategory(cat)}>Edit rate</button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* STOCK MANAGEMENT */}
+        {activeTab === 'stocks' && (
+          <div>
+            <div className="info-box">💡 Stock tracking is optional. Enter stock in kg — auto marks out of stock when depleted.</div>
+            {stockCategories.map(cat => (
+              <div key={cat} className="card" style={{ padding: 0, overflow: 'hidden', marginBottom: 16 }}>
+                <div className="section-header">
+                  <p className="section-title">{cat} &nbsp;<span className="gsm-range">{GSM_RANGES[cat] || ''}</span></p>
+                </div>
+                <table className="table">
+                  <thead><tr><th>Paper</th><th>GSM</th><th>Packing</th><th>Stock (kg) — optional</th><th>Status</th><th>Action</th></tr></thead>
+                  <tbody>
+                    {paperStocks.filter(p => p.category === cat).map(stock => (
+                      <tr key={stock.id}>
+                        {editingStock?.id === stock.id ? (
+                          <>
+                            <td>{stock.label}</td>
+                            <td>{stock.gsm}</td>
+                            <td><input type="number" value={editingStock.packing_size} onChange={e => setEditingStock({ ...editingStock, packing_size: parseInt(e.target.value) })} style={{ width: 70 }} /></td>
+                            <td><input type="number" value={editingStock.stock_qty ?? ''} placeholder="Optional" onChange={e => setEditingStock({ ...editingStock, stock_qty: e.target.value ? parseFloat(e.target.value) : null })} style={{ width: 100 }} /></td>
+                            <td>
+                              <select className="select-sm" value={editingStock.in_stock ? 'true' : 'false'} onChange={e => setEditingStock({ ...editingStock, in_stock: e.target.value === 'true' })}>
+                                <option value="true">In Stock</option>
+                                <option value="false">Out of Stock</option>
+                              </select>
+                            </td>
+                            <td>
+                              <button className="btn-primary" style={{ padding: '6px 14px', fontSize: 12 }} onClick={() => handleSaveStock(editingStock)} disabled={saving}>{saving ? '...' : 'Save'}</button>
+                              <button className="btn-cancel" onClick={() => setEditingStock(null)}>Cancel</button>
+                            </td>
+                          </>
+                        ) : (
+                          <>
+                            <td>{stock.label}</td>
+                            <td style={{ fontFamily: 'monospace' }}>{stock.gsm}</td>
+                            <td style={{ fontFamily: 'monospace' }}>{stock.packing_size} sh</td>
+                            <td style={{ fontFamily: 'monospace', color: stock.stock_qty ? '#1A1A1A' : '#CCC' }}>{stock.stock_qty ? `${stock.stock_qty} kg` : '—'}</td>
+                            <td>{stock.in_stock ? <span className="badge-in">In Stock</span> : <span className="badge-out">Out of Stock</span>}</td>
+                            <td><button className="btn-sm" onClick={() => setEditingStock(stock)}>Edit</button></td>
+                          </>
+                        )}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* SETTINGS */}
+        {activeTab === 'settings' && subscriber && (
+          <div>
+            <div className="card">
+              <p className="card-title">Business settings</p>
+              <p className="card-sub">These settings affect all price calculations</p>
+              <div className="field">
+                <label>Business name</label>
+                <input type="text" value={subscriber.business_name || ''} onChange={e => setSubscriber({ ...subscriber, business_name: e.target.value })} style={{ width: '100%' }} />
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div className="field">
+                  <label>Markup %</label>
+                  <input type="number" value={subscriber.markup_percent} onChange={e => setSubscriber({ ...subscriber, markup_percent: parseFloat(e.target.value) })} style={{ width: '100%' }} />
+                </div>
+                <div className="field">
+                  <label>Tax / GST %</label>
+                  <input type="number" value={subscriber.tax_percent} onChange={e => setSubscriber({ ...subscriber, tax_percent: parseFloat(e.target.value) })} style={{ width: '100%' }} />
+                </div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 8 }}>
+                <button className="btn-primary" onClick={handleSaveSettings} disabled={saving}>{saving ? 'Saving...' : 'Save settings'}</button>
+                {saveMsg && <span className="save-msg">✓ {saveMsg}</span>}
+              </div>
+            </div>
+            <div className="card">
+              <p className="card-title">Account</p>
+              <p style={{ fontSize: 13, color: '#888', marginBottom: 16 }}>Logged in as <strong style={{ color: '#1A1A1A' }}>{subscriber.email}</strong></p>
+              <button className="btn-danger" onClick={handleLogout}>Logout</button>
+            </div>
+          </div>
+        )}
+
       </div>
     </>
   );
