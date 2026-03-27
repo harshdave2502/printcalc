@@ -751,7 +751,20 @@ export default function Home(){
           {subData&&<span style={{fontSize:11,color:'#888',marginLeft:4}}>· {subData.business_name}</span>}
         </div>
         <div style={{display:'flex',alignItems:'center',gap:12}}>
-          {user?(<><a href="/dashboard" className="nav-link">Dashboard</a><button className="nav-btn" onClick={logout}>Logout</button></>):(<><a href="/login" className="nav-link">Login</a><a href="/signup" className="nav-signup">Sign up free</a></>)}
+          {user?(
+            <>
+              <a href="/quotes" className="nav-link">Quotes</a>
+              <a href="/orders" className="nav-link">Orders</a>
+              <a href="/dashboard" className="nav-link">Dashboard</a>
+              <button className="nav-btn" onClick={logout}>Logout</button>
+            </>
+          ):(
+            <>
+              <a href="/customer/login" className="nav-link">Customer Login</a>
+              <a href="/login" className="nav-link">Login</a>
+              <a href="/signup" className="nav-signup">Sign up free</a>
+            </>
+          )}
         </div>
       </div>
 
