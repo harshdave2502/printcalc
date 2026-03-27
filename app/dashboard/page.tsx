@@ -7,9 +7,7 @@ const GSM_RANGES: Record<string,string> = {
   'Art Card Heavy':'250 GSM – 380 GSM','Art Card Extra Heavy':'400 GSM – 500 GSM',
   'FBB / Ultima / SBS':'200 GSM – 400 GSM','Duplex Grey Back':'200 GSM – 400 GSM','Duplex White Back':'200 GSM – 400 GSM',
 };
-const SAMPLE_CUSTOMERS=[{id:'1',name:'Raj Printers',email:'raj@rajprinters.com',phone:'9876543210',company:'Raj Printers Pvt Ltd',total_quotes:12,total_orders:5,last_active:'2 days ago'},{id:'2',name:'Mumbai Print House',email:'info@mumbaiprint.com',phone:'9123456789',company:'Mumbai Print House',total_quotes:8,total_orders:3,last_active:'5 days ago'},{id:'3',name:'Sharma Packaging',email:'sharma@packaging.com',phone:'9988776655',company:'Sharma Packaging Works',total_quotes:20,total_orders:14,last_active:'Today'}];
-const SAMPLE_QUOTES=[{id:'Q001',customer:'Raj Printers',paper:'Art Card 300 GSM',size:'23 × 36"',qty:5000,amount:'₹18,450',date:'20 Mar 2026',status:'Sent'},{id:'Q002',customer:'Mumbai Print House',paper:'Maplitho 70 GSM',size:'25 × 36"',qty:10000,amount:'₹12,200',date:'19 Mar 2026',status:'Converted'},{id:'Q003',customer:'Sharma Packaging',paper:'FBB 300 GSM',size:'31.5 × 41.5"',qty:2000,amount:'₹24,800',date:'18 Mar 2026',status:'Draft'}];
-const SAMPLE_ORDERS=[{id:'ORD001',customer:'Mumbai Print House',paper:'Maplitho 70 GSM',qty:10000,amount:'₹12,200',date:'19 Mar 2026',status:'In Production'},{id:'ORD002',customer:'Sharma Packaging',paper:'FBB 250 GSM',qty:5000,amount:'₹31,500',date:'15 Mar 2026',status:'Ready'},{id:'ORD003',customer:'Raj Printers',paper:'Art Card 250 GSM',qty:3000,amount:'₹9,800',date:'10 Mar 2026',status:'Delivered'}];
+
 const SC:Record<string,string>={Draft:'#888',Sent:'#185FA5',Converted:'#38A169',Expired:'#E53E3E',Pending:'#D97706','In Production':'#185FA5',Ready:'#6B46C1',Delivered:'#38A169'};
 const SBG:Record<string,string>={Draft:'#F5F5F5',Sent:'#EEF4FA',Converted:'#F0FFF4',Expired:'#FFF0F0',Pending:'#FFFBEB','In Production':'#EEF4FA',Ready:'#F5F0FF',Delivered:'#F0FFF4'};
 
@@ -27,6 +25,9 @@ export default function DashboardPage() {
   const [saving,setSaving]=useState(false);
   const [saveMsg,setSaveMsg]=useState('');
   const [selCust,setSelCust]=useState<any>(null);
+  // live data
+  const [liveOrders,setLiveOrders]=useState<any[]>([]);
+  const [liveQuotes,setLiveQuotes]=useState<any[]>([]);
   // editing states
   const [editCat,setEditCat]=useState<any>(null);
   const [editStock,setEditStock]=useState<any>(null);
@@ -66,6 +67,13 @@ export default function DashboardPage() {
     ]);
     setPaperCats(cats||[]);setPaperStocks(stocks||[]);setPrintRates(pr||[]);
     setLamRates(lr||[]);setUvRates(ur||[]);setBindRates(br||[]);setColorOpts(co||[]);
+    // load live orders + quotes for overview
+    const [{data:ord},{data:quo}]=await Promise.all([
+      supabase.from('orders').select('*').eq('subscriber_id',user.id).order('created_at',{ascending:false}),
+      supabase.from('quotes').select('*').eq('subscriber_id',user.id).order('created_at',{ascending:false}),
+    ]);
+    setLiveOrders(ord||[]);
+    setLiveQuotes(quo||[]);
     setLoading(false);
   };
 
@@ -199,34 +207,98 @@ export default function DashboardPage() {
         {saveMsg&&<p className="save-msg" style={{marginBottom:16}}>✓ {saveMsg}</p>}
 
         {/* OVERVIEW */}
-        {tab==='overview'&&(
+        {tab==='overview'&&(()=>{
+          const sym=sub?.currency_symbol||'₹';
+          const fmt=(n:number)=>sym+(n||0).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2});
+          const activeOrders=liveOrders.filter(o=>!['Delivered','Cancelled'].includes(o.status));
+          const totalRevenue=liveOrders.filter(o=>o.status!=='Cancelled').reduce((s:number,o:any)=>s+(o.total_amount||0),0);
+          const totalDue=liveOrders.filter(o=>o.status!=='Cancelled').reduce((s:number,o:any)=>s+(o.due_amount||0),0);
+          const thisMonth=new Date(); thisMonth.setDate(1); thisMonth.setHours(0,0,0,0);
+          const ordersThisMonth=liveOrders.filter(o=>new Date(o.created_at)>=thisMonth).length;
+          const quotesThisMonth=liveQuotes.filter(q=>new Date(q.created_at)>=thisMonth).length;
+          return(
           <div>
+            {/* Business settings row */}
             <div className="stat-grid-4">
               {[{l:'Plan',v:sub?.plan,sm:true},{l:'Markup',v:`${sub?.markup_percent}%`},{l:'GST / Tax',v:`${sub?.tax_percent}%`},{l:'Currency',v:`${sub?.currency_symbol} ${sub?.currency}`,sm:true}].map(s=>(
                 <div key={s.l} className="stat-card"><p className="stat-label">{s.l}</p><p className="stat-value" style={{fontSize:s.sm?18:24,textTransform:'capitalize'}}>{s.v}</p></div>
               ))}
             </div>
+            {/* Live stats row */}
             <div className="stat-grid-4">
-              <div className="stat-card"><p className="stat-label">Customers</p><p className="stat-value">3</p><p className="stat-sub">Active</p></div>
-              <div className="stat-card"><p className="stat-label">Quotes</p><p className="stat-value">4</p><p className="stat-sub">This month</p></div>
-              <div className="stat-card"><p className="stat-label">Orders</p><p className="stat-value">3</p><p className="stat-sub">This month</p></div>
-              <div className="stat-card"><p className="stat-label">Revenue</p><p className="stat-value" style={{fontSize:20}}>₹53.5k</p><p className="stat-sub">This month</p></div>
+              <div className="stat-card">
+                <p className="stat-label">Quotes</p>
+                <p className="stat-value">{liveQuotes.length}</p>
+                <p className="stat-sub">{quotesThisMonth} this month</p>
+              </div>
+              <div className="stat-card">
+                <p className="stat-label">Orders</p>
+                <p className="stat-value">{liveOrders.length}</p>
+                <p className="stat-sub">{ordersThisMonth} this month · {activeOrders.length} active</p>
+              </div>
+              <div className="stat-card">
+                <p className="stat-label">Total Revenue</p>
+                <p className="stat-value" style={{fontSize:18,fontFamily:'DM Mono,monospace'}}>{fmt(totalRevenue)}</p>
+                <p className="stat-sub">all orders</p>
+              </div>
+              <div className="stat-card">
+                <p className="stat-label">Balance Due</p>
+                <p className="stat-value" style={{fontSize:18,fontFamily:'DM Mono,monospace',color:totalDue>0?'#E53E3E':'#38A169'}}>{fmt(totalDue)}</p>
+                <p className="stat-sub">pending collection</p>
+              </div>
             </div>
+            {/* Quick links */}
             <div className="card">
               <p style={{fontSize:15,fontWeight:600,marginBottom:12}}>Quick links</p>
               <div style={{display:'flex',gap:10,flexWrap:'wrap'}}>
-                <a href="/" style={{padding:'10px 18px',background:'#1A1A1A',color:'#fff',borderRadius:8,textDecoration:'none',fontSize:13,fontWeight:500}}>View Calculator</a>
+                <a href="/" style={{padding:'10px 18px',background:'#1A1A1A',color:'#fff',borderRadius:8,textDecoration:'none',fontSize:13,fontWeight:500}}>🖩 Calculator</a>
+                <a href="/quotes" style={{padding:'10px 18px',background:'#EEF4FA',color:'#185FA5',borderRadius:8,textDecoration:'none',fontSize:13,fontWeight:500}}>📋 Quotes ({liveQuotes.length})</a>
+                <a href="/orders" style={{padding:'10px 18px',background:'#F5F0FF',color:'#6B46C1',borderRadius:8,textDecoration:'none',fontSize:13,fontWeight:500}}>📦 Orders ({liveOrders.length})</a>
+                <a href="/customer/login" style={{padding:'10px 18px',background:'#F0FFF4',color:'#276749',borderRadius:8,textDecoration:'none',fontSize:13,fontWeight:500}}>👤 Customer Portal</a>
                 {tabs.slice(1).map(t=><button key={t.id} className="btn-sm" style={{padding:'10px 14px',fontSize:13}} onClick={()=>setTab(t.id)}>{t.l}</button>)}
               </div>
             </div>
+            {/* Active orders */}
+            {activeOrders.length>0&&(
+              <div className="card" style={{padding:0,overflow:'hidden',marginBottom:16}}>
+                <div className="sh"><p className="st">⚙️ Active Orders</p><a href="/orders" className="btn-sm" style={{textDecoration:'none'}}>View all</a></div>
+                <table className="table"><thead><tr><th>Order #</th><th>Customer</th><th>Job</th><th>Amount</th><th>Due</th><th>Status</th></tr></thead>
+                <tbody>{activeOrders.slice(0,5).map((o:any)=>(
+                  <tr key={o.id} style={{cursor:'pointer'}} onClick={()=>window.location.href='/orders'}>
+                    <td style={{fontFamily:'monospace',color:'#C84B31',fontSize:12,fontWeight:600}}>{o.order_number}</td>
+                    <td style={{fontWeight:500}}>{o.customer_name}</td>
+                    <td style={{fontSize:12,color:'#888'}}>{o.job_title||'—'}</td>
+                    <td style={{fontFamily:'monospace',fontWeight:500}}>{fmt(o.total_amount)}</td>
+                    <td style={{fontFamily:'monospace',color:o.due_amount>0?'#E53E3E':'#38A169',fontWeight:500}}>{fmt(o.due_amount)}</td>
+                    <td><SBadge s={o.status}/></td>
+                  </tr>
+                ))}</tbody>
+                </table>
+              </div>
+            )}
+            {/* Recent quotes */}
             <div className="card" style={{padding:0,overflow:'hidden'}}>
-              <div className="sh"><p className="st">Recent Orders</p><button className="btn-sm" onClick={()=>setTab('orders')}>View all</button></div>
-              <table className="table"><thead><tr><th>Order ID</th><th>Customer</th><th>Amount</th><th>Date</th><th>Status</th></tr></thead>
-              <tbody>{SAMPLE_ORDERS.map(o=><tr key={o.id}><td style={{fontFamily:'monospace',color:'#888',fontSize:12}}>{o.id}</td><td style={{fontWeight:500}}>{o.customer}</td><td style={{fontFamily:'monospace',fontWeight:500}}>{o.amount}</td><td style={{fontSize:12,color:'#888'}}>{o.date}</td><td><SBadge s={o.status}/></td></tr>)}</tbody>
-              </table>
+              <div className="sh"><p className="st">📋 Recent Quotes</p><a href="/quotes" className="btn-sm" style={{textDecoration:'none'}}>View all →</a></div>
+              {liveQuotes.length===0?(
+                <div style={{textAlign:'center',padding:32,color:'#AAA',fontSize:13}}>No quotes yet — <a href="/quotes" style={{color:'#C84B31',textDecoration:'none'}}>create your first quote</a></div>
+              ):(
+                <table className="table"><thead><tr><th>Quote #</th><th>Customer</th><th>Job</th><th>Amount</th><th>Date</th><th>Status</th></tr></thead>
+                <tbody>{liveQuotes.slice(0,5).map((q:any)=>(
+                  <tr key={q.id} style={{cursor:'pointer'}} onClick={()=>window.location.href='/quotes'}>
+                    <td style={{fontFamily:'monospace',color:'#C84B31',fontSize:12,fontWeight:600}}>{q.quote_number}</td>
+                    <td style={{fontWeight:500}}>{q.customer_name}</td>
+                    <td style={{fontSize:12,color:'#888'}}>{q.job_title||'—'}</td>
+                    <td style={{fontFamily:'monospace',fontWeight:500}}>{q.currency_symbol}{q.total_amount?.toLocaleString('en-IN',{minimumFractionDigits:2})}</td>
+                    <td style={{fontSize:12,color:'#888'}}>{new Date(q.created_at).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'})}</td>
+                    <td><SBadge s={q.status}/></td>
+                  </tr>
+                ))}</tbody>
+                </table>
+              )}
             </div>
           </div>
-        )}
+          );
+        })()}
 
         {/* PRINTING RATES — Full add/edit/delete */}
         {tab==='print_rates'&&(
