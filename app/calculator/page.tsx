@@ -324,8 +324,8 @@ function PrintingTab({subData}:any){
     const pi=PARENT_SHEETS[pk]||{parent:pk,cuts:1,pw:25,ph:36};
     const ws=Math.ceil(q/u);
     const imp=sides==='double'?ws*2:ws;
-    // Plates: 1 per side (single side = 1 plate, double side = 2 plates)
-    const numPlates=sides==='double'?2:1;
+    // Work & Turn — always 1 plate (front & back on same plate, paper flips)
+    const numPlates=1;
     // Get plate rate from DB
     const rate=plateRates.find(r=>r.plate_name===selPlate&&r.color_option===selColor);
     let pCost=0;
@@ -562,8 +562,8 @@ function FullJobTab({subData}:any){
       if(!selCat)return;
       const ws=Math.ceil(q/u);
       const imp=sides==='double'?ws*2:ws;
-      // Single item = 1 plate (one design, one side)
-      const numPlates=sides==='double'?2:1; // front plate + back plate if double side
+      // Work & Turn — always 1 plate (front & back on same plate, paper flips)
+      const numPlates=1;
       const papC=paperCost(selCat,gsm,ws,pk);
       const prC=printCost(selPlate,selColor,numPlates,imp);
       const lC=lamCost(selLam,pk,imp);   // imp = ws×2 if double, ws if single
