@@ -448,7 +448,9 @@ export default function DashboardPage() {
             <div className="card" style={{padding:0,overflow:'hidden'}}>
               <div className="sh"><p className="st">All Customers</p><button className="btn-primary" style={{padding:'6px 14px',fontSize:12}}>+ Add Customer</button></div>
               <table className="table"><thead><tr><th>Customer</th><th>Contact</th><th>Quotes</th><th>Orders</th><th>Last Active</th><th>Action</th></tr></thead>
-              <tbody>{SAMPLE_CUSTOMERS.map(c=><tr key={c.id} style={{cursor:'pointer'}} onClick={()=>setSelCust(c)}><td><div style={{display:'flex',alignItems:'center',gap:10}}><div className="avatar">{c.name[0]}</div><div><p style={{fontWeight:500}}>{c.name}</p><p style={{fontSize:11,color:'#AAA'}}>{c.company}</p></div></div></td><td><p style={{fontSize:12}}>{c.email}</p><p style={{fontSize:12,color:'#AAA'}}>{c.phone}</p></td><td style={{fontFamily:'monospace',fontWeight:500}}>{c.total_quotes}</td><td style={{fontFamily:'monospace',fontWeight:500}}>{c.total_orders}</td><td style={{fontSize:12,color:'#888'}}>{c.last_active}</td><td><button className="btn-sm">View</button></td></tr>)}</tbody>
+              <tbody><tr><td colSpan={6} style={{textAlign:'center',padding:32,color:'#888'}}>
+<a href="/customers" style={{color:'#C84B31',fontWeight:500}}>View all customers →</a>
+</td></tr></tbody>
               </table>
             </div>
           </div>
@@ -458,7 +460,7 @@ export default function DashboardPage() {
             <button className="back-btn" onClick={()=>setSelCust(null)}>← Back</button>
             <div className="card"><div style={{display:'flex',alignItems:'center',gap:16,marginBottom:16}}><div className="avatar" style={{width:48,height:48,fontSize:18}}>{selCust.name[0]}</div><div><p style={{fontSize:18,fontWeight:600}}>{selCust.name}</p><p style={{fontSize:13,color:'#888'}}>{selCust.company}</p></div></div>
             <table style={{width:'100%',fontSize:13}}><tbody>{[['Email',selCust.email],['Phone',selCust.phone],['Total Quotes',selCust.total_quotes],['Total Orders',selCust.total_orders],['Last Active',selCust.last_active]].map(([k,v])=><tr key={k as string} style={{borderBottom:'1px solid #F5F5F5'}}><td style={{padding:'10px 0',color:'#888',width:'40%'}}>{k}</td><td style={{padding:'10px 0',fontWeight:500}}>{v}</td></tr>)}</tbody></table></div>
-            <div className="card" style={{padding:0,overflow:'hidden'}}><div className="sh"><p className="st">Quote History</p></div><table className="table"><thead><tr><th>Quote ID</th><th>Paper</th><th>Qty</th><th>Amount</th><th>Date</th><th>Status</th></tr></thead><tbody>{SAMPLE_QUOTES.filter(q=>q.customer===selCust.name).map(q=><tr key={q.id}><td style={{fontFamily:'monospace',color:'#888',fontSize:12}}>{q.id}</td><td>{q.paper}</td><td style={{fontFamily:'monospace'}}>{q.qty.toLocaleString()}</td><td style={{fontFamily:'monospace',fontWeight:500}}>{q.amount}</td><td style={{fontSize:12,color:'#888'}}>{q.date}</td><td><SBadge s={q.status}/></td></tr>)}</tbody></table></div>
+            <div className="card" style={{padding:0,overflow:'hidden'}}><div className="sh"><p className="st">Quote History</p></div><table className="table"><thead><tr><th>Quote ID</th><th>Paper</th><th>Qty</th><th>Amount</th><th>Date</th><th>Status</th></tr></thead><tbody>{([] as any[]).map((q:any)=><tr key={q.id}><td style={{fontFamily:'monospace',color:'#888',fontSize:12}}>{q.id}</td><td>{q.paper}</td><td style={{fontFamily:'monospace'}}>{q.qty.toLocaleString()}</td><td style={{fontFamily:'monospace',fontWeight:500}}>{q.amount}</td><td style={{fontSize:12,color:'#888'}}>{q.date}</td><td><SBadge s={q.status}/></td></tr>)}</tbody></table></div>
           </div>
         )}
 
@@ -468,7 +470,7 @@ export default function DashboardPage() {
             <div className="coming-box">⚡ Quote generation and PDF export coming in next phase.</div>
             <div className="card" style={{padding:0,overflow:'hidden'}}><div className="sh"><p className="st">All Quotes</p><button className="btn-primary" style={{padding:'6px 14px',fontSize:12}}>+ New Quote</button></div>
             <table className="table"><thead><tr><th>Quote ID</th><th>Customer</th><th>Paper</th><th>Qty</th><th>Amount</th><th>Date</th><th>Status</th><th>PDF</th></tr></thead>
-            <tbody>{SAMPLE_QUOTES.map(q=><tr key={q.id}><td style={{fontFamily:'monospace',color:'#888',fontSize:12}}>{q.id}</td><td style={{fontWeight:500}}>{q.customer}</td><td style={{fontSize:12}}>{q.paper}</td><td style={{fontFamily:'monospace'}}>{q.qty.toLocaleString()}</td><td style={{fontFamily:'monospace',fontWeight:500}}>{q.amount}</td><td style={{fontSize:12,color:'#888'}}>{q.date}</td><td><SBadge s={q.status}/></td><td><button className="btn-sm">↓</button></td></tr>)}</tbody></table></div>
+            <tbody>{([] as any[]).map((q:any)=><tr key={q.id}><td style={{fontFamily:'monospace',color:'#888',fontSize:12}}>{q.id}</td><td style={{fontWeight:500}}>{q.customer}</td><td style={{fontSize:12}}>{q.paper}</td><td style={{fontFamily:'monospace'}}>{q.qty.toLocaleString()}</td><td style={{fontFamily:'monospace',fontWeight:500}}>{q.amount}</td><td style={{fontSize:12,color:'#888'}}>{q.date}</td><td><SBadge s={q.status}/></td><td><button className="btn-sm">↓</button></td></tr>)}</tbody></table></div>
           </div>
         )}
 
@@ -479,7 +481,7 @@ export default function DashboardPage() {
             <div className="stat-grid-3">{[{l:'In Production',v:'1',c:'#185FA5'},{l:'Ready',v:'1',c:'#6B46C1'},{l:'Delivered',v:'1',c:'#38A169'}].map(s=><div key={s.l} className="stat-card"><p className="stat-label">{s.l}</p><p className="stat-value" style={{color:s.c}}>{s.v}</p></div>)}</div>
             <div className="card" style={{padding:0,overflow:'hidden'}}><div className="sh"><p className="st">All Orders</p></div>
             <table className="table"><thead><tr><th>Order ID</th><th>Customer</th><th>Paper</th><th>Qty</th><th>Amount</th><th>Date</th><th>Status</th><th>Update</th></tr></thead>
-            <tbody>{SAMPLE_ORDERS.map(o=><tr key={o.id}><td style={{fontFamily:'monospace',color:'#888',fontSize:12}}>{o.id}</td><td style={{fontWeight:500}}>{o.customer}</td><td style={{fontSize:12}}>{o.paper}</td><td style={{fontFamily:'monospace'}}>{o.qty.toLocaleString()}</td><td style={{fontFamily:'monospace',fontWeight:500}}>{o.amount}</td><td style={{fontSize:12,color:'#888'}}>{o.date}</td><td><SBadge s={o.status}/></td><td><select className="select-sm"><option>Pending</option><option>In Production</option><option>Ready</option><option>Delivered</option></select></td></tr>)}</tbody></table></div>
+            <tbody>{([] as any[]).map((o:any)=><tr key={o.id}><td style={{fontFamily:'monospace',color:'#888',fontSize:12}}>{o.id}</td><td style={{fontWeight:500}}>{o.customer}</td><td style={{fontSize:12}}>{o.paper}</td><td style={{fontFamily:'monospace'}}>{o.qty.toLocaleString()}</td><td style={{fontFamily:'monospace',fontWeight:500}}>{o.amount}</td><td style={{fontSize:12,color:'#888'}}>{o.date}</td><td><SBadge s={o.status}/></td><td><select className="select-sm"><option>Pending</option><option>In Production</option><option>Ready</option><option>Delivered</option></select></td></tr>)}</tbody></table></div>
           </div>
         )}
 
