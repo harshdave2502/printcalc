@@ -439,7 +439,7 @@ export default function OrdersPage() {
               <p style={{ fontSize: 12, fontWeight: 600, color: '#888', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 16 }}>🖨️ Job Details</p>
               <div className="grid-2">
                 <div className="field"><label>Job Title / Description</label><input placeholder="e.g. Business Cards, Brochure" value={form.job_title} onChange={e => setForm({ ...form, job_title: e.target.value })} /></div>
-                <div className="field"><label>Size</label><input placeholder="e.g. A4 (8.3 × 11.7\")" value={form.job_size} onChange={e => setForm({ ...form, job_size: e.target.value })} /></div>
+                <div className="field"><label>Size</label><input placeholder="e.g. A4 (8.3 x 11.7 in))" value={form.job_size} onChange={e => setForm({ ...form, job_size: e.target.value })} /></div>
                 <div className="field"><label>Paper Type</label><input placeholder="e.g. Art Card 300 GSM" value={form.paper_type} onChange={e => setForm({ ...form, paper_type: e.target.value })} /></div>
                 <div className="field"><label>Quantity</label><input type="number" placeholder="e.g. 5000" value={form.quantity} onChange={e => setForm({ ...form, quantity: e.target.value })} /></div>
                 <div className="field">
