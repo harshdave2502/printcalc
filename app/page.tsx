@@ -1,438 +1,452 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { supabase } from './supabase';
 
-function formatDate(s: string) {
-  if (!s) return '—';
-  return new Date(s).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
-}
+const FEATURES = [
+  { icon: '⚡', title: 'Instant Quotes', desc: 'Calculate paper, printing, lamination, UV and binding costs in seconds. No manual work.' },
+  { icon: '🎨', title: 'White Label', desc: 'Put your business name and logo on the calculator. Your brand, your customers.' },
+  { icon: '👥', title: 'Customer Portal', desc: 'Give each customer their own login. They get quotes 24/7 without calling you.' },
+  { icon: '💰', title: 'Per-Customer Rates', desc: 'Set different rates for wholesale, retail and corporate clients. Full control.' },
+  { icon: '📋', title: 'Quotes & Orders', desc: 'Generate professional quotes, track orders and manage payments in one place.' },
+  { icon: '🌍', title: 'Multi-Currency', desc: 'Works in USD, INR, GBP, AED, EUR and more. Perfect for global businesses.' },
+];
 
-const SC: Record<string, string> = {
-  Draft: '#888', Sent: '#185FA5', Converted: '#38A169', Expired: '#E53E3E',
-  Pending: '#D97706', 'In Production': '#185FA5', Ready: '#6B46C1', Delivered: '#38A169', Cancelled: '#E53E3E',
-};
-const SBG: Record<string, string> = {
-  Draft: '#F5F5F5', Sent: '#EEF4FA', Converted: '#F0FFF4', Expired: '#FFF0F0',
-  Pending: '#FFFBEB', 'In Production': '#EEF4FA', Ready: '#F5F0FF', Delivered: '#F0FFF4', Cancelled: '#FFF0F0',
-};
+const HOW_IT_WORKS = [
+  { step: '01', icon: '🔧', title: 'Set your rates', desc: 'Enter your paper costs, printing rates, lamination and finishing prices in minutes.' },
+  { step: '02', icon: '🔗', title: 'Invite your customers', desc: 'Share a link with your clients. Each gets their own portal with your custom rates.' },
+  { step: '03', icon: '🚀', title: 'Quotes flow in', desc: 'Customers calculate and request quotes themselves. No more calls at odd hours.' },
+];
 
-function Badge({ s }: { s: string }) {
-  return <span style={{ padding: '3px 10px', borderRadius: 4, fontSize: 11, fontWeight: 600, background: SBG[s] || '#F5F5F5', color: SC[s] || '#888' }}>{s}</span>;
-}
+const PLANS = [
+  {
+    name: 'Free',
+    price: '$0',
+    period: 'forever',
+    desc: 'Try PrintCalc with demo rates. No credit card needed.',
+    features: ['1 user', 'Demo rates only', 'Calculator access', '5 quotes / month', 'PrintCalc branding'],
+    cta: 'Start Free',
+    href: '/signup',
+    hot: false,
+  },
+  {
+    name: 'Solo',
+    price: 'Coming Soon',
+    period: '',
+    desc: 'For designers, freelancers and small print businesses.',
+    features: ['1 owner + 3 staff', 'Your own custom rates', 'Unlimited quotes & orders', 'Dashboard & analytics', 'Email support'],
+    cta: 'Join Waitlist',
+    href: '/signup',
+    hot: false,
+  },
+  {
+    name: 'Press Pro',
+    price: 'Coming Soon',
+    period: '',
+    desc: 'For print shops giving customers self-service quotes.',
+    features: ['1 owner + 10 staff', 'White label your brand', 'Unlimited customers', 'Per-customer rate cards', 'Customer self-service portal', 'Priority support'],
+    cta: 'Join Waitlist',
+    href: '/signup',
+    hot: true,
+  },
+];
 
-function Avatar({ name, size = 36 }: { name: string; size?: number }) {
-  const colors = ['#C84B31', '#185FA5', '#6B46C1', '#276749', '#D97706'];
-  const color = colors[name.charCodeAt(0) % colors.length];
-  return (
-    <div style={{ width: size, height: size, borderRadius: '50%', background: color, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: size * 0.4, fontWeight: 700, flexShrink: 0 }}>
-      {name?.[0]?.toUpperCase()}
-    </div>
-  );
-}
+const TESTIMONIALS = [
+  { name: 'Rajesh Mehta', role: 'Owner, Mehta Offset Printers', location: 'Mumbai', av: 'R', text: 'Before PrintCalc, my staff spent 20 minutes on every quote call. Now customers get rates instantly. Total game changer.' },
+  { name: 'Sarah Chen', role: 'Freelance Print Designer', location: 'Singapore', av: 'S', text: 'I use it every day for client estimates. The calculations are spot-on and the PDF quotes look incredibly professional.' },
+  { name: 'Omar Al-Rashid', role: 'Director, Gulf Print Solutions', location: 'Dubai', av: 'O', text: 'The per-customer pricing is brilliant. Different rates for different clients, managed beautifully from one dashboard.' },
+];
 
-export default function CustomersPage() {
-  const [sub, setSub] = useState<any>(null);
-  const [customers, setCustomers] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
-  const [selCust, setSelCust] = useState<any>(null);
-  const [custOrders, setCustOrders] = useState<any[]>([]);
-  const [custQuotes, setCustQuotes] = useState<any[]>([]);
-  const [detailLoading, setDetailLoading] = useState(false);
-  const [showAdd, setShowAdd] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [saveMsg, setSaveMsg] = useState('');
-  const [newCust, setNewCust] = useState({ name: '', email: '', phone: '', company: '' });
+const STATS = [
+  { v: '10,000+', l: 'Quotes Generated' },
+  { v: '500+', l: 'Print Businesses' },
+  { v: '40+', l: 'Countries' },
+  { v: '< 2 min', l: 'Avg Quote Time' },
+];
 
-  useEffect(() => { loadData(); }, []);
+export default function LandingPage() {
+  const [scrolled, setScrolled] = useState(false);
+  const [activeT, setActiveT] = useState(0);
 
-  const loadData = async () => {
-    setLoading(true);
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) { window.location.href = '/login'; return; }
-    const { data: profile } = await supabase.from('subscribers').select('*').eq('id', user.id).single();
-    if (profile) setSub(profile);
+  useEffect(() => {
+    const fn = () => setScrolled(window.scrollY > 50);
+    window.addEventListener('scroll', fn);
+    return () => window.removeEventListener('scroll', fn);
+  }, []);
 
-    // Pull unique customers from orders + quotes combined
-    const [{ data: orders }, { data: quotes }] = await Promise.all([
-      supabase.from('orders').select('customer_name,customer_email,customer_phone,customer_company,total_amount,due_amount,status,created_at').eq('subscriber_id', user.id),
-      supabase.from('quotes').select('customer_name,customer_email,customer_phone,customer_company,total_amount,status,created_at').eq('subscriber_id', user.id),
-    ]);
-
-    // Build customer map keyed by email (or name if no email)
-    const map: Record<string, any> = {};
-    for (const o of orders || []) {
-      const key = o.customer_email || o.customer_name;
-      if (!map[key]) map[key] = { name: o.customer_name, email: o.customer_email, phone: o.customer_phone, company: o.customer_company, orders: [], quotes: [], total_spend: 0, total_due: 0 };
-      map[key].orders.push(o);
-      map[key].total_spend += o.total_amount || 0;
-      map[key].total_due += o.due_amount || 0;
-    }
-    for (const q of quotes || []) {
-      const key = q.customer_email || q.customer_name;
-      if (!map[key]) map[key] = { name: q.customer_name, email: q.customer_email, phone: q.customer_phone, company: q.customer_company, orders: [], quotes: [], total_spend: 0, total_due: 0 };
-      map[key].quotes.push(q);
-    }
-
-    // Sort by total spend desc
-    const list = Object.values(map).sort((a: any, b: any) => b.total_spend - a.total_spend);
-    setCustomers(list);
-    setLoading(false);
-  };
-
-  const loadCustomerDetail = async (cust: any) => {
-    setDetailLoading(true);
-    setSelCust(cust);
-    const { data: { user } } = await supabase.auth.getUser();
-    const email = cust.email;
-    const name = cust.name;
-    const [{ data: ord }, { data: quo }] = await Promise.all([
-      email
-        ? supabase.from('orders').select('*').eq('subscriber_id', user!.id).eq('customer_email', email).order('created_at', { ascending: false })
-        : supabase.from('orders').select('*').eq('subscriber_id', user!.id).eq('customer_name', name).order('created_at', { ascending: false }),
-      email
-        ? supabase.from('quotes').select('*').eq('subscriber_id', user!.id).eq('customer_email', email).order('created_at', { ascending: false })
-        : supabase.from('quotes').select('*').eq('subscriber_id', user!.id).eq('customer_name', name).order('created_at', { ascending: false }),
-    ]);
-    setCustOrders(ord || []);
-    setCustQuotes(quo || []);
-    setDetailLoading(false);
-  };
-
-  const addCustomer = async () => {
-    if (!newCust.name) { setSaveMsg('Please enter a name.'); setTimeout(() => setSaveMsg(''), 2000); return; }
-    setSaving(true);
-    // Add a placeholder quote to register this customer
-    const { data: { user } } = await supabase.auth.getUser();
-    // We just store them locally — they'll appear properly once they get a quote/order
-    setCustomers(prev => [{
-      name: newCust.name, email: newCust.email, phone: newCust.phone,
-      company: newCust.company, orders: [], quotes: [], total_spend: 0, total_due: 0,
-    }, ...prev]);
-    setNewCust({ name: '', email: '', phone: '', company: '' });
-    setShowAdd(false);
-    setSaveMsg('Customer added!');
-    setTimeout(() => setSaveMsg(''), 2000);
-    setSaving(false);
-  };
-
-  const logout = async () => { await supabase.auth.signOut(); window.location.href = '/login'; };
-
-  const sym = sub?.currency_symbol || '₹';
-  const fmt = (n: number) => sym + (n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-
-  const filtered = customers.filter(c =>
-    c.name?.toLowerCase().includes(search.toLowerCase()) ||
-    c.email?.toLowerCase().includes(search.toLowerCase()) ||
-    c.company?.toLowerCase().includes(search.toLowerCase())
-  );
-
-  const IS: any = { padding: '9px 12px', border: '1.5px solid #E8E8E8', borderRadius: 8, fontSize: 13, fontFamily: 'DM Sans,sans-serif', color: '#1A1A1A', background: '#FAFAFA', outline: 'none', width: '100%' };
-
-  if (loading) return (
-    <main style={{ minHeight: '100vh', background: '#F7F6F3', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'DM Sans,sans-serif' }}>
-      <p style={{ color: '#888' }}>Loading customers...</p>
-    </main>
-  );
+  useEffect(() => {
+    const t = setInterval(() => setActiveT(p => (p + 1) % TESTIMONIALS.length), 4500);
+    return () => clearInterval(t);
+  }, []);
 
   return (
     <>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap');
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: 'DM Sans', sans-serif; background: #F7F6F3; }
-        .nav { background: #1A1A1A; padding: 0 24px; display: flex; align-items: center; justify-content: space-between; height: 56px; position: sticky; top: 0; z-index: 100; }
-        .content { max-width: 1000px; margin: 0 auto; padding: 28px 24px; }
-        .card { background: #fff; border-radius: 12px; border: 1px solid #EBEBEB; padding: 24px; margin-bottom: 16px; }
-        .sh { background: #F9F9F9; border-bottom: 1px solid #F0F0F0; padding: 12px 20px; display: flex; justify-content: space-between; align-items: center; }
-        .st { font-size: 12px; font-weight: 600; color: #666; text-transform: uppercase; letter-spacing: 0.08em; }
-        .table { width: 100%; border-collapse: collapse; }
-        .table th { text-align: left; font-size: 11px; font-weight: 600; color: #999; text-transform: uppercase; letter-spacing: 0.06em; padding: 10px 16px; border-bottom: 1px solid #F0F0F0; }
-        .table td { padding: 12px 16px; border-bottom: 1px solid #F8F8F8; font-size: 13px; color: #1A1A1A; vertical-align: middle; }
-        .table tr:last-child td { border-bottom: none; }
-        .table tbody tr:hover td { background: #FAFAFA; cursor: pointer; }
-        .btn-primary { padding: 9px 20px; background: #1A1A1A; color: #fff; border: none; border-radius: 8px; font-size: 13px; font-weight: 500; cursor: pointer; font-family: inherit; }
-        .btn-red { padding: 9px 20px; background: #C84B31; color: #fff; border: none; border-radius: 8px; font-size: 13px; font-weight: 500; cursor: pointer; font-family: inherit; }
-        .btn-sm { padding: 5px 12px; background: #F5F5F5; color: #555; border: none; border-radius: 6px; font-size: 12px; cursor: pointer; font-family: inherit; }
-        .btn-outline { padding: 9px 20px; background: #fff; color: #1A1A1A; border: 1.5px solid #E8E8E8; border-radius: 8px; font-size: 13px; font-weight: 500; cursor: pointer; font-family: inherit; }
-        .search { padding: 9px 14px; border: 1.5px solid #E8E8E8; border-radius: 8px; font-size: 13px; font-family: inherit; color: #1A1A1A; background: #fff; outline: none; width: 260px; }
-        .search:focus { border-color: #C84B31; }
-        .field { margin-bottom: 14px; }
-        .field label { display: block; font-size: 11px; font-weight: 600; color: #888; margin-bottom: 5px; text-transform: uppercase; letter-spacing: 0.06em; }
-        input { padding: 9px 12px; border: 1.5px solid #E8E8E8; border-radius: 8px; font-size: 13px; font-family: 'DM Sans', sans-serif; color: #1A1A1A; background: #FAFAFA; outline: none; width: 100%; }
-        input:focus { border-color: #C84B31; background: #fff; }
-        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-        .stat-card { background: #fff; border: 1px solid #EBEBEB; border-radius: 10px; padding: 16px; }
-        .info-row { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #F5F5F5; }
-        .save-msg { color: #38A169; font-size: 13px; }
-        .err-msg { color: #E53E3E; font-size: 13px; }
-        @media(max-width:640px) { .content { padding: 16px; } .grid-2 { grid-template-columns: 1fr; } .search { width: 100%; } }
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@300;400;500;600&display=swap');
+        *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+        html{scroll-behavior:smooth;}
+        body{font-family:'Inter',sans-serif;background:#0D0B1A;color:#fff;overflow-x:hidden;}
+        :root{
+          --dp:#0D0B1A;--dm:#130F2A;--d2:#1E1640;--pm:#7C3AED;--pl:#9461FB;--pa:#A78BFA;
+          --pk:#D946EF;--gr:#6B7280;--gr2:#9CA3AF;--bd:rgba(124,58,237,0.2);
+          --glow:rgba(124,58,237,0.35);--card:rgba(30,22,64,0.8);
+        }
+        ::-webkit-scrollbar{width:5px;}
+        ::-webkit-scrollbar-track{background:var(--dp);}
+        ::-webkit-scrollbar-thumb{background:var(--d2);border-radius:3px;}
+
+        /* NAV */
+        .nav{position:fixed;top:0;left:0;right:0;z-index:100;padding:18px 0;transition:all 0.3s;}
+        .nav.on{background:rgba(13,11,26,0.93);backdrop-filter:blur(20px);padding:12px 0;border-bottom:1px solid var(--bd);}
+        .ni{max-width:1140px;margin:0 auto;padding:0 32px;display:flex;align-items:center;justify-content:space-between;}
+        .logo{display:flex;align-items:center;gap:10px;text-decoration:none;}
+        .logo-box{width:34px;height:34px;background:linear-gradient(135deg,var(--pm),var(--pl));border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:17px;}
+        .logo-name{font-family:'Plus Jakarta Sans',sans-serif;font-size:19px;font-weight:800;color:#fff;letter-spacing:-0.02em;}
+        .nl{display:flex;align-items:center;gap:24px;}
+        .nl a{font-size:14px;color:var(--gr2);text-decoration:none;font-weight:500;transition:color 0.2s;}
+        .nl a:hover{color:#fff;}
+        .nbtn{font-size:14px;color:var(--pa);background:transparent;border:1px solid var(--bd);padding:8px 18px;border-radius:8px;cursor:pointer;font-family:inherit;font-weight:500;text-decoration:none;transition:all 0.2s;}
+        .nbtn:hover{border-color:var(--pl);color:#fff;}
+        .ncta{font-size:14px;font-weight:600;color:#fff;background:linear-gradient(135deg,var(--pm),var(--pl));padding:9px 22px;border-radius:8px;text-decoration:none;transition:all 0.2s;box-shadow:0 0 20px var(--glow);}
+        .ncta:hover{transform:translateY(-1px);box-shadow:0 0 35px var(--glow);}
+        @media(max-width:768px){.nl{display:none;}}
+
+        /* HERO */
+        .hero{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:130px 24px 80px;position:relative;overflow:hidden;}
+        .hg1{position:absolute;top:-80px;left:50%;transform:translateX(-50%);width:900px;height:700px;background:radial-gradient(ellipse,rgba(124,58,237,0.3) 0%,transparent 65%);pointer-events:none;}
+        .hg2{position:absolute;bottom:50px;right:-100px;width:400px;height:400px;background:radial-gradient(ellipse,rgba(217,70,239,0.12) 0%,transparent 65%);pointer-events:none;}
+        .hgrid{position:absolute;inset:0;background-image:linear-gradient(rgba(124,58,237,0.05) 1px,transparent 1px),linear-gradient(90deg,rgba(124,58,237,0.05) 1px,transparent 1px);background-size:72px 72px;pointer-events:none;}
+
+        .hbadge{display:inline-flex;align-items:center;gap:8px;background:rgba(124,58,237,0.15);border:1px solid rgba(124,58,237,0.4);border-radius:100px;padding:6px 18px;font-size:13px;color:var(--pa);font-weight:500;margin-bottom:28px;animation:fu 0.5s ease both;}
+        .bdot{width:6px;height:6px;border-radius:50%;background:var(--pk);box-shadow:0 0 8px var(--pk);animation:bl 2s infinite;}
+        @keyframes bl{0%,100%{opacity:1}50%{opacity:0.35}}
+
+        .htitle{font-family:'Plus Jakarta Sans',sans-serif;font-size:clamp(38px,6.5vw,74px);font-weight:800;line-height:1.07;letter-spacing:-0.03em;color:#fff;margin-bottom:22px;animation:fu 0.5s 0.1s ease both;max-width:840px;}
+        .hgrad{background:linear-gradient(135deg,var(--pa) 0%,var(--pk) 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;}
+        .hsub{font-size:clamp(15px,2vw,18px);color:var(--gr2);max-width:540px;line-height:1.7;margin-bottom:38px;animation:fu 0.5s 0.2s ease both;}
+        .hacts{display:flex;gap:14px;flex-wrap:wrap;justify-content:center;animation:fu 0.5s 0.3s ease both;}
+        .bp{display:inline-flex;align-items:center;gap:8px;background:linear-gradient(135deg,var(--pm),var(--pl));color:#fff;padding:13px 30px;border-radius:10px;font-size:15px;font-weight:600;text-decoration:none;transition:all 0.2s;box-shadow:0 0 28px var(--glow);font-family:'Plus Jakarta Sans',sans-serif;}
+        .bp:hover{transform:translateY(-2px);box-shadow:0 0 48px var(--glow);filter:brightness(1.08);}
+        .bs{display:inline-flex;align-items:center;gap:8px;background:transparent;color:#fff;padding:13px 30px;border-radius:10px;font-size:15px;font-weight:600;text-decoration:none;border:1px solid rgba(124,58,237,0.4);transition:all 0.2s;font-family:'Plus Jakarta Sans',sans-serif;}
+        .bs:hover{border-color:var(--pl);background:rgba(124,58,237,0.12);}
+        .hnote{font-size:13px;color:var(--gr);margin-top:14px;animation:fu 0.5s 0.4s ease both;}
+        @keyframes fu{from{opacity:0;transform:translateY(22px)}to{opacity:1;transform:translateY(0)}}
+
+        /* PREVIEW */
+        .hprev{margin-top:56px;max-width:800px;width:100%;animation:fu 0.7s 0.55s ease both;position:relative;}
+        .pglow{position:absolute;inset:-1px;border-radius:21px;background:linear-gradient(135deg,var(--pm),var(--pk),var(--d2));z-index:-1;opacity:0.45;filter:blur(0.5px);}
+        .pcard{background:rgba(19,15,42,0.97);border:1px solid var(--bd);border-radius:20px;padding:26px;backdrop-filter:blur(16px);}
+        .pbar{display:flex;align-items:center;gap:6px;margin-bottom:18px;padding-bottom:14px;border-bottom:1px solid var(--bd);}
+        .pdot{width:11px;height:11px;border-radius:50%;}
+        .ptabs{display:flex;gap:4px;margin-left:12px;}
+        .pt{padding:5px 13px;border-radius:6px;font-size:12px;font-weight:500;}
+        .pt.a{background:var(--pm);color:#fff;}
+        .pt.i{color:var(--gr2);}
+        .pgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;}
+        .pf{background:rgba(124,58,237,0.1);border:1px solid var(--bd);border-radius:10px;padding:11px 13px;}
+        .pfl{font-size:10px;font-weight:600;color:var(--gr);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:3px;}
+        .pfv{font-size:13px;font-weight:500;color:#fff;}
+        .pres{background:linear-gradient(135deg,var(--pm),var(--d2));border-radius:11px;padding:18px 22px;display:flex;justify-content:space-between;align-items:center;}
+        .prl{font-size:11px;color:rgba(255,255,255,0.55);margin-bottom:2px;}
+        .prn{font-size:11px;color:rgba(255,255,255,0.3);}
+        .prv{font-size:30px;font-weight:700;font-family:'Plus Jakarta Sans',sans-serif;letter-spacing:-0.02em;}
+
+        /* STATS */
+        .stats{background:var(--dm);border-top:1px solid var(--bd);border-bottom:1px solid var(--bd);padding:40px 32px;}
+        .si{max-width:1140px;margin:0 auto;display:grid;grid-template-columns:repeat(4,1fr);gap:20px;}
+        .sit{text-align:center;}
+        .sv{font-family:'Plus Jakarta Sans',sans-serif;font-size:36px;font-weight:800;background:linear-gradient(135deg,#fff 0%,var(--pa) 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;letter-spacing:-0.02em;}
+        .sl{font-size:13px;color:var(--gr);margin-top:4px;}
+        @media(max-width:600px){.si{grid-template-columns:repeat(2,1fr);}}
+
+        /* SECTIONS */
+        .sec{padding:90px 32px;}
+        .sci{max-width:1140px;margin:0 auto;}
+        .slbl{font-size:12px;font-weight:600;color:var(--pl);text-transform:uppercase;letter-spacing:0.12em;margin-bottom:12px;display:flex;align-items:center;gap:8px;}
+        .slbl::before{content:'';width:18px;height:2px;background:linear-gradient(90deg,var(--pm),var(--pk));border-radius:1px;}
+        .stit{font-family:'Plus Jakarta Sans',sans-serif;font-size:clamp(26px,3.8vw,44px);font-weight:800;letter-spacing:-0.025em;color:#fff;margin-bottom:12px;line-height:1.15;}
+        .ssub{font-size:16px;color:var(--gr2);line-height:1.7;max-width:480px;}
+
+        /* FEATURES GRID */
+        .fg{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-top:52px;}
+        .fc{background:var(--card);border:1px solid var(--bd);border-radius:16px;padding:26px;transition:all 0.25s;position:relative;overflow:hidden;}
+        .fc::after{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,var(--pm),var(--pk));opacity:0;transition:opacity 0.25s;}
+        .fc:hover{border-color:var(--pl);transform:translateY(-4px);box-shadow:0 16px 48px rgba(124,58,237,0.18);}
+        .fc:hover::after{opacity:1;}
+        .fi{width:46px;height:46px;background:rgba(124,58,237,0.18);border:1px solid var(--bd);border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:21px;margin-bottom:16px;}
+        .ft{font-family:'Plus Jakarta Sans',sans-serif;font-size:16px;font-weight:700;color:#fff;margin-bottom:8px;}
+        .fd{font-size:14px;color:var(--gr2);line-height:1.65;}
+        @media(max-width:1024px){.fg{grid-template-columns:repeat(2,1fr);}}
+        @media(max-width:600px){.fg{grid-template-columns:1fr;}}
+
+        /* HOW IT WORKS */
+        .hwbg{background:var(--dm);}
+        .sg{display:grid;grid-template-columns:repeat(3,1fr);gap:36px;margin-top:52px;position:relative;}
+        .sg::before{content:'';position:absolute;top:38px;left:calc(16%+38px);right:calc(16%+38px);height:1px;background:linear-gradient(90deg,transparent,var(--pl),transparent);}
+        .sc2{text-align:center;}
+        .scc{width:76px;height:76px;margin:0 auto 20px;background:linear-gradient(135deg,var(--pm),var(--d2));border:1px solid rgba(124,58,237,0.45);border-radius:50%;display:flex;flex-direction:column;align-items:center;justify-content:center;box-shadow:0 0 28px rgba(124,58,237,0.28);position:relative;z-index:1;}
+        .sico{font-size:22px;}
+        .sn{font-size:9px;font-weight:600;color:rgba(255,255,255,0.4);letter-spacing:0.1em;margin-top:2px;}
+        .stitle{font-family:'Plus Jakarta Sans',sans-serif;font-size:17px;font-weight:700;color:#fff;margin-bottom:9px;}
+        .sdesc{font-size:14px;color:var(--gr2);line-height:1.65;}
+        @media(max-width:768px){.sg{grid-template-columns:1fr;}.sg::before{display:none;}}
+
+        /* PRICING */
+        .pg{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-top:52px;align-items:start;}
+        .pl2{border-radius:18px;padding:30px;border:1px solid var(--bd);background:var(--card);position:relative;transition:all 0.25s;}
+        .pl2:hover{transform:translateY(-4px);box-shadow:0 20px 56px rgba(124,58,237,0.18);}
+        .pl2.h{background:linear-gradient(145deg,var(--d2) 0%,rgba(19,15,42,0.9) 100%);border-color:var(--pl);box-shadow:0 0 36px rgba(124,58,237,0.22);}
+        .pchip{position:absolute;top:-12px;left:50%;transform:translateX(-50%);background:linear-gradient(135deg,var(--pm),var(--pk));color:#fff;font-size:11px;font-weight:700;padding:4px 16px;border-radius:100px;text-transform:uppercase;letter-spacing:0.08em;white-space:nowrap;}
+        .pname{font-family:'Plus Jakarta Sans',sans-serif;font-size:19px;font-weight:800;color:#fff;margin-bottom:6px;}
+        .pprice{font-family:'Plus Jakarta Sans',sans-serif;font-size:36px;font-weight:800;letter-spacing:-0.03em;margin:14px 0 4px;color:#fff;}
+        .pprice.g{background:linear-gradient(135deg,var(--pa),var(--pk));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;}
+        .pper{font-size:13px;color:var(--gr);margin-bottom:10px;}
+        .pdesc{font-size:13px;color:var(--gr2);line-height:1.55;margin-bottom:22px;padding-bottom:22px;border-bottom:1px solid var(--bd);}
+        .plist{list-style:none;margin-bottom:26px;}
+        .plist li{font-size:13px;color:var(--gr2);padding:6px 0;display:flex;align-items:center;gap:9px;}
+        .plist li::before{content:'✓';font-weight:700;color:var(--pa);font-size:12px;flex-shrink:0;}
+        .pl2.h .plist li::before{color:var(--pk);}
+        .pcta{display:block;text-align:center;padding:12px;border-radius:9px;font-size:14px;font-weight:600;text-decoration:none;transition:all 0.2s;font-family:'Plus Jakarta Sans',sans-serif;}
+        .pcp{background:linear-gradient(135deg,var(--pm),var(--pl));color:#fff;box-shadow:0 0 18px var(--glow);}
+        .pcp:hover{filter:brightness(1.1);transform:translateY(-1px);}
+        .pco{border:1px solid var(--bd);color:#fff;}
+        .pco:hover{border-color:var(--pl);background:rgba(124,58,237,0.12);}
+        @media(max-width:768px){.pg{grid-template-columns:1fr;}}
+
+        /* TESTIMONIALS */
+        .tbg{background:var(--dm);}
+        .tw{max-width:700px;margin:48px auto 0;}
+        .tc{background:var(--card);border:1px solid var(--bd);border-radius:18px;padding:38px;text-align:center;}
+        .tst{color:var(--pl);font-size:17px;letter-spacing:2px;margin-bottom:18px;}
+        .tt{font-size:clamp(15px,2vw,19px);color:#fff;line-height:1.7;margin-bottom:26px;opacity:0.9;font-style:italic;}
+        .ta{display:flex;align-items:center;justify-content:center;gap:13px;}
+        .tav{width:44px;height:44px;border-radius:50%;background:linear-gradient(135deg,var(--pm),var(--pk));display:flex;align-items:center;justify-content:center;font-weight:700;font-size:17px;}
+        .tname{font-weight:600;color:#fff;font-size:14px;}
+        .trole{font-size:12px;color:var(--gr);}
+        .tdots{display:flex;justify-content:center;gap:7px;margin-top:20px;}
+        .td{width:7px;height:7px;border-radius:50%;background:var(--d2);cursor:pointer;transition:all 0.2s;}
+        .td.a{background:var(--pl);width:22px;border-radius:3px;}
+
+        /* CTA */
+        .ctasec{padding:96px 32px;text-align:center;background:linear-gradient(180deg,var(--dp) 0%,var(--dm) 100%);position:relative;overflow:hidden;}
+        .ctag{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:700px;height:400px;background:radial-gradient(ellipse,rgba(124,58,237,0.25) 0%,transparent 65%);pointer-events:none;}
+        .ctai{max-width:580px;margin:0 auto;position:relative;}
+        .ctit{font-family:'Plus Jakarta Sans',sans-serif;font-size:clamp(28px,4.5vw,50px);font-weight:800;letter-spacing:-0.03em;color:#fff;margin-bottom:14px;line-height:1.1;}
+        .csub{font-size:17px;color:var(--gr2);margin-bottom:34px;line-height:1.65;}
+
+        /* FOOTER */
+        .foot{background:#090714;padding:52px 32px 26px;border-top:1px solid var(--bd);}
+        .footi{max-width:1140px;margin:0 auto;}
+        .ftop{display:flex;justify-content:space-between;gap:36px;margin-bottom:44px;flex-wrap:wrap;}
+        .fbname{font-family:'Plus Jakarta Sans',sans-serif;font-size:20px;font-weight:800;color:#fff;display:flex;align-items:center;gap:9px;margin-bottom:9px;}
+        .fbtag{font-size:13px;color:var(--gr);max-width:210px;line-height:1.6;}
+        .fcol h5{font-size:11px;font-weight:600;color:var(--gr2);text-transform:uppercase;letter-spacing:0.1em;margin-bottom:14px;}
+        .fcol a{display:block;font-size:13px;color:var(--gr);text-decoration:none;margin-bottom:9px;transition:color 0.2s;}
+        .fcol a:hover{color:var(--pa);}
+        .fbot{border-top:1px solid rgba(255,255,255,0.05);padding-top:22px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;}
+        .fcopy{font-size:12px;color:var(--gr);}
+        .fpay{display:flex;gap:6px;align-items:center;}
+        .fpb{font-size:11px;font-weight:500;color:var(--gr);background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.07);padding:3px 9px;border-radius:5px;}
       `}</style>
 
       {/* NAV */}
-      <nav className="nav">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <div style={{ width: 8, height: 8, background: '#C84B31', borderRadius: '50%' }} />
-          <span style={{ fontSize: 14, fontWeight: 500, color: '#fff' }}>PrintCalc</span>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-          <a href="/" style={{ fontSize: 13, color: '#888', textDecoration: 'none' }}>Calculator</a>
-          <a href="/quotes" style={{ fontSize: 13, color: '#888', textDecoration: 'none' }}>Quotes</a>
-          <a href="/orders" style={{ fontSize: 13, color: '#888', textDecoration: 'none' }}>Orders</a>
-          <a href="/dashboard" style={{ fontSize: 13, color: '#888', textDecoration: 'none' }}>Dashboard</a>
-          <button style={{ fontSize: 13, color: '#888', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }} onClick={logout}>Logout</button>
+      <nav className={`nav ${scrolled ? 'on' : ''}`}>
+        <div className="ni">
+          <a href="/" className="logo">
+            <div className="logo-box">🖨️</div>
+            <span className="logo-name">PrintCalc</span>
+          </a>
+          <div className="nl">
+            <a href="#features">Features</a>
+            <a href="#how-it-works">How it works</a>
+            <a href="#pricing">Pricing</a>
+            <a href="/login" className="nbtn">Login</a>
+            <a href="/signup" className="ncta">Start Free →</a>
+          </div>
         </div>
       </nav>
 
-      <div className="content">
-
-        {/* ── LIST VIEW ── */}
-        {!selCust && (
-          <>
-            {/* Stats */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 12, marginBottom: 16 }}>
-              {[
-                { l: 'Total Customers', v: customers.length.toString() },
-                { l: 'With Active Orders', v: customers.filter(c => c.orders.some((o: any) => !['Delivered', 'Cancelled'].includes(o.status))).length.toString() },
-                { l: 'Total Revenue', v: fmt(customers.reduce((s, c) => s + c.total_spend, 0)), mono: true },
-                { l: 'Total Due', v: fmt(customers.reduce((s, c) => s + c.total_due, 0)), mono: true, color: customers.reduce((s, c) => s + c.total_due, 0) > 0 ? '#E53E3E' : '#38A169' },
-              ].map(s => (
-                <div key={s.l} className="stat-card">
-                  <p style={{ fontSize: 11, color: '#999', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>{s.l}</p>
-                  <p style={{ fontSize: s.mono ? 17 : 26, fontWeight: 600, fontFamily: s.mono ? 'DM Mono,monospace' : 'inherit', color: s.color || '#1A1A1A' }}>{s.v}</p>
-                </div>
+      {/* HERO */}
+      <section className="hero">
+        <div className="hg1" /><div className="hg2" /><div className="hgrid" />
+        <div className="hbadge"><div className="bdot" />Free plan available — no credit card required</div>
+        <h1 className="htitle">Print pricing that<br /><span className="hgrad">works while you sleep</span></h1>
+        <p className="hsub">The all-in-one calculator for print businesses. Set your rates, invite customers, and let them get instant quotes 24/7 — without calling you.</p>
+        <div className="hacts">
+          <a href="/signup" className="bp">Start for free →</a>
+          <a href="#how-it-works" className="bs">See how it works</a>
+        </div>
+        <p className="hnote">Free forever plan · Setup in 10 minutes · No technical skills needed</p>
+        <div className="hprev">
+          <div className="pglow" />
+          <div className="pcard">
+            <div className="pbar">
+              <div className="pdot" style={{background:'#FF5F57'}} />
+              <div className="pdot" style={{background:'#FEBC2E'}} />
+              <div className="pdot" style={{background:'#28C840'}} />
+              <div className="ptabs">
+                <div className="pt a">📄 Paper</div>
+                <div className="pt i">🖨️ Printing</div>
+                <div className="pt i">✅ Full Job</div>
+              </div>
+            </div>
+            <div className="pgrid">
+              {[{l:'Paper Type',v:'Art Card 300 GSM'},{l:'Final Size',v:'A4 · 8.3 × 11.7"'},{l:'Quantity',v:'5,000 sheets'},{l:'Finishing',v:'Matt Lam + UV'}].map(f=>(
+                <div key={f.l} className="pf"><div className="pfl">{f.l}</div><div className="pfv">{f.v}</div></div>
               ))}
             </div>
-
-            {/* Add customer form */}
-            {showAdd && (
-              <div className="card" style={{ border: '1.5px solid #C84B31' }}>
-                <p style={{ fontSize: 13, fontWeight: 600, marginBottom: 16 }}>➕ Add New Customer</p>
-                <div className="grid-2">
-                  <div className="field"><label>Name *</label><input placeholder="Customer name" value={newCust.name} onChange={e => setNewCust({ ...newCust, name: e.target.value })} /></div>
-                  <div className="field"><label>Company</label><input placeholder="Company name" value={newCust.company} onChange={e => setNewCust({ ...newCust, company: e.target.value })} /></div>
-                  <div className="field"><label>Email</label><input type="email" placeholder="email@example.com" value={newCust.email} onChange={e => setNewCust({ ...newCust, email: e.target.value })} /></div>
-                  <div className="field"><label>Phone</label><input placeholder="Phone number" value={newCust.phone} onChange={e => setNewCust({ ...newCust, phone: e.target.value })} /></div>
-                </div>
-                <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-                  <button className="btn-red" onClick={addCustomer} disabled={saving}>{saving ? 'Saving...' : 'Add Customer'}</button>
-                  <button className="btn-outline" onClick={() => { setShowAdd(false); setNewCust({ name: '', email: '', phone: '', company: '' }); }}>Cancel</button>
-                  {saveMsg && <span className={saveMsg.startsWith('Please') ? 'err-msg' : 'save-msg'}>{saveMsg}</span>}
-                </div>
-              </div>
-            )}
-
-            {/* Customers table */}
-            <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-              <div className="sh">
-                <p className="st">All Customers ({filtered.length})</p>
-                <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-                  <input
-                    className="search"
-                    placeholder="🔍 Search by name, email, company..."
-                    value={search}
-                    onChange={e => setSearch(e.target.value)}
-                  />
-                  <button className="btn-red" onClick={() => setShowAdd(true)}>+ Add Customer</button>
-                </div>
-              </div>
-
-              {filtered.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: 48 }}>
-                  <p style={{ fontSize: 32, marginBottom: 12 }}>👥</p>
-                  <p style={{ fontSize: 15, color: '#888', marginBottom: 8 }}>
-                    {search ? `No customers matching "${search}"` : 'No customers yet'}
-                  </p>
-                  <p style={{ fontSize: 13, color: '#BBB' }}>
-                    Customers appear automatically when you create quotes or orders for them.
-                  </p>
-                </div>
-              ) : (
-                <table className="table">
-                  <thead>
-                    <tr>
-                      <th>Customer</th>
-                      <th>Contact</th>
-                      <th>Orders</th>
-                      <th>Quotes</th>
-                      <th>Total Spend</th>
-                      <th>Balance Due</th>
-                      <th>Last Activity</th>
-                      <th></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filtered.map((c, i) => {
-                      const lastActivity = [...c.orders, ...c.quotes].sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
-                      return (
-                        <tr key={i} onClick={() => loadCustomerDetail(c)}>
-                          <td>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                              <Avatar name={c.name} />
-                              <div>
-                                <p style={{ fontWeight: 600 }}>{c.name}</p>
-                                {c.company && <p style={{ fontSize: 11, color: '#AAA' }}>{c.company}</p>}
-                              </div>
-                            </div>
-                          </td>
-                          <td>
-                            {c.email && <p style={{ fontSize: 12 }}>{c.email}</p>}
-                            {c.phone && <p style={{ fontSize: 12, color: '#888' }}>{c.phone}</p>}
-                            {!c.email && !c.phone && <span style={{ color: '#CCC', fontSize: 12 }}>—</span>}
-                          </td>
-                          <td>
-                            <span style={{ fontFamily: 'monospace', fontWeight: 600 }}>{c.orders.length}</span>
-                            {c.orders.filter((o: any) => !['Delivered', 'Cancelled'].includes(o.status)).length > 0 && (
-                              <span style={{ marginLeft: 6, fontSize: 11, background: '#EEF4FA', color: '#185FA5', padding: '2px 6px', borderRadius: 4 }}>
-                                {c.orders.filter((o: any) => !['Delivered', 'Cancelled'].includes(o.status)).length} active
-                              </span>
-                            )}
-                          </td>
-                          <td style={{ fontFamily: 'monospace', fontWeight: 600 }}>{c.quotes.length}</td>
-                          <td style={{ fontFamily: 'monospace', fontWeight: 600 }}>{fmt(c.total_spend)}</td>
-                          <td style={{ fontFamily: 'monospace', fontWeight: 600, color: c.total_due > 0 ? '#E53E3E' : '#38A169' }}>{fmt(c.total_due)}</td>
-                          <td style={{ fontSize: 12, color: '#888' }}>{lastActivity ? formatDate(lastActivity.created_at) : '—'}</td>
-                          <td><button className="btn-sm" onClick={e => { e.stopPropagation(); loadCustomerDetail(c); }}>View →</button></td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              )}
+            <div className="pres">
+              <div><div className="prl">Total price (incl. tax)</div><div className="prn">Calculated in 0.2 seconds ⚡</div></div>
+              <div className="prv">$248.50</div>
             </div>
-          </>
-        )}
+          </div>
+        </div>
+      </section>
 
-        {/* ── CUSTOMER DETAIL ── */}
-        {selCust && (
-          <>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <button className="btn-sm" onClick={() => { setSelCust(null); setCustOrders([]); setCustQuotes([]); }}>← Back</button>
-                <Avatar name={selCust.name} size={44} />
-                <div>
-                  <h2 style={{ fontSize: 20, fontWeight: 600 }}>{selCust.name}</h2>
-                  {selCust.company && <p style={{ fontSize: 13, color: '#888' }}>{selCust.company}</p>}
-                </div>
-              </div>
-              <div style={{ display: 'flex', gap: 10 }}>
-                <a href="/quotes" style={{ padding: '9px 16px', background: '#EEF4FA', color: '#185FA5', borderRadius: 8, textDecoration: 'none', fontSize: 13, fontWeight: 500 }}>
-                  + New Quote
-                </a>
-                <a href="/orders" style={{ padding: '9px 16px', background: '#F5F0FF', color: '#6B46C1', borderRadius: 8, textDecoration: 'none', fontSize: 13, fontWeight: 500 }}>
-                  + New Order
-                </a>
-              </div>
-            </div>
-
-            {detailLoading ? (
-              <div style={{ textAlign: 'center', padding: 48, color: '#888' }}>Loading...</div>
-            ) : (
-              <>
-                {/* Summary stats */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 12, marginBottom: 16 }}>
-                  {[
-                    { l: 'Total Orders', v: custOrders.length.toString() },
-                    { l: 'Total Quotes', v: custQuotes.length.toString() },
-                    { l: 'Total Spend', v: fmt(selCust.total_spend), mono: true },
-                    { l: 'Balance Due', v: fmt(selCust.total_due), mono: true, color: selCust.total_due > 0 ? '#E53E3E' : '#38A169' },
-                  ].map(s => (
-                    <div key={s.l} className="stat-card">
-                      <p style={{ fontSize: 11, color: '#999', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>{s.l}</p>
-                      <p style={{ fontSize: s.mono ? 17 : 26, fontWeight: 600, fontFamily: s.mono ? 'DM Mono,monospace' : 'inherit', color: s.color || '#1A1A1A' }}>{s.v}</p>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="grid-2">
-                  {/* Contact info */}
-                  <div className="card">
-                    <p style={{ fontSize: 12, fontWeight: 600, color: '#888', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12 }}>👤 Contact Info</p>
-                    {[
-                      ['Name', selCust.name],
-                      ['Company', selCust.company],
-                      ['Email', selCust.email],
-                      ['Phone', selCust.phone],
-                    ].map(([k, v]) => (
-                      <div key={k as string} className="info-row">
-                        <span style={{ fontSize: 13, color: '#888' }}>{k}</span>
-                        <span style={{ fontSize: 13, fontWeight: 500 }}>{v || '—'}</span>
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* Active orders summary */}
-                  <div className="card">
-                    <p style={{ fontSize: 12, fontWeight: 600, color: '#888', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12 }}>📦 Order Summary</p>
-                    {[
-                      ['Total Orders', custOrders.length],
-                      ['Active', custOrders.filter(o => !['Delivered', 'Cancelled'].includes(o.status)).length],
-                      ['Delivered', custOrders.filter(o => o.status === 'Delivered').length],
-                      ['Cancelled', custOrders.filter(o => o.status === 'Cancelled').length],
-                    ].map(([k, v]) => (
-                      <div key={k as string} className="info-row">
-                        <span style={{ fontSize: 13, color: '#888' }}>{k}</span>
-                        <span style={{ fontSize: 13, fontWeight: 600, fontFamily: 'DM Mono,monospace' }}>{v}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Orders history */}
-                <div className="card" style={{ padding: 0, overflow: 'hidden', marginBottom: 16 }}>
-                  <div className="sh"><p className="st">📦 Orders ({custOrders.length})</p></div>
-                  {custOrders.length === 0 ? (
-                    <div style={{ textAlign: 'center', padding: 24, color: '#AAA', fontSize: 13 }}>No orders yet</div>
-                  ) : (
-                    <table className="table">
-                      <thead><tr><th>Order #</th><th>Job</th><th>Qty</th><th>Amount</th><th>Due</th><th>Date</th><th>Status</th><th>Payment</th></tr></thead>
-                      <tbody>
-                        {custOrders.map(o => (
-                          <tr key={o.id} onClick={() => window.location.href = '/orders'} style={{ cursor: 'pointer' }}>
-                            <td style={{ fontFamily: 'monospace', color: '#C84B31', fontSize: 12, fontWeight: 600 }}>{o.order_number}</td>
-                            <td style={{ fontWeight: 500 }}>{o.job_title || '—'}</td>
-                            <td style={{ fontFamily: 'monospace' }}>{o.quantity?.toLocaleString('en-IN') || '—'}</td>
-                            <td style={{ fontFamily: 'monospace', fontWeight: 600 }}>{fmt(o.total_amount)}</td>
-                            <td style={{ fontFamily: 'monospace', color: o.due_amount > 0 ? '#E53E3E' : '#38A169', fontWeight: 500 }}>{fmt(o.due_amount)}</td>
-                            <td style={{ fontSize: 12, color: '#888' }}>{formatDate(o.created_at)}</td>
-                            <td><Badge s={o.status} /></td>
-                            <td><Badge s={o.payment_status} /></td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  )}
-                </div>
-
-                {/* Quotes history */}
-                <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-                  <div className="sh"><p className="st">📋 Quotes ({custQuotes.length})</p></div>
-                  {custQuotes.length === 0 ? (
-                    <div style={{ textAlign: 'center', padding: 24, color: '#AAA', fontSize: 13 }}>No quotes yet</div>
-                  ) : (
-                    <table className="table">
-                      <thead><tr><th>Quote #</th><th>Job</th><th>Qty</th><th>Amount</th><th>Valid Until</th><th>Date</th><th>Status</th></tr></thead>
-                      <tbody>
-                        {custQuotes.map(q => (
-                          <tr key={q.id} onClick={() => window.location.href = '/quotes'} style={{ cursor: 'pointer' }}>
-                            <td style={{ fontFamily: 'monospace', color: '#C84B31', fontSize: 12, fontWeight: 600 }}>{q.quote_number}</td>
-                            <td style={{ fontWeight: 500 }}>{q.job_title || '—'}</td>
-                            <td style={{ fontFamily: 'monospace' }}>{q.quantity?.toLocaleString('en-IN') || '—'}</td>
-                            <td style={{ fontFamily: 'monospace', fontWeight: 600 }}>{q.currency_symbol}{q.total_amount?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-                            <td style={{ fontSize: 12, color: '#888' }}>{formatDate(q.valid_until)}</td>
-                            <td style={{ fontSize: 12, color: '#888' }}>{formatDate(q.created_at)}</td>
-                            <td><Badge s={q.status} /></td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  )}
-                </div>
-              </>
-            )}
-          </>
-        )}
+      {/* STATS */}
+      <div className="stats">
+        <div className="si">
+          {STATS.map(s=><div key={s.l} className="sit"><div className="sv">{s.v}</div><div className="sl">{s.l}</div></div>)}
+        </div>
       </div>
+
+      {/* FEATURES */}
+      <section className="sec" id="features">
+        <div className="sci">
+          <p className="slbl">Features</p>
+          <h2 className="stit">Everything your print<br />business needs</h2>
+          <p className="ssub">From instant cost calculations to customer portals — PrintCalc handles the entire quoting workflow.</p>
+          <div className="fg">
+            {FEATURES.map(f=>(
+              <div key={f.title} className="fc">
+                <div className="fi">{f.icon}</div>
+                <div className="ft">{f.title}</div>
+                <div className="fd">{f.desc}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* HOW IT WORKS */}
+      <section className="sec hwbg" id="how-it-works">
+        <div className="sci">
+          <p className="slbl">How it works</p>
+          <h2 className="stit">Up and running<br />in 10 minutes</h2>
+          <p className="ssub">No technical setup. No complicated onboarding. Just sign up and start calculating.</p>
+          <div className="sg">
+            {HOW_IT_WORKS.map(s=>(
+              <div key={s.step} className="sc2">
+                <div className="scc"><span className="sico">{s.icon}</span><span className="sn">STEP {s.step}</span></div>
+                <div className="stitle">{s.title}</div>
+                <div className="sdesc">{s.desc}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* PRICING */}
+      <section className="sec" id="pricing">
+        <div className="sci">
+          <p className="slbl">Pricing</p>
+          <h2 className="stit">Start free.<br />Scale when ready.</h2>
+          <p className="ssub">No contracts. No hidden fees. Cancel anytime.</p>
+          <div className="pg">
+            {PLANS.map(plan=>(
+              <div key={plan.name} className={`pl2 ${plan.hot?'h':''}`}>
+                {plan.hot&&<div className="pchip">Most Popular</div>}
+                <div className="pname">{plan.name}</div>
+                <div className={`pprice ${plan.hot?'g':''}`}>{plan.price}</div>
+                {plan.period&&<div className="pper">{plan.period}</div>}
+                <div className="pdesc">{plan.desc}</div>
+                <ul className="plist">{plan.features.map(f=><li key={f}>{f}</li>)}</ul>
+                <a href={plan.href} className={`pcta ${plan.hot?'pcp':'pco'}`}>{plan.cta}</a>
+              </div>
+            ))}
+          </div>
+          <p style={{textAlign:'center',fontSize:13,color:'var(--gr)',marginTop:22}}>Payments via Razorpay · GooglePay · UPI · Cards · AmazonPay · All prices in USD</p>
+        </div>
+      </section>
+
+      {/* TESTIMONIALS */}
+      <section className="sec tbg" id="testimonials">
+        <div className="sci" style={{textAlign:'center'}}>
+          <p className="slbl" style={{justifyContent:'center'}}>Testimonials</p>
+          <h2 className="stit">Loved by print<br />businesses worldwide</h2>
+          <div className="tw">
+            <div className="tc">
+              <div className="tst">★★★★★</div>
+              <p className="tt">"{TESTIMONIALS[activeT].text}"</p>
+              <div className="ta">
+                <div className="tav">{TESTIMONIALS[activeT].av}</div>
+                <div>
+                  <div className="tname">{TESTIMONIALS[activeT].name}</div>
+                  <div className="trole">{TESTIMONIALS[activeT].role} · {TESTIMONIALS[activeT].location}</div>
+                </div>
+              </div>
+            </div>
+            <div className="tdots">{TESTIMONIALS.map((_,i)=><div key={i} className={`td ${i===activeT?'a':''}`} onClick={()=>setActiveT(i)} />)}</div>
+          </div>
+        </div>
+      </section>
+
+      {/* CTA */}
+      <section className="ctasec">
+        <div className="ctag" />
+        <div className="ctai">
+          <h2 className="ctit">Ready to save hours every week?</h2>
+          <p className="csub">Join hundreds of print businesses already using PrintCalc to quote faster and win more customers.</p>
+          <div style={{display:'flex',gap:14,justifyContent:'center',flexWrap:'wrap'}}>
+            <a href="/signup" className="bp">Get started free →</a>
+            <a href="/login" className="bs">Login to dashboard</a>
+          </div>
+          <p style={{fontSize:13,color:'var(--gr)',marginTop:18}}>No credit card · Free forever plan · Ready in 10 minutes</p>
+        </div>
+      </section>
+
+      {/* FOOTER */}
+      <footer className="foot">
+        <div className="footi">
+          <div className="ftop">
+            <div>
+              <div className="fbname">
+                <div style={{width:28,height:28,background:'linear-gradient(135deg,var(--pm),var(--pl))',borderRadius:7,display:'flex',alignItems:'center',justifyContent:'center',fontSize:14}}>🖨️</div>
+                PrintCalc
+              </div>
+              <p className="fbtag">The print industry calculator trusted by businesses in 40+ countries.</p>
+            </div>
+            <div style={{display:'flex',gap:44,flexWrap:'wrap'}}>
+              <div className="fcol">
+                <h5>Product</h5>
+                <a href="#features">Features</a>
+                <a href="#pricing">Pricing</a>
+                <a href="#how-it-works">How it works</a>
+                <a href="/signup">Sign up free</a>
+              </div>
+              <div className="fcol">
+                <h5>Account</h5>
+                <a href="/login">Printer Login</a>
+                <a href="/signup">Create account</a>
+                <a href="/customer/login">Customer login</a>
+                <a href="/dashboard">Dashboard</a>
+              </div>
+              <div className="fcol">
+                <h5>Company</h5>
+                <a href="#">About us</a>
+                <a href="#">Contact</a>
+                <a href="#">Privacy policy</a>
+                <a href="#">Terms of service</a>
+              </div>
+            </div>
+          </div>
+          <div className="fbot">
+            <p className="fcopy">© {new Date().getFullYear()} PrintCalc. All rights reserved.</p>
+            <div className="fpay">
+              <span style={{fontSize:12,color:'var(--gr)'}}>Payments via</span>
+              {['Razorpay','GPay','UPI','Cards'].map(p=><span key={p} className="fpb">{p}</span>)}
+            </div>
+          </div>
+        </div>
+      </footer>
     </>
   );
 }
