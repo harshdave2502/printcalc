@@ -1,438 +1,845 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '../supabase';
 
-function formatDate(s: string) {
-  if (!s) return '—';
-  return new Date(s).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+// ─── PLATE DIMS FOR UPS CALCULATION ──────────────────────────────────
+// All paper comes with 0.25" margin each side = 0.5" total deducted
+// 20×28" → paper 20×30" (larger) → usable 19.5×27.5"
+// 18×25" → paper 25×36" (exact)  → usable 17.5×24.5"
+// 18×23" → paper 23×36" (exact)  → usable 17.5×22.5"
+// 15×20" → paper 20×30" cut in 2 → usable 14.5×19.5"
+// 25×36" → paper 25×36" (exact)  → usable 24.5×35.5"
+// B SIZES ALL ON 20×28" — forced to fit with minor size reduction
+const PLATE_DIMS: Record<string,{w:number;h:number}> = {
+  '15×20"': {w:14.5, h:19.5},
+  '18×23"': {w:17.5, h:22.5},
+  '18×25"': {w:17.5, h:24.5},
+  '20×28"': {w:19.5, h:27.5},
+  '20×30"': {w:19.5, h:29.5},
+  '25×36"': {w:24.5, h:35.5},
+};
+
+const PARENT_SHEETS: Record<string,{parent:string;cuts:number;pw:number;ph:number}> = {
+  '15×20"': {parent:'20×30"', cuts:2, pw:20, ph:30},  // 2 plates from one 20×30 parent
+  '18×23"': {parent:'23×36"', cuts:2, pw:23, ph:36},  // 2 plates from one 23×36 parent
+  '18×25"': {parent:'25×36"', cuts:2, pw:25, ph:36},  // 2 plates from one 25×36 parent
+  '20×28"': {parent:'20×30"', cuts:1, pw:20, ph:30},  // 1 plate = 1 sheet (20×30 paper)
+  '20×30"': {parent:'20×30"', cuts:1, pw:20, ph:30},  // 1 plate = 1 sheet
+  '25×36"': {parent:'25×36"', cuts:1, pw:25, ph:36},  // 1 plate = 1 sheet
+};
+
+const FINAL_SIZES = [
+  // A Series — all on 18×25" (usable 17.5×24.5")
+  {id:'a2', label:'A2 (16.5 x 23.4")',   w:16.5, h:23.4,  plateSize:'25×36"'},
+  {id:'a3', label:'A3 (11.7 x 16.5")',   w:11.7, h:16.5,  plateSize:'18×25"'},
+  {id:'a4', label:'A4 (8.3 x 11.7")',    w:8.3,  h:11.7,  plateSize:'18×25"'},
+  {id:'a5', label:'A5 (5.8 x 8.3")',     w:5.8,  h:8.3,   plateSize:'18×25"'},
+  {id:'a6', label:'A6 (4.1 x 5.8")',     w:4.1,  h:5.8,   plateSize:'18×25"'},
+  // American Standard
+  {id:'am1',label:'4.25 x 5.5"',         w:4.25, h:5.5,   plateSize:'18×25"'},
+  {id:'am2',label:'5.5 x 8.5"',          w:5.5,  h:8.5,   plateSize:'18×25"'},
+  {id:'am3',label:'Letter 8.5 x 11"',    w:8.5,  h:11,    plateSize:'18×23"'},
+  {id:'am4',label:'Legal 8.5 x 14"',     w:8.5,  h:14,    plateSize:'18×23"'},
+  {id:'am5',label:'11 x 17"',            w:11,   h:17,    plateSize:'18×25"'},
+  {id:'am6',label:'18 x 23"',            w:18,   h:23,    plateSize:'18×23"'},
+  // ── B SERIES — ALL ON 20×28" (usable 19.5×27.5") ──
+  // B3: 2 UPS → landscape 1×2 → 13.5×19.5"
+  // floor(19.5/19.5)×floor(27.5/13.5) = 1×2 = 2 ✅
+  {id:'b3', label:'B3 (13.5 x 19.5")',   w:13.5, h:19.5,  plateSize:'20×28"'},
+  // B4: 4 UPS → portrait 2×2 → 9.75×13.75"
+  // floor(19.5/9.75)×floor(27.5/13.75) = 2×2 = 4 ✅
+  {id:'b4', label:'B4 (9.75 x 13.75")',  w:9.75, h:13.75, plateSize:'20×28"'},
+  // B5: 8 UPS → landscape 2×4 → 6.85×9.75"
+  // floor(19.5/9.75)×floor(27.5/6.85) = 2×4 = 8 ✅
+  {id:'b5', label:'B5 (6.85 x 9.75")',   w:6.85, h:9.75,  plateSize:'20×28"'},
+  // B6: 16 UPS → portrait 4×4 → 4.85×6.85"
+  // floor(19.5/4.85)×floor(27.5/6.85) = 4×4 = 16 ✅
+  {id:'b6', label:'B6 (4.85 x 6.85")',   w:4.85, h:6.85,  plateSize:'20×28"'},
+  // Other
+  {id:'vc', label:'Visiting Card (3.5 x 2")',  w:3.5,  h:2,    plateSize:'18×25"'},
+  {id:'dl', label:'DL Envelope (4.3 x 8.5")', w:4.3,  h:8.5,  plateSize:'18×25"'},
+  {id:'custom',label:'Custom size...',         w:0,    h:0,    plateSize:'18×25"'},
+];
+
+// ─── SMART UPS CALCULATION ────────────────────────────────────────────
+// Both orientations tried — best result used
+// No gutter, no extra bleed (already in size)
+// Gripper already accounted for in PLATE_DIMS usable dimensions
+function calcUps(w:number,h:number,pk:string){
+  const p=PLATE_DIMS[pk];if(!p)return 1;
+  // Try portrait and landscape, take best
+  const portrait  = Math.floor(p.w/w)*Math.floor(p.h/h);
+  const landscape = Math.floor(p.w/h)*Math.floor(p.h/w);
+  return Math.max(portrait, landscape, 1);
 }
 
-const SC: Record<string, string> = {
-  Draft: '#888', Sent: '#185FA5', Converted: '#38A169', Expired: '#E53E3E',
-  Pending: '#D97706', 'In Production': '#185FA5', Ready: '#6B46C1', Delivered: '#38A169', Cancelled: '#E53E3E',
-};
-const SBG: Record<string, string> = {
-  Draft: '#F5F5F5', Sent: '#EEF4FA', Converted: '#F0FFF4', Expired: '#FFF0F0',
-  Pending: '#FFFBEB', 'In Production': '#EEF4FA', Ready: '#F5F0FF', Delivered: '#F0FFF4', Cancelled: '#FFF0F0',
-};
-
-function Badge({ s }: { s: string }) {
-  return <span style={{ padding: '3px 10px', borderRadius: 4, fontSize: 11, fontWeight: 600, background: SBG[s] || '#F5F5F5', color: SC[s] || '#888' }}>{s}</span>;
+// Auto-select best plate for custom sizes
+// Picks plate giving most UPS — if tie, picks smaller plate (less paper waste)
+function autoSelectPlate(w:number,h:number):string{
+  const plates=Object.keys(PLATE_DIMS);
+  let bestPlate='18×25"';
+  let bestUps=0;
+  for(const pk of plates){
+    const p=PLATE_DIMS[pk];
+    const ups=Math.max(
+      Math.floor(p.w/w)*Math.floor(p.h/h),
+      Math.floor(p.w/h)*Math.floor(p.h/w),
+      1
+    );
+    if(ups>bestUps||(ups===bestUps&&p.w*p.h<PLATE_DIMS[bestPlate].w*PLATE_DIMS[bestPlate].h)){
+      bestUps=ups;
+      bestPlate=pk;
+    }
+  }
+  return bestPlate;
 }
+const fmt=(n:number)=>'₹'+n.toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2});
 
-function Avatar({ name, size = 36 }: { name: string; size?: number }) {
-  const colors = ['#C84B31', '#185FA5', '#6B46C1', '#276749', '#D97706'];
-  const color = colors[name.charCodeAt(0) % colors.length];
-  return (
-    <div style={{ width: size, height: size, borderRadius: '50%', background: color, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: size * 0.4, fontWeight: 700, flexShrink: 0 }}>
-      {name?.[0]?.toUpperCase()}
+// ─── SECTION BOX ─ defined outside components to prevent scroll-reset ──
+function Sec({title,children,optional,accent}:any){
+  return(
+    <div style={{border:`1.5px solid ${accent||'var(--color-border-tertiary,#E8E8E8)'}`,borderRadius:14,marginBottom:10,overflow:'hidden'}}>
+      <div style={{background:accent?accent+'18':'var(--color-background-secondary,#F9F9F9)',padding:'10px 16px',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+        <p style={{fontSize:11,fontWeight:600,color:accent||'var(--color-text-primary,#1A1A1A)',textTransform:'uppercase',letterSpacing:'0.08em',margin:0}}>{title}</p>
+        {optional&&<span style={{fontSize:11,color:'var(--color-text-secondary,#888)',background:'var(--color-background-primary,#fff)',padding:'2px 8px',borderRadius:4}}>Optional</span>}
+      </div>
+      <div style={{padding:16}}>{children}</div>
     </div>
   );
 }
 
-export default function CustomersPage() {
-  const [sub, setSub] = useState<any>(null);
-  const [customers, setCustomers] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
-  const [selCust, setSelCust] = useState<any>(null);
-  const [custOrders, setCustOrders] = useState<any[]>([]);
-  const [custQuotes, setCustQuotes] = useState<any[]>([]);
-  const [detailLoading, setDetailLoading] = useState(false);
-  const [showAdd, setShowAdd] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [saveMsg, setSaveMsg] = useState('');
-  const [newCust, setNewCust] = useState({ name: '', email: '', phone: '', company: '' });
+// ─── STYLES ───────────────────────────────────────────────────────────
+const IS:any={width:'100%',padding:'10px 14px',border:'1.5px solid var(--color-border-tertiary,#E8E8E8)',borderRadius:10,fontSize:14,fontFamily:'DM Sans,sans-serif',color:'var(--color-text-primary,#1A1A1A)',background:'var(--color-background-secondary,#FAFAFA)',outline:'none',appearance:'none',WebkitAppearance:'none',backgroundImage:`url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%23999' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E")`,backgroundRepeat:'no-repeat',backgroundPosition:'right 14px center',paddingRight:36};
+const NIS:any={...IS,backgroundImage:'none',paddingRight:14,MozAppearance:'textfield'};
+const TW:any={display:'flex',gap:8};
+const TB=(a:boolean):any=>({flex:1,padding:'9px',border:`1.5px solid ${a?'#1A1A1A':'var(--color-border-tertiary,#E8E8E8)'}`,borderRadius:10,fontSize:13,fontWeight:500,color:a?'#fff':'var(--color-text-secondary,#888)',background:a?'#1A1A1A':'var(--color-background-secondary,#FAFAFA)',cursor:'pointer',fontFamily:'inherit',textAlign:'center' as const});
+const CARD:any={background:'var(--color-background-primary,#fff)',borderRadius:16,padding:24,marginBottom:16,border:'1px solid var(--color-border-tertiary,#EBEBEB)'};
+const SL:any={fontSize:11,fontWeight:600,color:'#999',letterSpacing:'0.1em',textTransform:'uppercase',marginBottom:16};
+const LBL:any={fontSize:12,fontWeight:500,color:'var(--color-text-secondary,#666)',marginBottom:5,display:'flex',justifyContent:'space-between',alignItems:'center'};
 
-  useEffect(() => { loadData(); }, []);
-
-  const loadData = async () => {
-    setLoading(true);
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) { window.location.href = '/login'; return; }
-    const { data: profile } = await supabase.from('subscribers').select('*').eq('id', user.id).single();
-    if (profile) setSub(profile);
-
-    // Pull unique customers from orders + quotes combined
-    const [{ data: orders }, { data: quotes }] = await Promise.all([
-      supabase.from('orders').select('customer_name,customer_email,customer_phone,customer_company,total_amount,due_amount,status,created_at').eq('subscriber_id', user.id),
-      supabase.from('quotes').select('customer_name,customer_email,customer_phone,customer_company,total_amount,status,created_at').eq('subscriber_id', user.id),
-    ]);
-
-    // Build customer map keyed by email (or name if no email)
-    const map: Record<string, any> = {};
-    for (const o of orders || []) {
-      const key = o.customer_email || o.customer_name;
-      if (!map[key]) map[key] = { name: o.customer_name, email: o.customer_email, phone: o.customer_phone, company: o.customer_company, orders: [], quotes: [], total_spend: 0, total_due: 0 };
-      map[key].orders.push(o);
-      map[key].total_spend += o.total_amount || 0;
-      map[key].total_due += o.due_amount || 0;
-    }
-    for (const q of quotes || []) {
-      const key = q.customer_email || q.customer_name;
-      if (!map[key]) map[key] = { name: q.customer_name, email: q.customer_email, phone: q.customer_phone, company: q.customer_company, orders: [], quotes: [], total_spend: 0, total_due: 0 };
-      map[key].quotes.push(q);
-    }
-
-    // Sort by total spend desc
-    const list = Object.values(map).sort((a: any, b: any) => b.total_spend - a.total_spend);
-    setCustomers(list);
-    setLoading(false);
-  };
-
-  const loadCustomerDetail = async (cust: any) => {
-    setDetailLoading(true);
-    setSelCust(cust);
-    const { data: { user } } = await supabase.auth.getUser();
-    const email = cust.email;
-    const name = cust.name;
-    const [{ data: ord }, { data: quo }] = await Promise.all([
-      email
-        ? supabase.from('orders').select('*').eq('subscriber_id', user!.id).eq('customer_email', email).order('created_at', { ascending: false })
-        : supabase.from('orders').select('*').eq('subscriber_id', user!.id).eq('customer_name', name).order('created_at', { ascending: false }),
-      email
-        ? supabase.from('quotes').select('*').eq('subscriber_id', user!.id).eq('customer_email', email).order('created_at', { ascending: false })
-        : supabase.from('quotes').select('*').eq('subscriber_id', user!.id).eq('customer_name', name).order('created_at', { ascending: false }),
-    ]);
-    setCustOrders(ord || []);
-    setCustQuotes(quo || []);
-    setDetailLoading(false);
-  };
-
-  const addCustomer = async () => {
-    if (!newCust.name) { setSaveMsg('Please enter a name.'); setTimeout(() => setSaveMsg(''), 2000); return; }
-    setSaving(true);
-    // Add a placeholder quote to register this customer
-    const { data: { user } } = await supabase.auth.getUser();
-    // We just store them locally — they'll appear properly once they get a quote/order
-    setCustomers(prev => [{
-      name: newCust.name, email: newCust.email, phone: newCust.phone,
-      company: newCust.company, orders: [], quotes: [], total_spend: 0, total_due: 0,
-    }, ...prev]);
-    setNewCust({ name: '', email: '', phone: '', company: '' });
-    setShowAdd(false);
-    setSaveMsg('Customer added!');
-    setTimeout(() => setSaveMsg(''), 2000);
-    setSaving(false);
-  };
-
-  const logout = async () => { await supabase.auth.signOut(); window.location.href = '/login'; };
-
-  const sym = sub?.currency_symbol || '₹';
-  const fmt = (n: number) => sym + (n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-
-  const filtered = customers.filter(c =>
-    c.name?.toLowerCase().includes(search.toLowerCase()) ||
-    c.email?.toLowerCase().includes(search.toLowerCase()) ||
-    c.company?.toLowerCase().includes(search.toLowerCase())
+// ─── RESULT BOX ───────────────────────────────────────────────────────
+function ResultBox({r,markup,tax,sym}:any){
+  if(!r)return null;
+  return(
+    <div style={{marginTop:20}}>
+      <div style={{background:'#1A1A1A',borderRadius:16,padding:28,marginBottom:12,position:'relative',overflow:'hidden'}}>
+        <div style={{position:'absolute',top:-40,right:-40,width:160,height:160,background:'#C84B31',borderRadius:'50%',opacity:0.08}}/>
+        <p style={{fontSize:13,color:'#666',marginBottom:4}}>Total price (incl. GST)</p>
+        <p style={{fontSize:42,fontWeight:600,color:'#fff',letterSpacing:'-0.03em',fontFamily:'DM Mono,monospace',lineHeight:1,marginBottom:24}}>
+          <span style={{fontSize:24,verticalAlign:'super',fontWeight:400,marginRight:2}}>{sym||'₹'}</span>
+          {r.finalPrice.toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2})}
+        </p>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
+          {r.stats.map((s:any)=>(
+            <div key={s.label} style={{background:'rgba(255,255,255,0.06)',borderRadius:10,padding:14}}>
+              <p style={{fontSize:11,color:'#666',marginBottom:4}}>{s.label}</p>
+              <p style={{fontSize:16,fontWeight:500,color:'#fff',fontFamily:'DM Mono,monospace'}}>{s.value}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+      {r.breakdown.length>0&&(
+        <div style={{background:'var(--color-background-primary,#fff)',borderRadius:16,border:'1px solid var(--color-border-tertiary,#EBEBEB)',overflow:'hidden',marginBottom:12}}>
+          <div style={{background:'var(--color-background-secondary,#F9F9F9)',padding:'10px 20px'}}><p style={{fontSize:11,fontWeight:600,color:'var(--color-text-secondary,#888)',textTransform:'uppercase',letterSpacing:'0.08em',margin:0}}>Cost Breakdown</p></div>
+          {r.breakdown.map((row:any)=>(
+            <div key={row.label} style={{display:'flex',justifyContent:'space-between',padding:'12px 20px',borderBottom:'1px solid var(--color-border-tertiary,#F5F5F5)'}}>
+              <span style={{fontSize:13,color:'var(--color-text-secondary,#888)'}}>{row.label}</span>
+              <span style={{fontSize:13,fontWeight:500,fontFamily:'DM Mono,monospace',color:'var(--color-text-primary,#1A1A1A)'}}>{row.value}</span>
+            </div>
+          ))}
+          <div style={{display:'flex',justifyContent:'space-between',padding:'12px 20px',background:'var(--color-background-secondary,#F9F9F9)'}}>
+            <span style={{fontSize:13,fontWeight:600,color:'var(--color-text-primary,#1A1A1A)'}}>Subtotal</span>
+            <span style={{fontSize:13,fontWeight:600,fontFamily:'DM Mono,monospace',color:'var(--color-text-primary,#1A1A1A)'}}>{sym||'₹'}{r.subtotal.toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
+          </div>
+        </div>
+      )}
+      <div style={{background:'#FFFBEB',border:'1px solid #FDE68A',borderRadius:16,overflow:'hidden'}}>
+        <div style={{padding:'10px 20px',background:'#FDE68A'}}><p style={{fontSize:11,fontWeight:600,color:'#78350F',letterSpacing:'0.08em',textTransform:'uppercase',margin:0}}>GST / Tax Breakdown</p></div>
+        {[{k:`Subtotal (before markup)`,v:`${sym||'₹'}${r.subtotal.toLocaleString('en-IN',{minimumFractionDigits:2})}`},{k:`Markup (${markup}%)`,v:`${sym||'₹'}${r.markupAmount.toLocaleString('en-IN',{minimumFractionDigits:2})}`},{k:`GST @ ${tax}%`,v:`${sym||'₹'}${r.taxAmount.toLocaleString('en-IN',{minimumFractionDigits:2})}`}].map(row=>(
+          <div key={row.k} style={{display:'flex',justifyContent:'space-between',padding:'12px 20px',borderBottom:'1px solid #FDE68A'}}>
+            <span style={{fontSize:13,color:'#92400E'}}>{row.k}</span>
+            <span style={{fontSize:13,fontWeight:600,color:'#92400E',fontFamily:'DM Mono,monospace'}}>{row.v}</span>
+          </div>
+        ))}
+        <div style={{display:'flex',justifyContent:'space-between',padding:'12px 20px'}}>
+          <span style={{fontSize:13,fontWeight:600,color:'#78350F'}}>Total incl. GST</span>
+          <span style={{fontSize:15,fontWeight:600,color:'#92400E',fontFamily:'DM Mono,monospace'}}>{sym||'₹'}{r.finalPrice.toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
+        </div>
+      </div>
+    </div>
   );
+}
 
-  const IS: any = { padding: '9px 12px', border: '1.5px solid #E8E8E8', borderRadius: 8, fontSize: 13, fontFamily: 'DM Sans,sans-serif', color: '#1A1A1A', background: '#FAFAFA', outline: 'none', width: '100%' };
-
-  if (loading) return (
-    <main style={{ minHeight: '100vh', background: '#F7F6F3', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'DM Sans,sans-serif' }}>
-      <p style={{ color: '#888' }}>Loading customers...</p>
-    </main>
+// ─── SIZE SELECTOR ────────────────────────────────────────────────────
+function SizeSelect({size,setSize,cW,setCW,cH,setCH}:any){
+  const u=(size.w&&size.h)?calcUps(size.w,size.h,size.plateSize):1;
+  const pi=PARENT_SHEETS[size.plateSize];
+  return(
+    <div style={{marginBottom:16}}>
+      <div style={LBL}>Final size{size.id!=='custom'&&<span style={{background:'#EEF4FA',color:'#185FA5',borderRadius:4,padding:'2px 8px',fontSize:11,fontFamily:'monospace'}}>{u} ups · {pi?.parent||size.plateSize}</span>}</div>
+      <select value={size.id} onChange={e=>{const s=FINAL_SIZES.find(x=>x.id===e.target.value);if(s)setSize(s);}} style={IS}>
+        <optgroup label="── A Series ──">{FINAL_SIZES.filter(s=>s.id.startsWith('a')).map(s=><option key={s.id} value={s.id}>{s.label}</option>)}</optgroup>
+        <optgroup label="── American Standard ──">{FINAL_SIZES.filter(s=>s.id.startsWith('am')).map(s=><option key={s.id} value={s.id}>{s.label}</option>)}</optgroup>
+        <optgroup label="── B Series ──">{FINAL_SIZES.filter(s=>s.id.startsWith('b')).map(s=><option key={s.id} value={s.id}>{s.label}</option>)}</optgroup>
+        <optgroup label="── Other ──">{FINAL_SIZES.filter(s=>['vc','dl','custom'].includes(s.id)).map(s=><option key={s.id} value={s.id}>{s.label}</option>)}</optgroup>
+      </select>
+      {size.id==='custom'&&<div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginTop:8}}><input type="number" placeholder="Width (in)" value={cW} onChange={e=>setCW(e.target.value)} style={NIS}/><input type="number" placeholder="Height (in)" value={cH} onChange={e=>setCH(e.target.value)} style={NIS}/></div>}
+    </div>
   );
+}
 
-  return (
+// ─── PAPER TAB ────────────────────────────────────────────────────────
+function PaperTab({subData}:any){
+  const [sheetSizes,setSheetSizes]=useState<any[]>([]);
+  const [paperStocks,setPaperStocks]=useState<any[]>([]);
+  const [loaded,setLoaded]=useState(false);
+  const [size,setSize]=useState<any>(null);
+  const [paper,setPaper]=useState<any>(null);
+  const [qty,setQty]=useState('');
+  const [showConv,setShowConv]=useState(false);
+  const [result,setResult]=useState<any>(null);
+
+  const M=subData?.markup_percent||25;
+  const T=subData?.tax_percent||18;
+  const sym=subData?.currency_symbol||'₹';
+
+  useEffect(()=>{
+    const load=async()=>{
+      const {data:sz}=await supabase.from('sheet_sizes').select('*').eq('is_active',true).order('sort_order');
+      // If subscriber logged in, load their paper stocks, else load master
+      const sid=subData?.id||'00000000-0000-0000-0000-000000000001';
+      const {data:pp}=await supabase.from('paper_stocks').select('*').eq('subscriber_id',sid).order('sort_order');
+      if(sz?.length&&pp?.length){setSheetSizes(sz);setPaperStocks(pp);setSize(sz[0]);setPaper(pp[0]);setLoaded(true);}
+    };
+    load();
+  },[subData]);
+
+  useEffect(()=>{
+    if(!qty||parseInt(qty)<=0||!size||!paper){setResult(null);return;}
+    const q=parseInt(qty);
+    const wpr=paper.gsm*size.factor;
+    const cpr=wpr*paper.rate_per_kg;
+    const cps=cpr/500;
+    const raw=cps*q;
+    const am=raw*(1+M/100);
+    const ta=am*(T/100);
+    setResult({finalPrice:am+ta,subtotal:raw,markupAmount:am-raw,taxAmount:ta,
+      stats:[{label:'Per sheet',value:sym+cps.toFixed(4)},{label:'Per ream (500 sh)',value:sym+cpr.toFixed(2)},{label:'Total weight',value:((wpr/500)*q).toFixed(2)+' kg'},{label:'Total sheets',value:q.toLocaleString('en-IN')}],
+      breakdown:[]});
+  },[size,paper,qty,M,T]);
+
+  const cats=[...new Set(paperStocks.map((p:any)=>p.category))];
+  if(!loaded)return <div style={{textAlign:'center',padding:40,color:'#888'}}>Loading...</div>;
+
+  return(
+    <div>
+      <div style={CARD}>
+        <p style={SL}>Job Details</p>
+        <div style={{marginBottom:16}}>
+          <div style={LBL}>Sheet size<span style={{fontSize:11,color:'#AAA',fontWeight:400}}>inches</span></div>
+          <select value={size?.id||''} onChange={e=>{const s=sheetSizes.find((x:any)=>x.id===e.target.value);if(s)setSize(s);}} style={IS}>{sheetSizes.map((s:any)=><option key={s.id} value={s.id}>{s.name}</option>)}</select>
+          {size&&<div style={{display:'flex',justifyContent:'space-between',marginTop:6}}>
+            <span style={{fontSize:11,color:'#AAA',fontFamily:'monospace'}}>{size.length_inch}" × {size.width_inch}" = {(size.length_inch*size.width_inch).toFixed(0)} sq in</span>
+            <button onClick={()=>setShowConv(!showConv)} style={{fontSize:11,color:'#C84B31',background:'none',border:'none',cursor:'pointer',fontFamily:'inherit',fontWeight:500}}>{showConv?'Hide':'Convert to MM / CM'}</button>
+          </div>}
+          {showConv&&size&&<div style={{background:'#FFF8F6',border:'1px solid #FFD5CC',borderRadius:8,padding:'10px 14px',marginTop:8,display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8}}>
+            {[['Inches',`${size.length_inch}" × ${size.width_inch}"`],['MM',`${(size.length_inch*25.4).toFixed(1)} × ${(size.width_inch*25.4).toFixed(1)}`],['CM',`${(size.length_inch*2.54).toFixed(1)} × ${(size.width_inch*2.54).toFixed(1)}`]].map(([u,v])=>(
+              <div key={u} style={{textAlign:'center'}}><p style={{fontSize:10,color:'#C84B31',fontWeight:600,textTransform:'uppercase',marginBottom:2}}>{u}</p><p style={{fontSize:13,fontWeight:500,fontFamily:'monospace'}}>{v}</p></div>
+            ))}
+          </div>}
+        </div>
+        <div style={{marginBottom:16}}>
+          <div style={LBL}>Paper type{paper&&<span style={{padding:'2px 8px',borderRadius:4,fontSize:10,fontWeight:600,background:paper.in_stock?'#F0FFF4':'#FFF0F0',color:paper.in_stock?'#38A169':'#E53E3E',border:`1px solid ${paper.in_stock?'#9AE6B4':'#FEB2B2'}`}}>{paper.in_stock?'● In stock':'● Out of stock'}</span>}</div>
+          <select value={paper?.id||''} onChange={e=>{const p=paperStocks.find((x:any)=>x.id===e.target.value);if(p)setPaper(p);}} style={IS}>
+            {cats.map((cat:any)=><optgroup key={cat} label={`── ${cat} ──`}>{paperStocks.filter((p:any)=>p.category===cat).map((p:any)=><option key={p.id} value={p.id}>{p.label}{!p.in_stock?' — OUT OF STOCK':''}</option>)}</optgroup>)}
+          </select>
+        </div>
+        <div style={{height:1,background:'var(--color-border-tertiary,#F0F0F0)',margin:'16px 0'}}/>
+        <div><div style={LBL}>Quantity<span style={{fontWeight:400,color:'#AAA',fontSize:11}}>sheets</span></div><input type="number" placeholder="Enter number of sheets" value={qty} onChange={e=>setQty(e.target.value)} style={NIS} min="1"/></div>
+      </div>
+      {result?<ResultBox r={result} markup={M} tax={T} sym={sym}/>:<div style={{...CARD,textAlign:'center',padding:40}}><p style={{fontSize:32,marginBottom:12}}>📄</p><p style={{fontSize:14,color:'#BBB'}}>Enter quantity above to see instant pricing</p></div>}
+    </div>
+  );
+}
+
+// ─── PRINTING TAB ─────────────────────────────────────────────────────
+function PrintingTab({subData}:any){
+  const [size,setSize]=useState(FINAL_SIZES[2]);
+  const [cW,setCW]=useState('');const [cH,setCH]=useState('');
+  const [qty,setQty]=useState('');
+  const [plateRates,setPlateRates]=useState<any[]>([]);
+  const [lamRates,setLamRates]=useState<any[]>([]);
+  const [uvRates,setUvRates]=useState<any[]>([]);
+  const [plateNames,setPlateNames]=useState<string[]>([]);
+  const [selPlate,setSelPlate]=useState('');
+  const [selColor,setSelColor]=useState('');
+  const [colorsByPlate,setColorsByPlate]=useState<string[]>([]);
+  const [sides,setSides]=useState<'single'|'double'>('double');
+  const [selLam,setSelLam]=useState('none');
+  const [lamDbl,setLamDbl]=useState(false);
+  const [selUV,setSelUV]=useState('none');
+  const [result,setResult]=useState<any>(null);
+  const [loaded,setLoaded]=useState(false);
+
+  const M=subData?.markup_percent||25;
+  const T=subData?.tax_percent||18;
+  const sym=subData?.currency_symbol||'₹';
+
+  useEffect(()=>{
+    const load=async()=>{
+      const sid=subData?.id||'00000000-0000-0000-0000-000000000001';
+      const [{data:pr},{data:lr},{data:ur}]=await Promise.all([
+        supabase.from('printing_rates').select('*').eq('subscriber_id',sid).order('sort_order'),
+        supabase.from('lamination_rates').select('*').eq('subscriber_id',sid).order('sort_order'),
+        supabase.from('uv_rates').select('*').eq('subscriber_id',sid).order('sort_order'),
+      ]);
+      setPlateRates(pr||[]);setLamRates(lr||[]);setUvRates(ur||[]);
+      const pnames=[...new Set((pr||[]).map((r:any)=>r.plate_name))] as string[];
+      setPlateNames(pnames);
+      if(pnames.length>0){
+        setSelPlate(pnames[0]);
+        const cols=(pr||[]).filter((r:any)=>r.plate_name===pnames[0]).map((r:any)=>r.color_option);
+        setColorsByPlate(cols);
+        if(cols.length>0)setSelColor(cols[0]);
+      }
+      setLoaded(true);
+    };
+    load();
+  },[subData]);
+
+  useEffect(()=>{
+    if(!selPlate)return;
+    const cols=plateRates.filter(r=>r.plate_name===selPlate).map(r=>r.color_option);
+    setColorsByPlate(cols);
+    if(cols.length>0)setSelColor(cols[0]);
+  },[selPlate,plateRates]);
+
+  const calc=()=>{
+    const q=parseInt(qty);
+    const fW=size.id==='custom'?(parseFloat(cW)||0):size.w;
+    const fH=size.id==='custom'?(parseFloat(cH)||0):size.h;
+    if(!q||!fW||!fH||!selPlate||!selColor)return;
+    const pk=size.plateSize;
+    const u=calcUps(fW,fH,pk);
+    const pi=PARENT_SHEETS[pk]||{parent:pk,cuts:1,pw:25,ph:36};
+    const ws=Math.ceil(q/u);
+    const imp=sides==='double'?ws*2:ws;
+    // Plates: 1 per side (single side = 1 plate, double side = 2 plates)
+    const numPlates=sides==='double'?2:1;
+    // Get plate rate from DB
+    const rate=plateRates.find(r=>r.plate_name===selPlate&&r.color_option===selColor);
+    let pCost=0;
+    if(rate){
+      const plateFixed=rate.fixed_charge*numPlates;
+      const freeImp=1000*numPlates;
+      const extraImp=Math.max(0,imp-freeImp);
+      const extraRounded=Math.ceil(extraImp/1000)*1000;
+      pCost=plateFixed+(extraRounded/1000)*rate.per_1000_impression;
+    }
+    // Lamination — area = working sheet (plate) × impressions (already includes both sides)
+    let lCost=0;
+    if(selLam!=='none'){
+      const lr=lamRates.find(r=>r.lam_name===selLam);
+      if(lr){
+        const pd=PLATE_DIMS[pk]||{w:18,h:25};
+        const area=pd.w*pd.h;
+        lCost=Math.max((area/100)*lr.per_100_sqinch*imp,lr.minimum_charge);
+      }
+    }
+    // UV — area = working sheet (plate) × impressions (already includes both sides)
+    let uCost=0;
+    if(selUV!=='none'){
+      const ur=uvRates.find(r=>r.uv_name===selUV);
+      if(ur){
+        const pd=PLATE_DIMS[pk]||{w:18,h:25};
+        const area=pd.w*pd.h;
+        uCost=Math.max((area/100)*ur.per_100_sqinch*imp,ur.minimum_charge);
+      }
+    }
+    const sub=pCost+lCost+uCost;
+    const am=sub*(1+M/100);
+    const ta=am*(T/100);
+    setResult({finalPrice:am+ta,subtotal:sub,markupAmount:am-sub,taxAmount:ta,
+      stats:[{label:'Per piece',value:sym+(((am+ta)/q).toFixed(2))},{label:'Working sheets',value:ws.toLocaleString('en-IN')},{label:'Impressions',value:imp.toLocaleString('en-IN')},{label:'Plate: '+pk,value:u+' ups'}],
+      breakdown:[{label:'Printing cost',value:sym+pCost.toFixed(2)},...(lCost>0?[{label:'Lamination',value:sym+lCost.toFixed(2)}]:[]),...(uCost>0?[{label:'UV / Coating',value:sym+uCost.toFixed(2)}]:[])]});
+  };
+
+  if(!loaded)return <div style={{textAlign:'center',padding:40,color:'#888'}}>Loading rates...</div>;
+
+  return(
+    <div>
+      <div style={CARD}>
+        <p style={SL}>Job Details</p>
+        <SizeSelect size={size} setSize={setSize} cW={cW} setCW={setCW} cH={cH} setCH={setCH}/>
+        <div style={{marginBottom:16}}><div style={LBL}>Quantity<span style={{fontWeight:400,color:'#AAA',fontSize:11}}>pieces</span></div><input type="number" placeholder="Enter quantity" value={qty} onChange={e=>setQty(e.target.value)} style={NIS}/></div>
+        <div style={{height:1,background:'var(--color-border-tertiary,#F0F0F0)',margin:'16px 0'}}/>
+        <div style={{marginBottom:16}}>
+          <div style={LBL}>Plate size</div>
+          <select value={selPlate} onChange={e=>setSelPlate(e.target.value)} style={IS}>
+            {plateNames.map(n=><option key={n} value={n}>{n}</option>)}
+          </select>
+        </div>
+        <div style={{marginBottom:16}}>
+          <div style={LBL}>Print colors</div>
+          <select value={selColor} onChange={e=>setSelColor(e.target.value)} style={IS}>
+            {colorsByPlate.map(c=><option key={c} value={c}>{c}</option>)}
+          </select>
+        </div>
+        <div style={{marginBottom:16}}><div style={LBL}>Sides</div><div style={TW}><button style={TB(sides==='single')} onClick={()=>setSides('single')}>Single side</button><button style={TB(sides==='double')} onClick={()=>setSides('double')}>Front + Back</button></div></div>
+        <div style={{height:1,background:'var(--color-border-tertiary,#F0F0F0)',margin:'16px 0'}}/>
+        <div style={{marginBottom:16}}>
+          <div style={LBL}>Lamination</div>
+          <select value={selLam} onChange={e=>setSelLam(e.target.value)} style={IS}>
+            <option value="none">No Lamination</option>
+            {lamRates.map(r=><option key={r.id} value={r.lam_name}>{r.lam_name}</option>)}
+          </select>
+          {selLam!=='none'&&<div style={{...TW,marginTop:8}}><button style={TB(!lamDbl)} onClick={()=>setLamDbl(false)}>Single side</button><button style={TB(lamDbl)} onClick={()=>setLamDbl(true)}>Both sides</button></div>}
+        </div>
+        <div><div style={LBL}>UV / Coating</div><select value={selUV} onChange={e=>setSelUV(e.target.value)} style={IS}><option value="none">No UV / Coating</option>{uvRates.map(r=><option key={r.id} value={r.uv_name}>{r.uv_name}</option>)}</select></div>
+      </div>
+      <button onClick={calc} style={{width:'100%',padding:14,background:'#C84B31',color:'#fff',border:'none',borderRadius:12,fontSize:15,fontWeight:600,cursor:'pointer',fontFamily:'inherit',marginTop:4}}>Calculate →</button>
+      {result&&<ResultBox r={result} markup={M} tax={T} sym={sym}/>}
+    </div>
+  );
+}
+
+// ─── FULL JOB TAB ─────────────────────────────────────────────────────
+function FullJobTab({subData}:any){
+  const [jobType,setJobType]=useState<'single'|'book'>('single');
+
+  // ── COMMON ─────────────────────────────────────────────────
+  const [size,setSize]=useState(FINAL_SIZES[2]); // A4 default
+  const [cW,setCW]=useState('');const [cH,setCH]=useState('');
+  const [qty,setQty]=useState('');
+  const [paperCats,setPaperCats]=useState<any[]>([]);
+  const [plateRates,setPlateRates]=useState<any[]>([]);
+  const [lamRates,setLamRates]=useState<any[]>([]);
+  const [uvRates,setUvRates]=useState<any[]>([]);
+  const [bindRates,setBindRates]=useState<any[]>([]);
+  const [plateNames,setPlateNames]=useState<string[]>([]);
+  const [result,setResult]=useState<any>(null);
+  const [loaded,setLoaded]=useState(false);
+
+  // ── SINGLE ITEM FIELDS ──────────────────────────────────────
+  const [selCat,setSelCat]=useState<any>(null);
+  const [paperStocks,setPaperStocks]=useState<any[]>([]);
+  const [gsm,setGsm]=useState(0);
+  const [selPlate,setSelPlate]=useState('');
+  const [selColor,setSelColor]=useState('');
+  const [colorsByPlate,setColorsByPlate]=useState<string[]>([]);
+  const [sides,setSides]=useState<'single'|'double'>('double');
+  const [selLam,setSelLam]=useState('none');
+  const [lamDbl,setLamDbl]=useState(false);
+  const [selUV,setSelUV]=useState('none');
+
+  // ── BROCHURE FIELDS ─────────────────────────────────────────
+  const [totalPages,setTotalPages]=useState('');
+  const [pageError,setPageError]=useState('');
+  // Cover
+  const [covCat,setCovCat]=useState<any>(null);
+  const [covStocks,setCovStocks]=useState<any[]>([]);
+  const [covGsm,setCovGsm]=useState(0);
+  const [covPlate,setCovPlate]=useState('');
+  const [covColor,setCovColor]=useState('');
+  const [covColorsByPlate,setCovColorsByPlate]=useState<string[]>([]);
+  const [covLam,setCovLam]=useState('none');
+  const [covLamDbl,setCovLamDbl]=useState(true); // cover usually both sides
+  const [covUV,setCovUV]=useState('none');
+  // Inner pages
+  const [innCat,setInnCat]=useState<any>(null);
+  const [innStocks,setInnStocks]=useState<any[]>([]);
+  const [innGsm,setInnGsm]=useState(0);
+  const [innPlate,setInnPlate]=useState('');
+  const [innColor,setInnColor]=useState('');
+  const [innColorsByPlate,setInnColorsByPlate]=useState<string[]>([]);
+  const [innLam,setInnLam]=useState('none');
+  // Binding (for book only)
+  const [selBind,setSelBind]=useState('none');
+
+  const M=subData?.markup_percent||25;
+  const T=subData?.tax_percent||18;
+  const sym=subData?.currency_symbol||'₹';
+
+  // Load all rates once
+  useEffect(()=>{
+    const load=async()=>{
+      const sid=subData?.id||'00000000-0000-0000-0000-000000000001';
+      const [{data:cats},{data:pr},{data:lr},{data:ur},{data:br}]=await Promise.all([
+        supabase.from('paper_categories').select('*').eq('subscriber_id',sid).order('category'),
+        supabase.from('printing_rates').select('*').eq('subscriber_id',sid).order('sort_order'),
+        supabase.from('lamination_rates').select('*').eq('subscriber_id',sid).order('sort_order'),
+        supabase.from('uv_rates').select('*').eq('subscriber_id',sid).order('sort_order'),
+        supabase.from('binding_rates').select('*').eq('subscriber_id',sid).order('sort_order'),
+      ]);
+      setPaperCats(cats||[]);setPlateRates(pr||[]);setLamRates(lr||[]);setUvRates(ur||[]);setBindRates(br||[]);
+      if(cats?.length){setSelCat(cats[0]);setCovCat(cats[0]);setInnCat(cats[0]);}
+      const pnames=[...new Set((pr||[]).map((r:any)=>r.plate_name))] as string[];
+      setPlateNames(pnames);
+      if(pnames.length>0){
+        const firstPlate=pnames[0];
+        const cols=(pr||[]).filter((r:any)=>r.plate_name===firstPlate).map((r:any)=>r.color_option);
+        setSelPlate(firstPlate);setCovPlate(firstPlate);setInnPlate(firstPlate);
+        setColorsByPlate(cols);setCovColorsByPlate(cols);setInnColorsByPlate(cols);
+        if(cols.length>0){setSelColor(cols[0]);setCovColor(cols[0]);setInnColor(cols[0]);}
+      }
+      setLoaded(true);
+    };
+    load();
+  },[subData]);
+
+  // Single item - load paper stocks when category changes
+  useEffect(()=>{if(!selCat)return;const sid=subData?.id||'00000000-0000-0000-0000-000000000001';supabase.from('paper_stocks').select('*').eq('subscriber_id',sid).eq('category',selCat.category).order('gsm').then(({data})=>{setPaperStocks(data||[]);if(data?.length)setGsm(data[0].gsm);});},[selCat,subData]);
+  // Cover - load stocks when category changes
+  useEffect(()=>{if(!covCat)return;const sid=subData?.id||'00000000-0000-0000-0000-000000000001';supabase.from('paper_stocks').select('*').eq('subscriber_id',sid).eq('category',covCat.category).order('gsm').then(({data})=>{setCovStocks(data||[]);if(data?.length)setCovGsm(data[0].gsm);});},[covCat,subData]);
+  // Inner - load stocks when category changes
+  useEffect(()=>{if(!innCat)return;const sid=subData?.id||'00000000-0000-0000-0000-000000000001';supabase.from('paper_stocks').select('*').eq('subscriber_id',sid).eq('category',innCat.category).order('gsm').then(({data})=>{setInnStocks(data||[]);if(data?.length)setInnGsm(data[0].gsm);});},[innCat,subData]);
+
+  // Update colors when plate selection changes (single item mode only)
+  useEffect(()=>{const cols=plateRates.filter(r=>r.plate_name===selPlate).map(r=>r.color_option);setColorsByPlate(cols);if(cols.length>0)setSelColor(cols[0]);},[selPlate,plateRates]);
+
+  const validatePages=(v:string)=>{const n=parseInt(v);if(!n){setPageError('');return;}if(n%4!==0)setPageError('Pages must be divisible by 4');else setPageError('');};
+
+  // ── PAPER COST HELPER ───────────────────────────────────────
+  // sheets = exact working sheets (can be decimal e.g. 2.5)
+  // parentSheets = sheets ÷ cuts (exact, no rounding)
+  const paperCost=(cat:any,gsmVal:number,sheets:number,pk:string)=>{
+    if(!cat||!gsmVal||!sheets)return 0;
+    const pi=PARENT_SHEETS[pk]||{cuts:1,pw:25,ph:36};
+    const parentSheets=sheets/pi.cuts; // exact — no rounding
+    const f=(pi.pw*pi.ph*0.2666)/828;
+    return((f*gsmVal*cat.rate_per_kg)/500)*parentSheets;
+  };
+
+  // ── PRINTING COST HELPER ────────────────────────────────────
+  // numPlates = ceil(pages ÷ ups) — each plate is one physical metal sheet (single side)
+  // impressions = total machine passes (both sides already counted)
+  const printCost=(plateName:string,colorOpt:string,numPlates:number,impressions:number)=>{
+    if(!plateName||!colorOpt||!numPlates||!impressions)return 0;
+    const rate=plateRates.find(r=>r.plate_name===plateName&&r.color_option===colorOpt);
+    if(!rate)return 0;
+    // Each plate includes first 1000 impressions free
+    const plateFixed=rate.fixed_charge*numPlates;
+    const freeImp=1000*numPlates;
+    const extraImp=Math.max(0,impressions-freeImp);
+    const extraRounded=Math.ceil(extraImp/1000)*1000;
+    return plateFixed+(extraRounded/1000)*rate.per_1000_impression;
+  };
+
+  // ── LAM COST HELPER ─────────────────────────────────────────
+  // passes = total impressions (already includes both sides if double)
+  // area = working sheet (plate) area in sq inches
+  const lamCost=(lamName:string,pk:string,impressions:number)=>{
+    if(lamName==='none'||!impressions)return 0;
+    const lr=lamRates.find(r=>r.lam_name===lamName);
+    if(!lr)return 0;
+    const pd=PLATE_DIMS[pk]||{w:18,h:25};
+    const area=pd.w*pd.h;
+    return Math.max((area/100)*lr.per_100_sqinch*impressions,lr.minimum_charge);
+  };
+
+  // ── UV COST HELPER ──────────────────────────────────────────
+  // passes = total impressions (already includes both sides if double)
+  // area = working sheet (plate) area in sq inches
+  const uvCost=(uvName:string,pk:string,impressions:number)=>{
+    if(uvName==='none'||!impressions)return 0;
+    const ur=uvRates.find(r=>r.uv_name===uvName);
+    if(!ur)return 0;
+    const pd=PLATE_DIMS[pk]||{w:18,h:25};
+    const area=pd.w*pd.h;
+    return Math.max((area/100)*ur.per_100_sqinch*impressions,ur.minimum_charge);
+  };
+
+  const calc=()=>{
+    const q=parseInt(qty);
+    const fW=size.id==='custom'?(parseFloat(cW)||0):size.w;
+    const fH=size.id==='custom'?(parseFloat(cH)||0):size.h;
+    if(!q||!fW||!fH)return;
+    const pk=size.plateSize;
+    const u=calcUps(fW,fH,pk);
+    const pi=PARENT_SHEETS[pk]||{parent:pk,cuts:1,pw:25,ph:36};
+
+    if(jobType==='single'){
+      if(!selCat)return;
+      const ws=Math.ceil(q/u);
+      const imp=sides==='double'?ws*2:ws;
+      // Single item = 1 plate (one design, one side)
+      const numPlates=sides==='double'?2:1; // front plate + back plate if double side
+      const papC=paperCost(selCat,gsm,ws,pk);
+      const prC=printCost(selPlate,selColor,numPlates,imp);
+      const lC=lamCost(selLam,pk,imp);   // imp = ws×2 if double, ws if single
+      const uC=uvCost(selUV,pk,imp);     // same — impressions = UV machine passes
+      const sub=papC+prC+lC+uC;
+      const am=sub*(1+M/100);const ta=am*(T/100);
+      setResult({finalPrice:am+ta,subtotal:sub,markupAmount:am-sub,taxAmount:ta,
+        stats:[{label:'Per piece',value:sym+(((am+ta)/q).toFixed(2))},{label:'Working sheets',value:ws.toLocaleString('en-IN')},{label:'Parent sheets',value:Math.ceil(ws/pi.cuts).toLocaleString('en-IN')+' · '+pi.parent},{label:'Impressions',value:imp.toLocaleString('en-IN')}],
+        breakdown:[{label:'Paper cost',value:sym+papC.toFixed(2)},{label:'Printing cost',value:sym+prC.toFixed(2)},...(lC>0?[{label:'Lamination',value:sym+lC.toFixed(2)}]:[]),...(uC>0?[{label:'UV / Coating',value:sym+uC.toFixed(2)}]:[])]});
+    } else {
+      // ── BROCHURE / BOOK ──────────────────────────────────────
+      const pages=parseInt(totalPages);
+      if(!pages||pages%4!==0||!covCat||!innCat)return;
+      const coverPages=4;
+      const innerPages=pages-4;
+
+      // ── COVER ─────────────────────────────────────────────
+      // W&T: both sides imposed on same plate, paper flips
+      // Working sheets = pages ÷ (ups × 2) × qty — EXACT, no round
+      // e.g. Letter 4ups: 4pages ÷ 8 × 10000 = 0.5 × 10000 = 5000 WS
+      const covWS=(coverPages/(u*2))*q;          // exact working sheets
+      const covImp=covWS*2;                        // impressions = WS × 2 sides
+      // Plates = ceil(pages ÷ ups) — each plate = 1 side, single metal sheet
+      const covPlates=Math.ceil(coverPages/u);
+      const covPapC=paperCost(covCat,covGsm,covWS,pk);
+      const covPrC=printCost(selPlate,covColor,covPlates,covImp);
+      const covLC=lamCost(covLam,pk,covImp);
+      const covUC=uvCost(covUV,pk,covImp);
+
+      // ── INNER PAGES ────────────────────────────────────────
+      // Working sheets per copy = innerPages ÷ (ups × 2) — EXACT decimal
+      // e.g. 20 pages, 4ups: 20÷8 = 2.5 sheets/copy
+      const innSheetsPerCopy=innerPages/(u*2);         // exact, no round
+      const innWS=innSheetsPerCopy*q;                  // total inner WS exact
+      const innImp=innWS*2;                             // impressions
+      // Plates = ceil(innerPages ÷ ups) — e.g. 20÷4=5, 20÷8=3
+      const innPlates=Math.ceil(innerPages/u);
+      const innPapC=paperCost(innCat,innGsm,innWS,pk);
+      const innPrC=printCost(selPlate,innColor,innPlates,innImp);
+      const innLC=lamCost(innLam,pk,innImp);
+
+      // ── BINDING ────────────────────────────────────────────
+      // Formats per copy = innSheetsPerCopy + 1 (cover) — EXACT decimal
+      // e.g. 2.5 + 1 = 3.5 formats/copy
+      const bindFormatsPerCopy=innSheetsPerCopy+1;     // exact
+      let bC=0;
+      if(selBind!=='none'){
+        const br=bindRates.find(r=>r.binding_name===selBind);
+        if(br) bC=bindFormatsPerCopy*br.per_binding_format*q;
+      }
+
+      const sub=covPapC+covPrC+covLC+covUC+innPapC+innPrC+innLC+bC;
+      const am=sub*(1+M/100);const ta=am*(T/100);
+
+      setResult({finalPrice:am+ta,subtotal:sub,markupAmount:am-sub,taxAmount:ta,
+        stats:[
+          {label:'Per copy',value:sym+(((am+ta)/q).toFixed(2))},
+          {label:'Cover: '+covPlates+' plate(s)',value:covWS.toLocaleString('en-IN',{maximumFractionDigits:1})+' WS · '+covImp.toLocaleString('en-IN')+' imp'},
+          {label:'Inner: '+innPlates+' plate(s)',value:innWS.toLocaleString('en-IN',{maximumFractionDigits:1})+' WS · '+innImp.toLocaleString('en-IN')+' imp'},
+          {label:'Binding formats/copy',value:bindFormatsPerCopy.toFixed(2)},
+        ],
+        breakdown:[
+          {label:'Cover paper',value:sym+covPapC.toFixed(2)},
+          {label:'Cover printing ('+covPlates+' plates)',value:sym+covPrC.toFixed(2)},
+          ...(covLC>0?[{label:'Cover lamination',value:sym+covLC.toFixed(2)}]:[]),
+          ...(covUC>0?[{label:'Cover UV',value:sym+covUC.toFixed(2)}]:[]),
+          {label:'Inner paper',value:sym+innPapC.toFixed(2)},
+          {label:'Inner printing ('+innPlates+' plates)',value:sym+innPrC.toFixed(2)},
+          ...(innLC>0?[{label:'Inner lamination',value:sym+innLC.toFixed(2)}]:[]),
+          ...(bC>0?[{label:'Binding ('+bindFormatsPerCopy.toFixed(2)+' fmt/copy)',value:sym+bC.toFixed(2)}]:[]),
+        ]});
+    }
+  };
+
+  if(!loaded)return <div style={{textAlign:'center',padding:40,color:'#888'}}>Loading rates...</div>;
+
+  const pages=parseInt(totalPages)||0;
+  const fW=size.id==='custom'?(parseFloat(cW)||0):size.w;
+  const fH=size.id==='custom'?(parseFloat(cH)||0):size.h;
+  const u=calcUps(fW||8.3,fH||11.7,size.plateSize);
+  const innSheetsPerCopy=pages>4?Math.ceil((pages-4)/(u*2)):0;
+
+  return(
+    <div>
+      {/* Job Type Toggle */}
+      <div style={CARD}>
+        <p style={SL}>Job Type</p>
+        <div style={TW}>
+          <button style={TB(jobType==='single')} onClick={()=>setJobType('single')}>
+            <div>📄 Single Item</div>
+            <div style={{fontSize:11,fontWeight:400,opacity:0.7,marginTop:2}}>Leaflet / Poster / Card</div>
+          </button>
+          <button style={TB(jobType==='book')} onClick={()=>setJobType('book')}>
+            <div>📚 Brochure / Book</div>
+            <div style={{fontSize:11,fontWeight:400,opacity:0.7,marginTop:2}}>Multi page with binding</div>
+          </button>
+        </div>
+      </div>
+
+      {/* ── COMMON: Final size + quantity + pages ── */}
+      <Sec title="Job Specs">
+        <SizeSelect size={size} setSize={setSize} cW={cW} setCW={setCW} cH={cH} setCH={setCH}/>
+        <div style={{marginBottom:jobType==='book'?12:0}}>
+          <div style={LBL}>Quantity<span style={{fontWeight:400,color:'#AAA',fontSize:11}}>{jobType==='book'?'copies':'pieces'}</span></div>
+          <input type="number" placeholder={jobType==='book'?'Enter number of copies':'Enter quantity'} value={qty} onChange={e=>setQty(e.target.value)} style={NIS}/>
+        </div>
+        {jobType==='book'&&(
+          <div>
+            <div style={LBL}>Total pages<span style={{fontWeight:400,color:'#AAA',fontSize:11}}>must be ÷ 4 (min 8)</span></div>
+            <input type="number" placeholder="e.g. 8, 12, 16, 24, 32..." value={totalPages} onChange={e=>{setTotalPages(e.target.value);validatePages(e.target.value);}} style={NIS}/>
+            {pageError&&<p style={{fontSize:12,color:'#E53E3E',marginTop:4}}>⚠ {pageError}</p>}
+            {pages>=8&&!pageError&&(
+              <div style={{display:'flex',gap:8,marginTop:8,flexWrap:'wrap'}}>
+                <span style={{fontSize:11,background:'#F5F0FF',color:'#6B46C1',borderRadius:4,padding:'2px 8px',fontWeight:500}}>📄 Cover: 4 pages</span>
+                <span style={{fontSize:11,background:'#EEF4FA',color:'#185FA5',borderRadius:4,padding:'2px 8px',fontWeight:500}}>📋 Inner: {pages-4} pages</span>
+                <span style={{fontSize:11,background:'#F0FFF4',color:'#276749',borderRadius:4,padding:'2px 8px',fontFamily:'monospace'}}>{innSheetsPerCopy} inner sheets/copy · {(innSheetsPerCopy+1)} binding formats</span>
+              </div>
+            )}
+          </div>
+        )}
+      </Sec>
+
+      {/* ─── SINGLE ITEM MODE ─── */}
+      {jobType==='single'&&(
+        <>
+          <Sec title="Paper">
+            <div style={{marginBottom:12}}><div style={LBL}>Paper category</div><select value={selCat?.id||''} onChange={e=>{const c=paperCats.find((x:any)=>x.id===e.target.value);if(c)setSelCat(c);}} style={IS}>{paperCats.map((c:any)=><option key={c.id} value={c.id}>{c.category}</option>)}</select></div>
+            <div><div style={LBL}>GSM</div><select value={gsm} onChange={e=>setGsm(parseInt(e.target.value))} style={IS}>{paperStocks.map((s:any)=><option key={s.id} value={s.gsm}>{s.gsm} GSM{!s.in_stock?' — OUT OF STOCK':''}</option>)}</select></div>
+          </Sec>
+          <Sec title="Printing">
+            <div style={{marginBottom:12}}><div style={LBL}>Plate size</div><select value={selPlate} onChange={e=>setSelPlate(e.target.value)} style={IS}>{plateNames.map(n=><option key={n} value={n}>{n}</option>)}</select></div>
+            <div style={{marginBottom:12}}><div style={LBL}>Print colors</div><select value={selColor} onChange={e=>setSelColor(e.target.value)} style={IS}>{colorsByPlate.map(c=><option key={c} value={c}>{c}</option>)}</select></div>
+            <div><div style={LBL}>Sides</div><div style={TW}><button style={TB(sides==='single')} onClick={()=>setSides('single')}>Single side</button><button style={TB(sides==='double')} onClick={()=>setSides('double')}>Front + Back</button></div></div>
+          </Sec>
+          <Sec title="Finishing" optional>
+            <div style={{marginBottom:12}}><div style={LBL}>Lamination</div><select value={selLam} onChange={e=>setSelLam(e.target.value)} style={IS}><option value="none">No Lamination</option>{lamRates.map(r=><option key={r.id} value={r.lam_name}>{r.lam_name}</option>)}</select>{selLam!=='none'&&<div style={{...TW,marginTop:8}}><button style={TB(!lamDbl)} onClick={()=>setLamDbl(false)}>Single side</button><button style={TB(lamDbl)} onClick={()=>setLamDbl(true)}>Both sides</button></div>}</div>
+            <div><div style={LBL}>UV / Coating</div><select value={selUV} onChange={e=>setSelUV(e.target.value)} style={IS}><option value="none">No UV / Coating</option>{uvRates.map(r=><option key={r.id} value={r.uv_name}>{r.uv_name}</option>)}</select></div>
+          </Sec>
+        </>
+      )}
+
+      {/* ─── BROCHURE / BOOK MODE ─── */}
+      {jobType==='book'&&(
+        <>
+          {/* COVER */}
+          <Sec title="📄 Cover (4 pages — always double side)" accent="#6B46C1">
+            <div style={{marginBottom:12,fontSize:12,color:'#888'}}>Cover = 1 sheet printed both sides = 4 pages. Select heavier paper (Art Card / FBB etc.)</div>
+            {/* Paper */}
+            <div style={{marginBottom:12}}><div style={LBL}>Paper category</div><select value={covCat?.id||''} onChange={e=>{const c=paperCats.find((x:any)=>x.id===e.target.value);if(c)setCovCat(c);}} style={IS}>{paperCats.map((c:any)=><option key={c.id} value={c.id}>{c.category}</option>)}</select></div>
+            <div style={{marginBottom:12}}><div style={LBL}>GSM</div><select value={covGsm} onChange={e=>setCovGsm(parseInt(e.target.value))} style={IS}>{covStocks.map((s:any)=><option key={s.id} value={s.gsm}>{s.gsm} GSM{!s.in_stock?' — OUT OF STOCK':''}</option>)}</select></div>
+            <div style={{height:1,background:'#F0F0F0',margin:'12px 0'}}/>
+            {/* Print colors only — plate auto-selected from final size */}
+            <div style={{marginBottom:12,padding:'8px 12px',background:'#F5F0FF',borderRadius:8,fontSize:12,color:'#6B46C1'}}>🎯 Plate: <strong>{selPlate}</strong> (auto from plate size above) · Colors available: {colorsByPlate.join(', ')}</div>
+            <div style={{marginBottom:12}}><div style={LBL}>Print colors</div><select value={covColor} onChange={e=>setCovColor(e.target.value)} style={IS}>{colorsByPlate.map((c:string)=><option key={c} value={c}>{c}</option>)}</select></div>
+            <div style={{height:1,background:'#F0F0F0',margin:'12px 0'}}/>
+            <div style={{marginBottom:12}}>
+              <div style={LBL}>Lamination (cover)</div>
+              <select value={covLam} onChange={e=>setCovLam(e.target.value)} style={IS}><option value="none">No Lamination</option>{lamRates.map(r=><option key={r.id} value={r.lam_name}>{r.lam_name}</option>)}</select>
+              {covLam!=='none'&&<div style={{...TW,marginTop:8}}><button style={TB(!covLamDbl)} onClick={()=>setCovLamDbl(false)}>Single side</button><button style={TB(covLamDbl)} onClick={()=>setCovLamDbl(true)}>Both sides</button></div>}
+            </div>
+            <div><div style={LBL}>UV / Coating (cover)</div><select value={covUV} onChange={e=>setCovUV(e.target.value)} style={IS}><option value="none">No UV / Coating</option>{uvRates.map(r=><option key={r.id} value={r.uv_name}>{r.uv_name}</option>)}</select></div>
+          </Sec>
+
+          {/* INNER PAGES */}
+          <Sec title={`📋 Inner Pages (${pages>4?pages-4:0} pages — double side)`} accent="#185FA5">
+            <div style={{marginBottom:12,fontSize:12,color:'#888'}}>Inner pages printed both sides. Usually lighter paper (Art Paper / Maplitho).</div>
+            {/* Paper */}
+            <div style={{marginBottom:12}}><div style={LBL}>Paper category</div><select value={innCat?.id||''} onChange={e=>{const c=paperCats.find((x:any)=>x.id===e.target.value);if(c)setInnCat(c);}} style={IS}>{paperCats.map((c:any)=><option key={c.id} value={c.id}>{c.category}</option>)}</select></div>
+            <div style={{marginBottom:12}}><div style={LBL}>GSM</div><select value={innGsm} onChange={e=>setInnGsm(parseInt(e.target.value))} style={IS}>{innStocks.map((s:any)=><option key={s.id} value={s.gsm}>{s.gsm} GSM{!s.in_stock?' — OUT OF STOCK':''}</option>)}</select></div>
+            <div style={{height:1,background:'#F0F0F0',margin:'12px 0'}}/>
+            {/* Print colors only — plate auto-selected from final size */}
+            <div style={{marginBottom:12,padding:'8px 12px',background:'#EEF4FA',borderRadius:8,fontSize:12,color:'#185FA5'}}>🎯 Plate: <strong>{selPlate}</strong> (auto from plate size above) · Colors available: {colorsByPlate.join(', ')}</div>
+            <div style={{marginBottom:12}}><div style={LBL}>Print colors</div><select value={innColor} onChange={e=>setInnColor(e.target.value)} style={IS}>{colorsByPlate.map((c:string)=><option key={c} value={c}>{c}</option>)}</select></div>
+            <div>
+              <div style={LBL}>Lamination (inner) — optional</div>
+              <select value={innLam} onChange={e=>setInnLam(e.target.value)} style={IS}><option value="none">No Lamination</option>{lamRates.map(r=><option key={r.id} value={r.lam_name}>{r.lam_name}</option>)}</select>
+            </div>
+          </Sec>
+
+          {/* BINDING */}
+          <Sec title="📎 Binding" optional>
+            <div style={{marginBottom:8,fontSize:12,color:'#888'}}>Binding cost is per binding format per copy</div>
+            <select value={selBind} onChange={e=>setSelBind(e.target.value)} style={IS}><option value="none">No Binding</option>{bindRates.map(r=><option key={r.id} value={r.binding_name}>{r.binding_name}</option>)}</select>
+          </Sec>
+        </>
+      )}
+
+      <button onClick={calc} style={{width:'100%',padding:14,background:'#C84B31',color:'#fff',border:'none',borderRadius:12,fontSize:15,fontWeight:600,cursor:'pointer',fontFamily:'inherit',marginTop:4}}>
+        Calculate total price →
+      </button>
+      {result&&<ResultBox r={result} markup={M} tax={T} sym={sym}/>}
+    </div>
+  );
+}
+
+// ─── MAIN PAGE ────────────────────────────────────────────────────────
+export default function Home(){
+  const [tab,setTab]=useState<'paper'|'printing'|'fulljob'>('paper');
+  const [user,setUser]=useState<any>(null);
+  const [subData,setSubData]=useState<any>(null);
+
+  useEffect(()=>{
+    supabase.auth.getUser().then(async({data:{user}})=>{
+      setUser(user);
+      if(user){
+        const {data}=await supabase.from('subscribers').select('*').eq('id',user.id).single();
+        setSubData(data);
+      }
+    });
+  },[]);
+
+  const logout=async()=>{await supabase.auth.signOut();setUser(null);setSubData(null);};
+
+  return(
     <>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap');
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: 'DM Sans', sans-serif; background: #F7F6F3; }
-        .nav { background: #1A1A1A; padding: 0 24px; display: flex; align-items: center; justify-content: space-between; height: 56px; position: sticky; top: 0; z-index: 100; }
-        .content { max-width: 1000px; margin: 0 auto; padding: 28px 24px; }
-        .card { background: #fff; border-radius: 12px; border: 1px solid #EBEBEB; padding: 24px; margin-bottom: 16px; }
-        .sh { background: #F9F9F9; border-bottom: 1px solid #F0F0F0; padding: 12px 20px; display: flex; justify-content: space-between; align-items: center; }
-        .st { font-size: 12px; font-weight: 600; color: #666; text-transform: uppercase; letter-spacing: 0.08em; }
-        .table { width: 100%; border-collapse: collapse; }
-        .table th { text-align: left; font-size: 11px; font-weight: 600; color: #999; text-transform: uppercase; letter-spacing: 0.06em; padding: 10px 16px; border-bottom: 1px solid #F0F0F0; }
-        .table td { padding: 12px 16px; border-bottom: 1px solid #F8F8F8; font-size: 13px; color: #1A1A1A; vertical-align: middle; }
-        .table tr:last-child td { border-bottom: none; }
-        .table tbody tr:hover td { background: #FAFAFA; cursor: pointer; }
-        .btn-primary { padding: 9px 20px; background: #1A1A1A; color: #fff; border: none; border-radius: 8px; font-size: 13px; font-weight: 500; cursor: pointer; font-family: inherit; }
-        .btn-red { padding: 9px 20px; background: #C84B31; color: #fff; border: none; border-radius: 8px; font-size: 13px; font-weight: 500; cursor: pointer; font-family: inherit; }
-        .btn-sm { padding: 5px 12px; background: #F5F5F5; color: #555; border: none; border-radius: 6px; font-size: 12px; cursor: pointer; font-family: inherit; }
-        .btn-outline { padding: 9px 20px; background: #fff; color: #1A1A1A; border: 1.5px solid #E8E8E8; border-radius: 8px; font-size: 13px; font-weight: 500; cursor: pointer; font-family: inherit; }
-        .search { padding: 9px 14px; border: 1.5px solid #E8E8E8; border-radius: 8px; font-size: 13px; font-family: inherit; color: #1A1A1A; background: #fff; outline: none; width: 260px; }
-        .search:focus { border-color: #C84B31; }
-        .field { margin-bottom: 14px; }
-        .field label { display: block; font-size: 11px; font-weight: 600; color: #888; margin-bottom: 5px; text-transform: uppercase; letter-spacing: 0.06em; }
-        input { padding: 9px 12px; border: 1.5px solid #E8E8E8; border-radius: 8px; font-size: 13px; font-family: 'DM Sans', sans-serif; color: #1A1A1A; background: #FAFAFA; outline: none; width: 100%; }
-        input:focus { border-color: #C84B31; background: #fff; }
-        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-        .stat-card { background: #fff; border: 1px solid #EBEBEB; border-radius: 10px; padding: 16px; }
-        .info-row { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #F5F5F5; }
-        .save-msg { color: #38A169; font-size: 13px; }
-        .err-msg { color: #E53E3E; font-size: 13px; }
-        @media(max-width:640px) { .content { padding: 16px; } .grid-2 { grid-template-columns: 1fr; } .search { width: 100%; } }
+        *{box-sizing:border-box;margin:0;padding:0;}body{font-family:'DM Sans',sans-serif;background:#F7F6F3;}
+        input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0;}
+        input[type=number]{-moz-appearance:textfield;}
+        .topbar{background:#1A1A1A;height:52px;display:flex;align-items:center;justify-content:space-between;padding:0 24px;position:sticky;top:0;z-index:100;}
+        .nav-link{font-size:13px;color:#888;text-decoration:none;}.nav-link:hover{color:#fff;}
+        .nav-btn{font-size:13px;color:#888;background:none;border:none;cursor:pointer;font-family:inherit;}.nav-btn:hover{color:#fff;}
+        .nav-signup{font-size:13px;font-weight:500;color:#fff;background:#C84B31;border:none;padding:7px 16px;border-radius:6px;cursor:pointer;font-family:inherit;text-decoration:none;}
+        .calc-tabs{background:#fff;border-bottom:1px solid #EBEBEB;display:flex;padding:0 24px;}
+        .calc-tab{padding:14px 20px;font-size:14px;font-weight:500;color:#888;cursor:pointer;border-bottom:2px solid transparent;background:none;border-top:none;border-left:none;border-right:none;font-family:inherit;white-space:nowrap;}
+        .calc-tab.active{color:#1A1A1A;border-bottom-color:#C84B31;}.calc-tab:hover{color:#1A1A1A;}
+        .page{min-height:calc(100vh - 100px);padding:28px 16px 64px;}
+        .container{max-width:540px;margin:0 auto;}
+        .live-badge{background:#F0FFF4;border:1px solid #9AE6B4;border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:12px;color:#276749;}
+        .demo-notice{background:#FFFBEB;border:1px solid #FDE68A;border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:12px;color:#92400E;}
       `}</style>
 
-      {/* NAV */}
-      <nav className="nav">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <div style={{ width: 8, height: 8, background: '#C84B31', borderRadius: '50%' }} />
-          <span style={{ fontSize: 14, fontWeight: 500, color: '#fff' }}>PrintCalc</span>
+      <div className="topbar">
+        <div style={{display:'flex',alignItems:'center',gap:8}}>
+          <div style={{width:8,height:8,background:'#C84B31',borderRadius:'50%'}}/>
+          <span style={{fontSize:13,fontWeight:500,color:'#fff'}}>PrintCalc</span>
+          {subData&&<span style={{fontSize:11,color:'#888',marginLeft:4}}>· {subData.business_name}</span>}
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-          <a href="/" style={{ fontSize: 13, color: '#888', textDecoration: 'none' }}>Calculator</a>
-          <a href="/quotes" style={{ fontSize: 13, color: '#888', textDecoration: 'none' }}>Quotes</a>
-          <a href="/orders" style={{ fontSize: 13, color: '#888', textDecoration: 'none' }}>Orders</a>
-          <a href="/dashboard" style={{ fontSize: 13, color: '#888', textDecoration: 'none' }}>Dashboard</a>
-          <button style={{ fontSize: 13, color: '#888', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }} onClick={logout}>Logout</button>
+        <div style={{display:'flex',alignItems:'center',gap:12}}>
+          {user?(
+            <>
+              <a href="/quotes" className="nav-link">Quotes</a>
+              <a href="/orders" className="nav-link">Orders</a>
+              <a href="/dashboard" className="nav-link">Dashboard</a>
+              <button className="nav-btn" onClick={logout}>Logout</button>
+            </>
+          ):(
+            <>
+              <a href="/customer/login" className="nav-link">Customer Login</a>
+              <a href="/login" className="nav-link">Login</a>
+              <a href="/signup" className="nav-signup">Sign up free</a>
+            </>
+          )}
         </div>
-      </nav>
-
-      <div className="content">
-
-        {/* ── LIST VIEW ── */}
-        {!selCust && (
-          <>
-            {/* Stats */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 12, marginBottom: 16 }}>
-              {[
-                { l: 'Total Customers', v: customers.length.toString() },
-                { l: 'With Active Orders', v: customers.filter(c => c.orders.some((o: any) => !['Delivered', 'Cancelled'].includes(o.status))).length.toString() },
-                { l: 'Total Revenue', v: fmt(customers.reduce((s, c) => s + c.total_spend, 0)), mono: true },
-                { l: 'Total Due', v: fmt(customers.reduce((s, c) => s + c.total_due, 0)), mono: true, color: customers.reduce((s, c) => s + c.total_due, 0) > 0 ? '#E53E3E' : '#38A169' },
-              ].map(s => (
-                <div key={s.l} className="stat-card">
-                  <p style={{ fontSize: 11, color: '#999', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>{s.l}</p>
-                  <p style={{ fontSize: s.mono ? 17 : 26, fontWeight: 600, fontFamily: s.mono ? 'DM Mono,monospace' : 'inherit', color: s.color || '#1A1A1A' }}>{s.v}</p>
-                </div>
-              ))}
-            </div>
-
-            {/* Add customer form */}
-            {showAdd && (
-              <div className="card" style={{ border: '1.5px solid #C84B31' }}>
-                <p style={{ fontSize: 13, fontWeight: 600, marginBottom: 16 }}>➕ Add New Customer</p>
-                <div className="grid-2">
-                  <div className="field"><label>Name *</label><input placeholder="Customer name" value={newCust.name} onChange={e => setNewCust({ ...newCust, name: e.target.value })} /></div>
-                  <div className="field"><label>Company</label><input placeholder="Company name" value={newCust.company} onChange={e => setNewCust({ ...newCust, company: e.target.value })} /></div>
-                  <div className="field"><label>Email</label><input type="email" placeholder="email@example.com" value={newCust.email} onChange={e => setNewCust({ ...newCust, email: e.target.value })} /></div>
-                  <div className="field"><label>Phone</label><input placeholder="Phone number" value={newCust.phone} onChange={e => setNewCust({ ...newCust, phone: e.target.value })} /></div>
-                </div>
-                <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-                  <button className="btn-red" onClick={addCustomer} disabled={saving}>{saving ? 'Saving...' : 'Add Customer'}</button>
-                  <button className="btn-outline" onClick={() => { setShowAdd(false); setNewCust({ name: '', email: '', phone: '', company: '' }); }}>Cancel</button>
-                  {saveMsg && <span className={saveMsg.startsWith('Please') ? 'err-msg' : 'save-msg'}>{saveMsg}</span>}
-                </div>
-              </div>
-            )}
-
-            {/* Customers table */}
-            <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-              <div className="sh">
-                <p className="st">All Customers ({filtered.length})</p>
-                <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-                  <input
-                    className="search"
-                    placeholder="🔍 Search by name, email, company..."
-                    value={search}
-                    onChange={e => setSearch(e.target.value)}
-                  />
-                  <button className="btn-red" onClick={() => setShowAdd(true)}>+ Add Customer</button>
-                </div>
-              </div>
-
-              {filtered.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: 48 }}>
-                  <p style={{ fontSize: 32, marginBottom: 12 }}>👥</p>
-                  <p style={{ fontSize: 15, color: '#888', marginBottom: 8 }}>
-                    {search ? `No customers matching "${search}"` : 'No customers yet'}
-                  </p>
-                  <p style={{ fontSize: 13, color: '#BBB' }}>
-                    Customers appear automatically when you create quotes or orders for them.
-                  </p>
-                </div>
-              ) : (
-                <table className="table">
-                  <thead>
-                    <tr>
-                      <th>Customer</th>
-                      <th>Contact</th>
-                      <th>Orders</th>
-                      <th>Quotes</th>
-                      <th>Total Spend</th>
-                      <th>Balance Due</th>
-                      <th>Last Activity</th>
-                      <th></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filtered.map((c, i) => {
-                      const lastActivity = [...c.orders, ...c.quotes].sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
-                      return (
-                        <tr key={i} onClick={() => loadCustomerDetail(c)}>
-                          <td>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                              <Avatar name={c.name} />
-                              <div>
-                                <p style={{ fontWeight: 600 }}>{c.name}</p>
-                                {c.company && <p style={{ fontSize: 11, color: '#AAA' }}>{c.company}</p>}
-                              </div>
-                            </div>
-                          </td>
-                          <td>
-                            {c.email && <p style={{ fontSize: 12 }}>{c.email}</p>}
-                            {c.phone && <p style={{ fontSize: 12, color: '#888' }}>{c.phone}</p>}
-                            {!c.email && !c.phone && <span style={{ color: '#CCC', fontSize: 12 }}>—</span>}
-                          </td>
-                          <td>
-                            <span style={{ fontFamily: 'monospace', fontWeight: 600 }}>{c.orders.length}</span>
-                            {c.orders.filter((o: any) => !['Delivered', 'Cancelled'].includes(o.status)).length > 0 && (
-                              <span style={{ marginLeft: 6, fontSize: 11, background: '#EEF4FA', color: '#185FA5', padding: '2px 6px', borderRadius: 4 }}>
-                                {c.orders.filter((o: any) => !['Delivered', 'Cancelled'].includes(o.status)).length} active
-                              </span>
-                            )}
-                          </td>
-                          <td style={{ fontFamily: 'monospace', fontWeight: 600 }}>{c.quotes.length}</td>
-                          <td style={{ fontFamily: 'monospace', fontWeight: 600 }}>{fmt(c.total_spend)}</td>
-                          <td style={{ fontFamily: 'monospace', fontWeight: 600, color: c.total_due > 0 ? '#E53E3E' : '#38A169' }}>{fmt(c.total_due)}</td>
-                          <td style={{ fontSize: 12, color: '#888' }}>{lastActivity ? formatDate(lastActivity.created_at) : '—'}</td>
-                          <td><button className="btn-sm" onClick={e => { e.stopPropagation(); loadCustomerDetail(c); }}>View →</button></td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              )}
-            </div>
-          </>
-        )}
-
-        {/* ── CUSTOMER DETAIL ── */}
-        {selCust && (
-          <>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <button className="btn-sm" onClick={() => { setSelCust(null); setCustOrders([]); setCustQuotes([]); }}>← Back</button>
-                <Avatar name={selCust.name} size={44} />
-                <div>
-                  <h2 style={{ fontSize: 20, fontWeight: 600 }}>{selCust.name}</h2>
-                  {selCust.company && <p style={{ fontSize: 13, color: '#888' }}>{selCust.company}</p>}
-                </div>
-              </div>
-              <div style={{ display: 'flex', gap: 10 }}>
-                <a href="/quotes" style={{ padding: '9px 16px', background: '#EEF4FA', color: '#185FA5', borderRadius: 8, textDecoration: 'none', fontSize: 13, fontWeight: 500 }}>
-                  + New Quote
-                </a>
-                <a href="/orders" style={{ padding: '9px 16px', background: '#F5F0FF', color: '#6B46C1', borderRadius: 8, textDecoration: 'none', fontSize: 13, fontWeight: 500 }}>
-                  + New Order
-                </a>
-              </div>
-            </div>
-
-            {detailLoading ? (
-              <div style={{ textAlign: 'center', padding: 48, color: '#888' }}>Loading...</div>
-            ) : (
-              <>
-                {/* Summary stats */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 12, marginBottom: 16 }}>
-                  {[
-                    { l: 'Total Orders', v: custOrders.length.toString() },
-                    { l: 'Total Quotes', v: custQuotes.length.toString() },
-                    { l: 'Total Spend', v: fmt(selCust.total_spend), mono: true },
-                    { l: 'Balance Due', v: fmt(selCust.total_due), mono: true, color: selCust.total_due > 0 ? '#E53E3E' : '#38A169' },
-                  ].map(s => (
-                    <div key={s.l} className="stat-card">
-                      <p style={{ fontSize: 11, color: '#999', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>{s.l}</p>
-                      <p style={{ fontSize: s.mono ? 17 : 26, fontWeight: 600, fontFamily: s.mono ? 'DM Mono,monospace' : 'inherit', color: s.color || '#1A1A1A' }}>{s.v}</p>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="grid-2">
-                  {/* Contact info */}
-                  <div className="card">
-                    <p style={{ fontSize: 12, fontWeight: 600, color: '#888', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12 }}>👤 Contact Info</p>
-                    {[
-                      ['Name', selCust.name],
-                      ['Company', selCust.company],
-                      ['Email', selCust.email],
-                      ['Phone', selCust.phone],
-                    ].map(([k, v]) => (
-                      <div key={k as string} className="info-row">
-                        <span style={{ fontSize: 13, color: '#888' }}>{k}</span>
-                        <span style={{ fontSize: 13, fontWeight: 500 }}>{v || '—'}</span>
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* Active orders summary */}
-                  <div className="card">
-                    <p style={{ fontSize: 12, fontWeight: 600, color: '#888', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12 }}>📦 Order Summary</p>
-                    {[
-                      ['Total Orders', custOrders.length],
-                      ['Active', custOrders.filter(o => !['Delivered', 'Cancelled'].includes(o.status)).length],
-                      ['Delivered', custOrders.filter(o => o.status === 'Delivered').length],
-                      ['Cancelled', custOrders.filter(o => o.status === 'Cancelled').length],
-                    ].map(([k, v]) => (
-                      <div key={k as string} className="info-row">
-                        <span style={{ fontSize: 13, color: '#888' }}>{k}</span>
-                        <span style={{ fontSize: 13, fontWeight: 600, fontFamily: 'DM Mono,monospace' }}>{v}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Orders history */}
-                <div className="card" style={{ padding: 0, overflow: 'hidden', marginBottom: 16 }}>
-                  <div className="sh"><p className="st">📦 Orders ({custOrders.length})</p></div>
-                  {custOrders.length === 0 ? (
-                    <div style={{ textAlign: 'center', padding: 24, color: '#AAA', fontSize: 13 }}>No orders yet</div>
-                  ) : (
-                    <table className="table">
-                      <thead><tr><th>Order #</th><th>Job</th><th>Qty</th><th>Amount</th><th>Due</th><th>Date</th><th>Status</th><th>Payment</th></tr></thead>
-                      <tbody>
-                        {custOrders.map(o => (
-                          <tr key={o.id} onClick={() => window.location.href = '/orders'} style={{ cursor: 'pointer' }}>
-                            <td style={{ fontFamily: 'monospace', color: '#C84B31', fontSize: 12, fontWeight: 600 }}>{o.order_number}</td>
-                            <td style={{ fontWeight: 500 }}>{o.job_title || '—'}</td>
-                            <td style={{ fontFamily: 'monospace' }}>{o.quantity?.toLocaleString('en-IN') || '—'}</td>
-                            <td style={{ fontFamily: 'monospace', fontWeight: 600 }}>{fmt(o.total_amount)}</td>
-                            <td style={{ fontFamily: 'monospace', color: o.due_amount > 0 ? '#E53E3E' : '#38A169', fontWeight: 500 }}>{fmt(o.due_amount)}</td>
-                            <td style={{ fontSize: 12, color: '#888' }}>{formatDate(o.created_at)}</td>
-                            <td><Badge s={o.status} /></td>
-                            <td><Badge s={o.payment_status} /></td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  )}
-                </div>
-
-                {/* Quotes history */}
-                <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-                  <div className="sh"><p className="st">📋 Quotes ({custQuotes.length})</p></div>
-                  {custQuotes.length === 0 ? (
-                    <div style={{ textAlign: 'center', padding: 24, color: '#AAA', fontSize: 13 }}>No quotes yet</div>
-                  ) : (
-                    <table className="table">
-                      <thead><tr><th>Quote #</th><th>Job</th><th>Qty</th><th>Amount</th><th>Valid Until</th><th>Date</th><th>Status</th></tr></thead>
-                      <tbody>
-                        {custQuotes.map(q => (
-                          <tr key={q.id} onClick={() => window.location.href = '/quotes'} style={{ cursor: 'pointer' }}>
-                            <td style={{ fontFamily: 'monospace', color: '#C84B31', fontSize: 12, fontWeight: 600 }}>{q.quote_number}</td>
-                            <td style={{ fontWeight: 500 }}>{q.job_title || '—'}</td>
-                            <td style={{ fontFamily: 'monospace' }}>{q.quantity?.toLocaleString('en-IN') || '—'}</td>
-                            <td style={{ fontFamily: 'monospace', fontWeight: 600 }}>{q.currency_symbol}{q.total_amount?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-                            <td style={{ fontSize: 12, color: '#888' }}>{formatDate(q.valid_until)}</td>
-                            <td style={{ fontSize: 12, color: '#888' }}>{formatDate(q.created_at)}</td>
-                            <td><Badge s={q.status} /></td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  )}
-                </div>
-              </>
-            )}
-          </>
-        )}
       </div>
+
+      <div className="calc-tabs">
+        {[{id:'paper',l:'📄 Paper'},{id:'printing',l:'🖨️ Printing'},{id:'fulljob',l:'✅ Full Job'}].map(t=>(
+          <button key={t.id} className={`calc-tab ${tab===t.id?'active':''}`} onClick={()=>setTab(t.id as any)}>{t.l}</button>
+        ))}
+      </div>
+
+      <main className="page">
+        <div className="container">
+          {subData?(
+            <div className="live-badge">✅ Using your live rates — {subData.business_name} · {subData.markup_percent}% markup · GST {subData.tax_percent}%</div>
+          ):(
+            <div className="demo-notice">⚡ Demo rates shown. <a href="/login" style={{color:'#C84B31',fontWeight:500}}>Login</a> to use your own rates.</div>
+          )}
+          {tab==='paper'&&<PaperTab subData={subData}/>}
+          {tab==='printing'&&<PrintingTab subData={subData}/>}
+          {tab==='fulljob'&&<FullJobTab subData={subData}/>}
+          <p style={{textAlign:'center',fontSize:12,color:'#CCC',marginTop:24}}>PrintCalc · Printing Industry Calculator</p>
+        </div>
+      </main>
     </>
   );
 }
