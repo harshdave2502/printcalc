@@ -134,7 +134,7 @@ export default function DashboardPage() {
   const stockCats=[...new Set(paperStocks.map((p:any)=>p.category))];
   const platenames=[...new Set(printRates.map(r=>r.plate_name))];
   const SBadge=({s}:any)=><span style={{padding:'3px 10px',borderRadius:4,fontSize:11,fontWeight:600,background:SBG[s]||'#F5F5F5',color:SC[s]||'#888'}}>{s}</span>;
-  const tabs=[{id:'overview',l:'Overview'},{id:'print_rates',l:'Printing Rates'},{id:'customers',l:'Customers'},{id:'quotes',l:'Quotes'},{id:'orders',l:'Orders'},{id:'rates',l:'Paper Rates'},{id:'stocks',l:'Stock Management'},{id:'settings',l:'Settings'}];
+  const tabs=[{id:'overview',l:'Overview'},{id:'print_rates',l:'Printing Rates'},{id:'customers',l:'Customers'},{id:'quotes',l:'Quotes'},{id:'orders',l:'Orders'},{id:'rates',l:'Paper Rates'},{id:'stocks',l:'Stock Management'},{id:'embed',l:'🔗 Embed & API'},{id:'settings',l:'Settings'}];
 
   // Shared input style
   const IS:any={padding:'8px 10px',border:'1.5px solid #E8E8E8',borderRadius:8,fontSize:13,fontFamily:'DM Sans,sans-serif',color:'#1A1A1A',background:'#FAFAFA',outline:'none'};
@@ -192,7 +192,7 @@ export default function DashboardPage() {
           <span style={{fontSize:14,fontWeight:500,color:'#fff'}}>PrintCalc</span>
         </div>
         <div style={{display:'flex',alignItems:'center',gap:16}}>
-          <a href="/calculator" style={{fontSize:13,color:'#888',textDecoration:'none'}}>← Calculator</a>
+          <a href="/" style={{fontSize:13,color:'#888',textDecoration:'none'}}>← Calculator</a>
           <span style={{fontSize:13,color:'#888'}}>{sub?.business_name}</span>
           <span className="plan-badge">{sub?.plan}</span>
           <button style={{fontSize:13,color:'#888',background:'none',border:'none',cursor:'pointer',fontFamily:'inherit'}} onClick={logout}>Logout</button>
@@ -251,7 +251,7 @@ export default function DashboardPage() {
             <div className="card">
               <p style={{fontSize:15,fontWeight:600,marginBottom:12}}>Quick links</p>
               <div style={{display:'flex',gap:10,flexWrap:'wrap'}}>
-                <a href="/calculator" style={{padding:'10px 18px',background:'#1A1A1A',color:'#fff',borderRadius:8,textDecoration:'none',fontSize:13,fontWeight:500}}>🖩 Calculator</a>
+                <a href="/" style={{padding:'10px 18px',background:'#1A1A1A',color:'#fff',borderRadius:8,textDecoration:'none',fontSize:13,fontWeight:500}}>🖩 Calculator</a>
                 <a href="/quotes" style={{padding:'10px 18px',background:'#EEF4FA',color:'#185FA5',borderRadius:8,textDecoration:'none',fontSize:13,fontWeight:500}}>📋 Quotes ({liveQuotes.length})</a>
                 <a href="/orders" style={{padding:'10px 18px',background:'#F5F0FF',color:'#6B46C1',borderRadius:8,textDecoration:'none',fontSize:13,fontWeight:500}}>📦 Orders ({liveOrders.length})</a>
                 <a href="/customer/login" style={{padding:'10px 18px',background:'#F0FFF4',color:'#276749',borderRadius:8,textDecoration:'none',fontSize:13,fontWeight:500}}>👤 Customer Portal</a>
@@ -442,46 +442,41 @@ export default function DashboardPage() {
         )}
 
         {/* CUSTOMERS */}
-        {tab==='customers'&&!selCust&&(
+        {tab==='customers'&&(
           <div>
-            <div className="coming-box">⚡ Customer login portal coming in next phase.</div>
-            <div className="card" style={{padding:0,overflow:'hidden'}}>
-              <div className="sh"><p className="st">All Customers</p><button className="btn-primary" style={{padding:'6px 14px',fontSize:12}}>+ Add Customer</button></div>
-              <table className="table"><thead><tr><th>Customer</th><th>Contact</th><th>Quotes</th><th>Orders</th><th>Last Active</th><th>Action</th></tr></thead>
-              <tbody><tr><td colSpan={6} style={{textAlign:'center',padding:32,color:'#888'}}>
-<a href="/customers" style={{color:'#C84B31',fontWeight:500}}>View all customers →</a>
-</td></tr></tbody>
-              </table>
+            <div className="info-box">💡 Manage your customers from the dedicated Customers page.</div>
+            <div className="card" style={{textAlign:'center',padding:40}}>
+              <p style={{fontSize:32,marginBottom:12}}>👥</p>
+              <p style={{fontSize:16,fontWeight:600,marginBottom:8}}>Customer Management</p>
+              <p style={{fontSize:13,color:'#888',marginBottom:20}}>View all customers, their orders, quotes and payment history.</p>
+              <a href="/customers" className="btn-primary" style={{textDecoration:'none',display:'inline-block'}}>Go to Customers Page →</a>
             </div>
-          </div>
-        )}
-        {tab==='customers'&&selCust&&(
-          <div>
-            <button className="back-btn" onClick={()=>setSelCust(null)}>← Back</button>
-            <div className="card"><div style={{display:'flex',alignItems:'center',gap:16,marginBottom:16}}><div className="avatar" style={{width:48,height:48,fontSize:18}}>{selCust.name[0]}</div><div><p style={{fontSize:18,fontWeight:600}}>{selCust.name}</p><p style={{fontSize:13,color:'#888'}}>{selCust.company}</p></div></div>
-            <table style={{width:'100%',fontSize:13}}><tbody>{[['Email',selCust.email],['Phone',selCust.phone],['Total Quotes',selCust.total_quotes],['Total Orders',selCust.total_orders],['Last Active',selCust.last_active]].map(([k,v])=><tr key={k as string} style={{borderBottom:'1px solid #F5F5F5'}}><td style={{padding:'10px 0',color:'#888',width:'40%'}}>{k}</td><td style={{padding:'10px 0',fontWeight:500}}>{v}</td></tr>)}</tbody></table></div>
-            <div className="card" style={{padding:0,overflow:'hidden'}}><div className="sh"><p className="st">Quote History</p></div><table className="table"><thead><tr><th>Quote ID</th><th>Paper</th><th>Qty</th><th>Amount</th><th>Date</th><th>Status</th></tr></thead><tbody>{([] as any[]).map((q:any)=><tr key={q.id}><td style={{fontFamily:'monospace',color:'#888',fontSize:12}}>{q.id}</td><td>{q.paper}</td><td style={{fontFamily:'monospace'}}>{q.qty.toLocaleString()}</td><td style={{fontFamily:'monospace',fontWeight:500}}>{q.amount}</td><td style={{fontSize:12,color:'#888'}}>{q.date}</td><td><SBadge s={q.status}/></td></tr>)}</tbody></table></div>
           </div>
         )}
 
         {/* QUOTES */}
         {tab==='quotes'&&(
           <div>
-            <div className="coming-box">⚡ Quote generation and PDF export coming in next phase.</div>
-            <div className="card" style={{padding:0,overflow:'hidden'}}><div className="sh"><p className="st">All Quotes</p><button className="btn-primary" style={{padding:'6px 14px',fontSize:12}}>+ New Quote</button></div>
-            <table className="table"><thead><tr><th>Quote ID</th><th>Customer</th><th>Paper</th><th>Qty</th><th>Amount</th><th>Date</th><th>Status</th><th>PDF</th></tr></thead>
-            <tbody>{([] as any[]).map((q:any)=><tr key={q.id}><td style={{fontFamily:'monospace',color:'#888',fontSize:12}}>{q.id}</td><td style={{fontWeight:500}}>{q.customer}</td><td style={{fontSize:12}}>{q.paper}</td><td style={{fontFamily:'monospace'}}>{q.qty.toLocaleString()}</td><td style={{fontFamily:'monospace',fontWeight:500}}>{q.amount}</td><td style={{fontSize:12,color:'#888'}}>{q.date}</td><td><SBadge s={q.status}/></td><td><button className="btn-sm">↓</button></td></tr>)}</tbody></table></div>
+            <div className="info-box">💡 Manage all your quotes from the dedicated Quotes page.</div>
+            <div className="card" style={{textAlign:'center',padding:40}}>
+              <p style={{fontSize:32,marginBottom:12}}>📋</p>
+              <p style={{fontSize:16,fontWeight:600,marginBottom:8}}>Quote Management</p>
+              <p style={{fontSize:13,color:'#888',marginBottom:20}}>Create quotes, generate PDFs and track status.</p>
+              <a href="/quotes" className="btn-primary" style={{textDecoration:'none',display:'inline-block'}}>Go to Quotes Page →</a>
+            </div>
           </div>
         )}
 
         {/* ORDERS */}
         {tab==='orders'&&(
           <div>
-            <div className="coming-box">⚡ Live order management coming in next phase.</div>
-            <div className="stat-grid-3">{[{l:'In Production',v:'1',c:'#185FA5'},{l:'Ready',v:'1',c:'#6B46C1'},{l:'Delivered',v:'1',c:'#38A169'}].map(s=><div key={s.l} className="stat-card"><p className="stat-label">{s.l}</p><p className="stat-value" style={{color:s.c}}>{s.v}</p></div>)}</div>
-            <div className="card" style={{padding:0,overflow:'hidden'}}><div className="sh"><p className="st">All Orders</p></div>
-            <table className="table"><thead><tr><th>Order ID</th><th>Customer</th><th>Paper</th><th>Qty</th><th>Amount</th><th>Date</th><th>Status</th><th>Update</th></tr></thead>
-            <tbody>{([] as any[]).map((o:any)=><tr key={o.id}><td style={{fontFamily:'monospace',color:'#888',fontSize:12}}>{o.id}</td><td style={{fontWeight:500}}>{o.customer}</td><td style={{fontSize:12}}>{o.paper}</td><td style={{fontFamily:'monospace'}}>{o.qty.toLocaleString()}</td><td style={{fontFamily:'monospace',fontWeight:500}}>{o.amount}</td><td style={{fontSize:12,color:'#888'}}>{o.date}</td><td><SBadge s={o.status}/></td><td><select className="select-sm"><option>Pending</option><option>In Production</option><option>Ready</option><option>Delivered</option></select></td></tr>)}</tbody></table></div>
+            <div className="info-box">💡 Manage all your orders from the dedicated Orders page.</div>
+            <div className="card" style={{textAlign:'center',padding:40}}>
+              <p style={{fontSize:32,marginBottom:12}}>📦</p>
+              <p style={{fontSize:16,fontWeight:600,marginBottom:8}}>Order Management</p>
+              <p style={{fontSize:13,color:'#888',marginBottom:20}}>Track orders, manage payments and update delivery status.</p>
+              <a href="/orders" className="btn-primary" style={{textDecoration:'none',display:'inline-block'}}>Go to Orders Page →</a>
+            </div>
           </div>
         )}
 
@@ -510,6 +505,92 @@ export default function DashboardPage() {
               </table>
             </div>
             ))}
+          </div>
+        )}
+
+        {/* EMBED & API */}
+        {tab==='embed'&&sub&&(
+          <div>
+            {/* iFrame Embed */}
+            <div className="card" style={{marginBottom:16}}>
+              <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:16}}>
+                <div style={{width:40,height:40,background:'#EEF4FA',borderRadius:10,display:'flex',alignItems:'center',justifyContent:'center',fontSize:20}}>🔗</div>
+                <div>
+                  <p style={{fontSize:16,fontWeight:600,color:'#1A1A1A'}}>iFrame Embed</p>
+                  <p style={{fontSize:13,color:'#888'}}>Embed your branded calculator on any website</p>
+                </div>
+              </div>
+              <div style={{background:'#F9F9F9',border:'1px solid #E8E8E8',borderRadius:10,padding:16,marginBottom:16}}>
+                <p style={{fontSize:12,fontWeight:600,color:'#888',textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:8}}>Your Calculator URL</p>
+                <div style={{display:'flex',gap:8,alignItems:'center'}}>
+                  <code style={{flex:1,background:'#fff',border:'1px solid #E8E8E8',borderRadius:8,padding:'10px 14px',fontSize:13,color:'#185FA5',wordBreak:'break-all' as const}}>
+                    {typeof window!=='undefined'?window.location.origin:''}/embed/{sub.id}
+                  </code>
+                  <button className="btn-primary" style={{padding:'10px 16px',fontSize:12,flexShrink:0}} onClick={()=>{navigator.clipboard.writeText(`${window.location.origin}/embed/${sub.id}`).then(()=>alert('URL copied!'));}}>Copy</button>
+                </div>
+              </div>
+              <div style={{background:'#F9F9F9',border:'1px solid #E8E8E8',borderRadius:10,padding:16,marginBottom:16}}>
+                <p style={{fontSize:12,fontWeight:600,color:'#888',textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:8}}>Embed Code — paste on your website</p>
+                <pre style={{background:'#1A1A1A',color:'#A78BFA',borderRadius:8,padding:16,fontSize:12,overflowX:'auto' as const,lineHeight:1.6}}>
+{`<iframe
+  src="${typeof window!=='undefined'?window.location.origin:''}/embed/${sub.id}"
+  width="100%"
+  height="700px"
+  style="border:none;border-radius:12px;box-shadow:0 4px 24px rgba(0,0,0,0.08);"
+  title="${sub.business_name} Print Calculator"
+></iframe>`}
+                </pre>
+                <button className="btn-primary" style={{marginTop:10,fontSize:12}} onClick={()=>{
+                  const code=`<iframe\n  src="${window.location.origin}/embed/${sub.id}"\n  width="100%"\n  height="700px"\n  style="border:none;border-radius:12px;box-shadow:0 4px 24px rgba(0,0,0,0.08);"\n  title="${sub.business_name} Print Calculator"\n></iframe>`;
+                  navigator.clipboard.writeText(code).then(()=>alert('Embed code copied!'));
+                }}>Copy Embed Code</button>
+              </div>
+              <div style={{background:'#F0FFF4',border:'1px solid #9AE6B4',borderRadius:10,padding:14}}>
+                <p style={{fontSize:13,color:'#276749',fontWeight:500,marginBottom:6}}>✅ How to use:</p>
+                <ol style={{fontSize:13,color:'#276749',paddingLeft:16,lineHeight:1.8}}>
+                  <li>Copy the embed code above</li>
+                  <li>Go to your website editor (WordPress, Wix, etc.)</li>
+                  <li>Add an HTML block or custom code section</li>
+                  <li>Paste the code — your branded calculator appears!</li>
+                </ol>
+              </div>
+            </div>
+
+            {/* Preview */}
+            <div className="card">
+              <p style={{fontSize:15,fontWeight:600,marginBottom:4}}>Preview your embed</p>
+              <p style={{fontSize:13,color:'#888',marginBottom:16}}>This is exactly how it looks on your website</p>
+              <div style={{border:'2px dashed #E8E8E8',borderRadius:12,overflow:'hidden'}}>
+                <iframe
+                  src={`${typeof window!=='undefined'?window.location.origin:''}/embed/${sub.id}`}
+                  width="100%"
+                  height="600px"
+                  style={{border:'none',display:'block'}}
+                  title="Calculator Preview"
+                />
+              </div>
+            </div>
+
+            {/* API section - coming soon */}
+            <div className="card" style={{background:'#F9F9F9',border:'1.5px dashed #E8E8E8'}}>
+              <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:12}}>
+                <div style={{width:40,height:40,background:'#F5F0FF',borderRadius:10,display:'flex',alignItems:'center',justifyContent:'center',fontSize:20}}>⚡</div>
+                <div>
+                  <p style={{fontSize:16,fontWeight:600,color:'#1A1A1A'}}>API Access</p>
+                  <p style={{fontSize:13,color:'#888'}}>For developers — integrate directly into your own system</p>
+                </div>
+                <span style={{marginLeft:'auto',background:'#FDE68A',color:'#78350F',fontSize:11,fontWeight:700,padding:'3px 10px',borderRadius:100,textTransform:'uppercase' as const,letterSpacing:'0.08em'}}>Coming Soon</span>
+              </div>
+              <p style={{fontSize:13,color:'#888',lineHeight:1.6,marginBottom:12}}>
+                Get a unique API key and let your developers connect your ordering system, website or app directly to your PrintCalc rates. Perfect for enterprises and large businesses.
+              </p>
+              <div style={{background:'#1A1A1A',borderRadius:8,padding:14,fontFamily:'monospace',fontSize:12,color:'#A78BFA',lineHeight:1.7}}>
+                <span style={{color:'#666'}}>// Example API call</span><br/>
+                POST /api/calculate<br/>
+                <span style={{color:'#38A169'}}>{'{'} "size": "A4", "gsm": 300, "qty": 5000 {'}'}</span><br/>
+                <span style={{color:'#666'}}>// Returns calculated price instantly</span>
+              </div>
+            </div>
           </div>
         )}
 
