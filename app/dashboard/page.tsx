@@ -11,6 +11,362 @@ const GSM_RANGES: Record<string,string> = {
 const SC:Record<string,string>={Draft:'#888',Sent:'#185FA5',Converted:'#38A169',Expired:'#E53E3E',Pending:'#D97706','In Production':'#185FA5',Ready:'#6B46C1',Delivered:'#38A169'};
 const SBG:Record<string,string>={Draft:'#F5F5F5',Sent:'#EEF4FA',Converted:'#F0FFF4',Expired:'#FFF0F0',Pending:'#FFFBEB','In Production':'#EEF4FA',Ready:'#F5F0FF',Delivered:'#F0FFF4'};
 
+// ─── CUSTOMER TAB COMPONENT ───────────────────────────────────────────
+function CustomerTab({sub,subId,sym,paperCats,printRates,lamRates,uvRates,IS}:any){
+  const [customers,setCustomers]=useState<any[]>([]);
+  const [loading,setLoading]=useState(true);
+  const [selCust,setSelCust]=useState<any>(null);
+  const [showAdd,setShowAdd]=useState(false);
+  const [custRates,setCustRates]=useState<any[]>([]);
+  const [savingRate,setSavingRate]=useState(false);
+  const [saveMsg,setSaveMsg]=useState('');
+  const [newCust,setNewCust]=useState({name:'',email:'',phone:'',company:'',markup_percent:''});
+  const [adding,setAdding]=useState(false);
+  const [activeRateTab,setActiveRateTab]=useState<'default'|'paper'|'printing'|'lam'>('default');
+
+  const saved=(m:string)=>{setSaveMsg(m);setTimeout(()=>setSaveMsg(''),2500);};
+
+  useEffect(()=>{
+    if(!subId)return;
+    supabase.from('customers').select('*').eq('subscriber_id',subId).order('created_at',{ascending:false})
+      .then(({data})=>{ setCustomers(data||[]); setLoading(false); });
+  },[subId]);
+
+  const loadCustRates=async(custId:string)=>{
+    const {data}=await supabase.from('customer_rates').select('*').eq('customer_id',custId);
+    setCustRates(data||[]);
+  };
+
+  const selectCust=async(c:any)=>{
+    setSelCust(c);
+    await loadCustRates(c.id);
+    setActiveRateTab('default');
+  };
+
+  const addCustomer=async()=>{
+    if(!newCust.name||!newCust.email)return;
+    setAdding(true);
+    const {data}=await supabase.from('customers').insert({
+      subscriber_id:subId,
+      name:newCust.name,
+      email:newCust.email,
+      phone:newCust.phone,
+      company:newCust.company,
+      markup_percent:newCust.markup_percent?parseFloat(newCust.markup_percent):null,
+    }).select().single();
+    if(data){setCustomers(p=>[data,...p]);setNewCust({name:'',email:'',phone:'',company:'',markup_percent:''});setShowAdd(false);saved('Customer added!');}
+    setAdding(false);
+  };
+
+  const getCustRate=(type:string,key:string)=>{
+    const r=custRates.find(x=>x.rate_type===type&&x.rate_key===key);
+    return r?r.custom_value:null;
+  };
+
+  const saveCustRate=async(type:string,key:string,value:number)=>{
+    setSavingRate(true);
+    const existing=custRates.find(x=>x.rate_type===type&&x.rate_key===key);
+    if(existing){
+      await supabase.from('customer_rates').update({custom_value:value}).eq('id',existing.id);
+      setCustRates(p=>p.map(x=>x.id===existing.id?{...x,custom_value:value}:x));
+    } else {
+      const {data}=await supabase.from('customer_rates').insert({
+        subscriber_id:subId,customer_id:selCust.id,rate_type:type,rate_key:key,custom_value:value
+      }).select().single();
+      if(data)setCustRates(p=>[...p,data]);
+    }
+    saved('Rate saved!');setSavingRate(false);
+  };
+
+  const deleteCustRate=async(type:string,key:string)=>{
+    const existing=custRates.find(x=>x.rate_type===type&&x.rate_key===key);
+    if(existing){
+      await supabase.from('customer_rates').delete().eq('id',existing.id);
+      setCustRates(p=>p.filter(x=>x.id!==existing.id));
+      saved('Reset to default!');
+    }
+  };
+
+  const saveMarkup=async()=>{
+    setSavingRate(true);
+    const markup=parseFloat(selCust.markup_percent)||null;
+    await supabase.from('customers').update({markup_percent:markup,notes:selCust.notes||''}).eq('id',selCust.id);
+    setCustomers(p=>p.map(x=>x.id===selCust.id?{...x,markup_percent:markup,notes:selCust.notes}:x));
+    saved('Saved!');setSavingRate(false);
+  };
+
+  const embedUrl=typeof window!=='undefined'?`${window.location.origin}/embed/${subId}?c=${selCust?.id}`:'';
+
+  const IS2:any={padding:'7px 10px',border:'1.5px solid #E8E8E8',borderRadius:8,fontSize:13,fontFamily:'DM Sans,sans-serif',color:'#1A1A1A',background:'#FAFAFA',outline:'none',width:'100%'};
+
+  if(loading)return <div style={{textAlign:'center',padding:40,color:'#888'}}>Loading customers...</div>;
+
+  // ── CUSTOMER DETAIL VIEW ──────────────────────────────────────────
+  if(selCust)return(
+    <div>
+      <button className="back-btn" onClick={()=>{setSelCust(null);setCustRates([]);}}>← Back to customers</button>
+      {saveMsg&&<p style={{color:'#38A169',fontSize:13,marginBottom:12}}>✓ {saveMsg}</p>}
+
+      {/* Customer header */}
+      <div className="card" style={{marginBottom:12}}>
+        <div style={{display:'flex',alignItems:'center',gap:14,marginBottom:16}}>
+          <div className="avatar" style={{width:48,height:48,fontSize:18,background:'#C84B31'}}>{selCust.name[0]}</div>
+          <div style={{flex:1}}>
+            <p style={{fontSize:18,fontWeight:600,color:'#1A1A1A'}}>{selCust.name}</p>
+            <p style={{fontSize:13,color:'#888'}}>{selCust.company||selCust.email}</p>
+          </div>
+          <div style={{textAlign:'right'}}>
+            <p style={{fontSize:11,color:'#AAA',marginBottom:4}}>Customer calculator link</p>
+            <button className="btn-primary" style={{fontSize:11,padding:'6px 12px'}} onClick={()=>{navigator.clipboard.writeText(embedUrl).then(()=>alert('Link copied! Share with '+selCust.name));}}>
+              📋 Copy link
+            </button>
+          </div>
+        </div>
+        <div style={{background:'#F9F9F9',borderRadius:8,padding:'8px 12px',fontSize:12,color:'#888',fontFamily:'monospace',wordBreak:'break-all' as const}}>
+          {embedUrl}
+        </div>
+      </div>
+
+      {/* Rate tabs */}
+      <div style={{display:'flex',gap:8,marginBottom:12,flexWrap:'wrap' as const}}>
+        {[{id:'default',l:'⚙️ Markup & Notes'},{id:'paper',l:'📄 Paper Rates'},{id:'printing',l:'🖨️ Printing Rates'},{id:'lam',l:'✨ Lam & UV'}].map(t=>(
+          <button key={t.id} onClick={()=>setActiveRateTab(t.id as any)} style={{padding:'8px 14px',borderRadius:8,fontSize:12,fontWeight:500,cursor:'pointer',fontFamily:'inherit',border:'1.5px solid',borderColor:activeRateTab===t.id?'#1A1A1A':'#E8E8E8',background:activeRateTab===t.id?'#1A1A1A':'#fff',color:activeRateTab===t.id?'#fff':'#666'}}>{t.l}</button>
+        ))}
+      </div>
+
+      {/* ── MARKUP & NOTES ── */}
+      {activeRateTab==='default'&&(
+        <div className="card">
+          <p style={{fontSize:13,fontWeight:600,marginBottom:16}}>Default settings for {selCust.name}</p>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16,marginBottom:16}}>
+            <div>
+              <label style={{display:'block',fontSize:12,fontWeight:500,color:'#888',marginBottom:6}}>Custom Markup % <span style={{fontWeight:400}}>(leave blank to use your default {sub?.markup_percent}%)</span></label>
+              <input type="number" placeholder={`Default: ${sub?.markup_percent}%`} value={selCust.markup_percent||''} onChange={e=>setSelCust({...selCust,markup_percent:e.target.value})} style={IS2}/>
+            </div>
+            <div>
+              <label style={{display:'block',fontSize:12,fontWeight:500,color:'#888',marginBottom:6}}>Notes (internal only)</label>
+              <input type="text" placeholder="e.g. Bulk customer, special terms..." value={selCust.notes||''} onChange={e=>setSelCust({...selCust,notes:e.target.value})} style={IS2}/>
+            </div>
+          </div>
+          <button className="btn-primary" onClick={saveMarkup} disabled={savingRate}>{savingRate?'Saving...':'Save settings'}</button>
+          <div style={{marginTop:16,padding:12,background:'#FFFBEB',borderRadius:8,border:'1px solid #FDE68A'}}>
+            <p style={{fontSize:12,color:'#92400E',fontWeight:600,marginBottom:4}}>ℹ️ How customer rates work:</p>
+            <p style={{fontSize:12,color:'#92400E',lineHeight:1.7}}>
+              • Set custom markup above to override your default markup for this customer<br/>
+              • Set custom paper/printing rates in other tabs to override specific rates<br/>
+              • Any rate not set here will use your default rates automatically<br/>
+              • Share the customer link above — they will see their own rates
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* ── PAPER RATES ── */}
+      {activeRateTab==='paper'&&(
+        <div className="card" style={{padding:0,overflow:'hidden'}}>
+          <div className="sh">
+            <p className="st">Custom Paper Rates for {selCust.name}</p>
+            <span style={{fontSize:11,color:'#888'}}>Blank = use your default rate</span>
+          </div>
+          <table className="table">
+            <thead><tr><th>Category</th><th>Your Default Rate</th><th>Custom Rate for {selCust.name}</th><th>Action</th></tr></thead>
+            <tbody>
+              {paperCats.map((cat:any)=>{
+                const customVal=getCustRate('paper',cat.category);
+                const [editing,setEditing]=useState<number|null>(customVal);
+                return(
+                  <tr key={cat.id}>
+                    <td style={{fontWeight:500}}>{cat.category}</td>
+                    <td style={{fontFamily:'monospace',color:'#888'}}>{sym}{cat.rate_per_kg}/kg</td>
+                    <td>
+                      <input type="number" placeholder={`${cat.rate_per_kg} (default)`}
+                        value={editing??''}
+                        onChange={e=>setEditing(e.target.value?parseFloat(e.target.value):null)}
+                        style={{...IS2,width:140}}/>
+                    </td>
+                    <td style={{display:'flex',gap:6}}>
+                      <button className="btn-primary" style={{fontSize:11,padding:'5px 12px'}} disabled={savingRate}
+                        onClick={()=>{if(editing!==null)saveCustRate('paper',cat.category,editing);}}>
+                        Save
+                      </button>
+                      {customVal!==null&&<button className="btn-del" style={{fontSize:11}} onClick={()=>{setEditing(null);deleteCustRate('paper',cat.category);}}>Reset</button>}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* ── PRINTING RATES ── */}
+      {activeRateTab==='printing'&&(
+        <div className="card" style={{padding:0,overflow:'hidden'}}>
+          <div className="sh">
+            <p className="st">Custom Printing Rates for {selCust.name}</p>
+            <span style={{fontSize:11,color:'#888'}}>Override fixed charge or per-1000 rate</span>
+          </div>
+          <table className="table">
+            <thead><tr><th>Plate / Color</th><th>Default Fixed</th><th>Custom Fixed</th><th>Default /1000</th><th>Custom /1000</th><th>Action</th></tr></thead>
+            <tbody>
+              {printRates.map((r:any)=>{
+                const key=`${r.plate_name}__${r.color_option}`;
+                const customFixed=getCustRate('print_fixed',key);
+                const customPer=getCustRate('print_per1000',key);
+                const [eFixed,setEFixed]=useState<number|null>(customFixed);
+                const [ePer,setEPer]=useState<number|null>(customPer);
+                return(
+                  <tr key={r.id}>
+                    <td><span style={{fontWeight:500}}>{r.plate_name}</span><br/><span style={{fontSize:11,color:'#888'}}>{r.color_option}</span></td>
+                    <td style={{fontFamily:'monospace',color:'#888'}}>{sym}{r.fixed_charge}</td>
+                    <td><input type="number" placeholder={`${r.fixed_charge}`} value={eFixed??''} onChange={e=>setEFixed(e.target.value?parseFloat(e.target.value):null)} style={{...IS2,width:100}}/></td>
+                    <td style={{fontFamily:'monospace',color:'#888'}}>{sym}{r.per_1000_impression}</td>
+                    <td><input type="number" placeholder={`${r.per_1000_impression}`} value={ePer??''} onChange={e=>setEPer(e.target.value?parseFloat(e.target.value):null)} style={{...IS2,width:100}}/></td>
+                    <td>
+                      <button className="btn-primary" style={{fontSize:11,padding:'5px 12px'}} disabled={savingRate} onClick={()=>{
+                        if(eFixed!==null)saveCustRate('print_fixed',key,eFixed);
+                        if(ePer!==null)saveCustRate('print_per1000',key,ePer);
+                      }}>Save</button>
+                      {(customFixed!==null||customPer!==null)&&<button className="btn-del" style={{fontSize:11,marginLeft:4}} onClick={()=>{setEFixed(null);setEPer(null);deleteCustRate('print_fixed',key);deleteCustRate('print_per1000',key);}}>Reset</button>}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* ── LAM & UV ── */}
+      {activeRateTab==='lam'&&(
+        <div>
+          <div className="card" style={{padding:0,overflow:'hidden',marginBottom:12}}>
+            <div className="sh"><p className="st">Custom Lamination Rates</p></div>
+            <table className="table">
+              <thead><tr><th>Type</th><th>Default /100sqin</th><th>Custom /100sqin</th><th>Action</th></tr></thead>
+              <tbody>
+                {lamRates.map((r:any)=>{
+                  const customVal=getCustRate('lam',r.lam_name);
+                  const [editing,setEditing]=useState<number|null>(customVal);
+                  return(
+                    <tr key={r.id}>
+                      <td style={{fontWeight:500}}>{r.lam_name}</td>
+                      <td style={{fontFamily:'monospace',color:'#888'}}>{sym}{r.per_100_sqinch}</td>
+                      <td><input type="number" placeholder={`${r.per_100_sqinch}`} value={editing??''} onChange={e=>setEditing(e.target.value?parseFloat(e.target.value):null)} style={{...IS2,width:120}}/></td>
+                      <td style={{display:'flex',gap:6}}>
+                        <button className="btn-primary" style={{fontSize:11,padding:'5px 12px'}} disabled={savingRate} onClick={()=>{if(editing!==null)saveCustRate('lam',r.lam_name,editing);}}>Save</button>
+                        {customVal!==null&&<button className="btn-del" style={{fontSize:11}} onClick={()=>{setEditing(null);deleteCustRate('lam',r.lam_name);}}>Reset</button>}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <div className="card" style={{padding:0,overflow:'hidden'}}>
+            <div className="sh"><p className="st">Custom UV / Coating Rates</p></div>
+            <table className="table">
+              <thead><tr><th>Type</th><th>Default /100sqin</th><th>Custom /100sqin</th><th>Action</th></tr></thead>
+              <tbody>
+                {uvRates.map((r:any)=>{
+                  const customVal=getCustRate('uv',r.uv_name);
+                  const [editing,setEditing]=useState<number|null>(customVal);
+                  return(
+                    <tr key={r.id}>
+                      <td style={{fontWeight:500}}>{r.uv_name}</td>
+                      <td style={{fontFamily:'monospace',color:'#888'}}>{sym}{r.per_100_sqinch}</td>
+                      <td><input type="number" placeholder={`${r.per_100_sqinch}`} value={editing??''} onChange={e=>setEditing(e.target.value?parseFloat(e.target.value):null)} style={{...IS2,width:120}}/></td>
+                      <td style={{display:'flex',gap:6}}>
+                        <button className="btn-primary" style={{fontSize:11,padding:'5px 12px'}} disabled={savingRate} onClick={()=>{if(editing!==null)saveCustRate('uv',r.uv_name,editing);}}>Save</button>
+                        {customVal!==null&&<button className="btn-del" style={{fontSize:11}} onClick={()=>{setEditing(null);deleteCustRate('uv',r.uv_name);}}>Reset</button>}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
+  // ── CUSTOMER LIST VIEW ─────────────────────────────────────────────
+  return(
+    <div>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
+        <div>
+          <p style={{fontSize:18,fontWeight:600}}>Customers</p>
+          <p style={{fontSize:13,color:'#888'}}>{customers.length} customers · Each gets their own calculator link</p>
+        </div>
+        <button className="btn-primary" onClick={()=>setShowAdd(!showAdd)}>+ Add Customer</button>
+      </div>
+
+      {saveMsg&&<p style={{color:'#38A169',fontSize:13,marginBottom:12}}>✓ {saveMsg}</p>}
+
+      {/* Add customer form */}
+      {showAdd&&(
+        <div className="card" style={{marginBottom:16,border:'1.5px solid #C84B31'}}>
+          <p style={{fontSize:14,fontWeight:600,marginBottom:14}}>Add New Customer</p>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:12}}>
+            <div><label style={{display:'block',fontSize:12,color:'#888',marginBottom:4}}>Name *</label><input type="text" placeholder="Raj Shah" value={newCust.name} onChange={e=>setNewCust({...newCust,name:e.target.value})} style={IS2}/></div>
+            <div><label style={{display:'block',fontSize:12,color:'#888',marginBottom:4}}>Email *</label><input type="email" placeholder="raj@example.com" value={newCust.email} onChange={e=>setNewCust({...newCust,email:e.target.value})} style={IS2}/></div>
+            <div><label style={{display:'block',fontSize:12,color:'#888',marginBottom:4}}>Phone</label><input type="text" placeholder="+91 98765 43210" value={newCust.phone} onChange={e=>setNewCust({...newCust,phone:e.target.value})} style={IS2}/></div>
+            <div><label style={{display:'block',fontSize:12,color:'#888',marginBottom:4}}>Company</label><input type="text" placeholder="Company name" value={newCust.company} onChange={e=>setNewCust({...newCust,company:e.target.value})} style={IS2}/></div>
+            <div><label style={{display:'block',fontSize:12,color:'#888',marginBottom:4}}>Custom Markup % (optional)</label><input type="number" placeholder={`Default: ${sub?.markup_percent}%`} value={newCust.markup_percent} onChange={e=>setNewCust({...newCust,markup_percent:e.target.value})} style={IS2}/></div>
+          </div>
+          <div style={{display:'flex',gap:8}}>
+            <button className="btn-primary" onClick={addCustomer} disabled={adding}>{adding?'Adding...':'Add Customer'}</button>
+            <button className="btn-cancel" onClick={()=>setShowAdd(false)}>Cancel</button>
+          </div>
+        </div>
+      )}
+
+      {customers.length===0?(
+        <div className="card" style={{textAlign:'center',padding:48}}>
+          <p style={{fontSize:32,marginBottom:12}}>👥</p>
+          <p style={{fontSize:16,fontWeight:600,marginBottom:8}}>No customers yet</p>
+          <p style={{fontSize:13,color:'#888',marginBottom:20}}>Add customers to give them their own calculator link with custom rates</p>
+          <button className="btn-primary" onClick={()=>setShowAdd(true)}>+ Add First Customer</button>
+        </div>
+      ):(
+        <div className="card" style={{padding:0,overflow:'hidden'}}>
+          <div className="sh"><p className="st">All Customers ({customers.length})</p></div>
+          <table className="table">
+            <thead><tr><th>Customer</th><th>Contact</th><th>Markup</th><th>Calculator Link</th><th>Action</th></tr></thead>
+            <tbody>
+              {customers.map((c:any)=>(
+                <tr key={c.id}>
+                  <td>
+                    <div style={{display:'flex',alignItems:'center',gap:10}}>
+                      <div className="avatar">{c.name[0]}</div>
+                      <div><p style={{fontWeight:500}}>{c.name}</p><p style={{fontSize:11,color:'#AAA'}}>{c.company||'—'}</p></div>
+                    </div>
+                  </td>
+                  <td><p style={{fontSize:12}}>{c.email}</p><p style={{fontSize:12,color:'#AAA'}}>{c.phone||'—'}</p></td>
+                  <td><span style={{fontFamily:'monospace',fontWeight:500}}>{c.markup_percent!=null?`${c.markup_percent}%`:`${sub?.markup_percent}% (default)`}</span></td>
+                  <td>
+                    <button style={{fontSize:11,padding:'4px 10px',background:'#EEF4FA',color:'#185FA5',border:'none',borderRadius:6,cursor:'pointer',fontFamily:'inherit'}}
+                      onClick={()=>{
+                        const url=`${window.location.origin}/embed/${subId}?c=${c.id}`;
+                        navigator.clipboard.writeText(url).then(()=>alert(`Link copied for ${c.name}!`));
+                      }}>
+                      📋 Copy link
+                    </button>
+                  </td>
+                  <td>
+                    <button className="btn-sm" onClick={()=>selectCust(c)}>Manage Rates →</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function DashboardPage() {
   const [sub,setSub]=useState<any>(null);
   const [paperCats,setPaperCats]=useState<any[]>([]);
@@ -443,15 +799,7 @@ export default function DashboardPage() {
 
         {/* CUSTOMERS */}
         {tab==='customers'&&(
-          <div>
-            <div className="info-box">💡 Manage your customers from the dedicated Customers page.</div>
-            <div className="card" style={{textAlign:'center',padding:40}}>
-              <p style={{fontSize:32,marginBottom:12}}>👥</p>
-              <p style={{fontSize:16,fontWeight:600,marginBottom:8}}>Customer Management</p>
-              <p style={{fontSize:13,color:'#888',marginBottom:20}}>View all customers, their orders, quotes and payment history.</p>
-              <a href="/customers" className="btn-primary" style={{textDecoration:'none',display:'inline-block'}}>Go to Customers Page →</a>
-            </div>
-          </div>
+          <CustomerTab sub={sub} subId={sub?.id} sym={sub?.currency_symbol||'₹'} paperCats={paperCats} printRates={printRates} lamRates={lamRates} uvRates={uvRates} IS={IS}/>
         )}
 
         {/* QUOTES */}

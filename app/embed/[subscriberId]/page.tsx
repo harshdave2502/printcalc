@@ -117,6 +117,8 @@ function ResultBox({r,markup,tax,sym,accent}:any){
 export default function EmbedPage({params}:{params:{subscriberId:string}}){
   const {subscriberId} = params;
   const [sub, setSub] = useState<any>(null);
+  const [customer, setCustomer] = useState<any>(null);
+  const [custRates, setCustRates] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<'paper'|'printing'|'fulljob'>('paper');
   const [notFound, setNotFound] = useState(false);
@@ -167,10 +169,23 @@ export default function EmbedPage({params}:{params:{subscriberId:string}}){
 
   useEffect(()=>{
     const load = async()=>{
+      // Get customer ID from URL params if present
+      const urlParams = typeof window!=='undefined' ? new URLSearchParams(window.location.search) : null;
+      const customerId = urlParams?.get('c');
+
       // Load subscriber info
       const {data:profile} = await supabase.from('subscribers').select('*').eq('id', subscriberId).single();
       if(!profile){setNotFound(true);setLoading(false);return;}
       setSub(profile);
+
+      // Load customer info and custom rates if customer ID provided
+      if(customerId){
+        const [{data:cust},{data:cr}] = await Promise.all([
+          supabase.from('customers').select('*').eq('id',customerId).eq('subscriber_id',subscriberId).single(),
+          supabase.from('customer_rates').select('*').eq('customer_id',customerId).eq('subscriber_id',subscriberId),
+        ]);
+        if(cust){setCustomer(cust);setCustRates(cr||[]);}
+      }
 
       // Load all rates for this subscriber
       const [{data:sz},{data:pp},{data:pr},{data:lr},{data:ur},{data:cats},{data:br}] = await Promise.all([
@@ -237,10 +252,17 @@ export default function EmbedPage({params}:{params:{subscriberId:string}}){
     </div>
   );
 
-  const M = sub?.markup_percent||25;
+  // Use customer's custom markup if set, otherwise subscriber's default
+  const M = customer?.markup_percent!=null ? customer.markup_percent : (sub?.markup_percent||25);
   const T = sub?.tax_percent||18;
   const sym = sub?.currency_symbol||'₹';
   const fmt = (n:number)=>sym+n.toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2});
+
+  // Helper to get customer-specific rate or fall back to default
+  const getCustRate=(type:string,key:string,defaultVal:number)=>{
+    const r=custRates.find((x:any)=>x.rate_type===type&&x.rate_key===key);
+    return r ? r.custom_value : defaultVal;
+  };
 
   // Paper calc
   const calcPaper = ()=>{
@@ -359,6 +381,7 @@ export default function EmbedPage({params}:{params:{subscriberId:string}}){
         <div style={{display:'flex',alignItems:'center',gap:8}}>
           <div style={{width:8,height:8,background:accentColor,borderRadius:'50%'}}/>
           <span style={{fontSize:15,fontWeight:600,color:'#fff'}}>{sub?.business_name||'Print Calculator'}</span>
+          {customer&&<span style={{fontSize:11,color:'#888',background:'rgba(255,255,255,0.1)',padding:'2px 8px',borderRadius:4}}>Hi, {customer.name}</span>}
         </div>
         <span style={{marginLeft:'auto',fontSize:11,color:'#444'}}>Powered by PrintCalc</span>
       </div>
