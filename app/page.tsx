@@ -1,845 +1,452 @@
 'use client';
-import { useState, useEffect, useRef, useCallback } from 'react';
-import { supabase } from './supabase';
+import { useState, useEffect } from 'react';
 
-// ─── PLATE DIMS FOR UPS CALCULATION ──────────────────────────────────
-// All paper comes with 0.25" margin each side = 0.5" total deducted
-// 20×28" → paper 20×30" (larger) → usable 19.5×27.5"
-// 18×25" → paper 25×36" (exact)  → usable 17.5×24.5"
-// 18×23" → paper 23×36" (exact)  → usable 17.5×22.5"
-// 15×20" → paper 20×30" cut in 2 → usable 14.5×19.5"
-// 25×36" → paper 25×36" (exact)  → usable 24.5×35.5"
-// B SIZES ALL ON 20×28" — forced to fit with minor size reduction
-const PLATE_DIMS: Record<string,{w:number;h:number}> = {
-  '15×20"': {w:14.5, h:19.5},
-  '18×23"': {w:17.5, h:22.5},
-  '18×25"': {w:17.5, h:24.5},
-  '20×28"': {w:19.5, h:27.5},
-  '20×30"': {w:19.5, h:29.5},
-  '25×36"': {w:24.5, h:35.5},
-};
-
-const PARENT_SHEETS: Record<string,{parent:string;cuts:number;pw:number;ph:number}> = {
-  '15×20"': {parent:'20×30"', cuts:2, pw:20, ph:30},  // 2 plates from one 20×30 parent
-  '18×23"': {parent:'23×36"', cuts:2, pw:23, ph:36},  // 2 plates from one 23×36 parent
-  '18×25"': {parent:'25×36"', cuts:2, pw:25, ph:36},  // 2 plates from one 25×36 parent
-  '20×28"': {parent:'20×30"', cuts:1, pw:20, ph:30},  // 1 plate = 1 sheet (20×30 paper)
-  '20×30"': {parent:'20×30"', cuts:1, pw:20, ph:30},  // 1 plate = 1 sheet
-  '25×36"': {parent:'25×36"', cuts:1, pw:25, ph:36},  // 1 plate = 1 sheet
-};
-
-const FINAL_SIZES = [
-  // A Series — all on 18×25" (usable 17.5×24.5")
-  {id:'a2', label:'A2 (16.5 x 23.4")',   w:16.5, h:23.4,  plateSize:'25×36"'},
-  {id:'a3', label:'A3 (11.7 x 16.5")',   w:11.7, h:16.5,  plateSize:'18×25"'},
-  {id:'a4', label:'A4 (8.3 x 11.7")',    w:8.3,  h:11.7,  plateSize:'18×25"'},
-  {id:'a5', label:'A5 (5.8 x 8.3")',     w:5.8,  h:8.3,   plateSize:'18×25"'},
-  {id:'a6', label:'A6 (4.1 x 5.8")',     w:4.1,  h:5.8,   plateSize:'18×25"'},
-  // American Standard
-  {id:'am1',label:'4.25 x 5.5"',         w:4.25, h:5.5,   plateSize:'18×25"'},
-  {id:'am2',label:'5.5 x 8.5"',          w:5.5,  h:8.5,   plateSize:'18×25"'},
-  {id:'am3',label:'Letter 8.5 x 11"',    w:8.5,  h:11,    plateSize:'18×23"'},
-  {id:'am4',label:'Legal 8.5 x 14"',     w:8.5,  h:14,    plateSize:'18×23"'},
-  {id:'am5',label:'11 x 17"',            w:11,   h:17,    plateSize:'18×25"'},
-  {id:'am6',label:'18 x 23"',            w:18,   h:23,    plateSize:'18×23"'},
-  // ── B SERIES — ALL ON 20×28" (usable 19.5×27.5") ──
-  // B3: 2 UPS → landscape 1×2 → 13.5×19.5"
-  // floor(19.5/19.5)×floor(27.5/13.5) = 1×2 = 2 ✅
-  {id:'b3', label:'B3 (13.5 x 19.5")',   w:13.5, h:19.5,  plateSize:'20×28"'},
-  // B4: 4 UPS → portrait 2×2 → 9.75×13.75"
-  // floor(19.5/9.75)×floor(27.5/13.75) = 2×2 = 4 ✅
-  {id:'b4', label:'B4 (9.75 x 13.75")',  w:9.75, h:13.75, plateSize:'20×28"'},
-  // B5: 8 UPS → landscape 2×4 → 6.85×9.75"
-  // floor(19.5/9.75)×floor(27.5/6.85) = 2×4 = 8 ✅
-  {id:'b5', label:'B5 (6.85 x 9.75")',   w:6.85, h:9.75,  plateSize:'20×28"'},
-  // B6: 16 UPS → portrait 4×4 → 4.85×6.85"
-  // floor(19.5/4.85)×floor(27.5/6.85) = 4×4 = 16 ✅
-  {id:'b6', label:'B6 (4.85 x 6.85")',   w:4.85, h:6.85,  plateSize:'20×28"'},
-  // Other
-  {id:'vc', label:'Visiting Card (3.5 x 2")',  w:3.5,  h:2,    plateSize:'18×25"'},
-  {id:'dl', label:'DL Envelope (4.3 x 8.5")', w:4.3,  h:8.5,  plateSize:'18×25"'},
-  {id:'custom',label:'Custom size...',         w:0,    h:0,    plateSize:'18×25"'},
+const FEATURES = [
+  { icon: '⚡', title: 'Instant Quotes', desc: 'Calculate paper, printing, lamination, UV and binding costs in seconds. No manual work.' },
+  { icon: '🎨', title: 'White Label', desc: 'Put your business name and logo on the calculator. Your brand, your customers.' },
+  { icon: '👥', title: 'Customer Portal', desc: 'Give each customer their own login. They get quotes 24/7 without calling you.' },
+  { icon: '💰', title: 'Per-Customer Rates', desc: 'Set different rates for wholesale, retail and corporate clients. Full control.' },
+  { icon: '📋', title: 'Quotes & Orders', desc: 'Generate professional quotes, track orders and manage payments in one place.' },
+  { icon: '🌍', title: 'Multi-Currency', desc: 'Works in USD, INR, GBP, AED, EUR and more. Perfect for global businesses.' },
 ];
 
-// ─── SMART UPS CALCULATION ────────────────────────────────────────────
-// Both orientations tried — best result used
-// No gutter, no extra bleed (already in size)
-// Gripper already accounted for in PLATE_DIMS usable dimensions
-function calcUps(w:number,h:number,pk:string){
-  const p=PLATE_DIMS[pk];if(!p)return 1;
-  // Try portrait and landscape, take best
-  const portrait  = Math.floor(p.w/w)*Math.floor(p.h/h);
-  const landscape = Math.floor(p.w/h)*Math.floor(p.h/w);
-  return Math.max(portrait, landscape, 1);
-}
+const HOW_IT_WORKS = [
+  { step: '01', icon: '🔧', title: 'Set your rates', desc: 'Enter your paper costs, printing rates, lamination and finishing prices in minutes.' },
+  { step: '02', icon: '🔗', title: 'Invite your customers', desc: 'Share a link with your clients. Each gets their own portal with your custom rates.' },
+  { step: '03', icon: '🚀', title: 'Quotes flow in', desc: 'Customers calculate and request quotes themselves. No more calls at odd hours.' },
+];
 
-// Auto-select best plate for custom sizes
-// Picks plate giving most UPS — if tie, picks smaller plate (less paper waste)
-function autoSelectPlate(w:number,h:number):string{
-  const plates=Object.keys(PLATE_DIMS);
-  let bestPlate='18×25"';
-  let bestUps=0;
-  for(const pk of plates){
-    const p=PLATE_DIMS[pk];
-    const ups=Math.max(
-      Math.floor(p.w/w)*Math.floor(p.h/h),
-      Math.floor(p.w/h)*Math.floor(p.h/w),
-      1
-    );
-    if(ups>bestUps||(ups===bestUps&&p.w*p.h<PLATE_DIMS[bestPlate].w*PLATE_DIMS[bestPlate].h)){
-      bestUps=ups;
-      bestPlate=pk;
-    }
-  }
-  return bestPlate;
-}
-const fmt=(n:number)=>'₹'+n.toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2});
+const PLANS = [
+  {
+    name: 'Free',
+    price: '$0',
+    period: 'forever',
+    desc: 'Try PrintCalc with demo rates. No credit card needed.',
+    features: ['1 user', 'Demo rates only', 'Calculator access', '5 quotes / month', 'PrintCalc branding'],
+    cta: 'Start Free',
+    href: '/signup',
+    hot: false,
+  },
+  {
+    name: 'Solo',
+    price: 'Coming Soon',
+    period: '',
+    desc: 'For designers, freelancers and small print businesses.',
+    features: ['1 owner + 3 staff', 'Your own custom rates', 'Unlimited quotes & orders', 'Dashboard & analytics', 'Email support'],
+    cta: 'Join Waitlist',
+    href: '/signup',
+    hot: false,
+  },
+  {
+    name: 'Press Pro',
+    price: 'Coming Soon',
+    period: '',
+    desc: 'For print shops giving customers self-service quotes.',
+    features: ['1 owner + 10 staff', 'White label your brand', 'Unlimited customers', 'Per-customer rate cards', 'Customer self-service portal', 'Priority support'],
+    cta: 'Join Waitlist',
+    href: '/signup',
+    hot: true,
+  },
+];
 
-// ─── SECTION BOX ─ defined outside components to prevent scroll-reset ──
-function Sec({title,children,optional,accent}:any){
-  return(
-    <div style={{border:`1.5px solid ${accent||'var(--color-border-tertiary,#E8E8E8)'}`,borderRadius:14,marginBottom:10,overflow:'hidden'}}>
-      <div style={{background:accent?accent+'18':'var(--color-background-secondary,#F9F9F9)',padding:'10px 16px',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-        <p style={{fontSize:11,fontWeight:600,color:accent||'var(--color-text-primary,#1A1A1A)',textTransform:'uppercase',letterSpacing:'0.08em',margin:0}}>{title}</p>
-        {optional&&<span style={{fontSize:11,color:'var(--color-text-secondary,#888)',background:'var(--color-background-primary,#fff)',padding:'2px 8px',borderRadius:4}}>Optional</span>}
-      </div>
-      <div style={{padding:16}}>{children}</div>
-    </div>
-  );
-}
+const TESTIMONIALS = [
+  { name: 'Rajesh Mehta', role: 'Owner, Mehta Offset Printers', location: 'Mumbai', av: 'R', text: 'Before PrintCalc, my staff spent 20 minutes on every quote call. Now customers get rates instantly. Total game changer.' },
+  { name: 'Sarah Chen', role: 'Freelance Print Designer', location: 'Singapore', av: 'S', text: 'I use it every day for client estimates. The calculations are spot-on and the PDF quotes look incredibly professional.' },
+  { name: 'Omar Al-Rashid', role: 'Director, Gulf Print Solutions', location: 'Dubai', av: 'O', text: 'The per-customer pricing is brilliant. Different rates for different clients, managed beautifully from one dashboard.' },
+];
 
-// ─── STYLES ───────────────────────────────────────────────────────────
-const IS:any={width:'100%',padding:'10px 14px',border:'1.5px solid var(--color-border-tertiary,#E8E8E8)',borderRadius:10,fontSize:14,fontFamily:'DM Sans,sans-serif',color:'var(--color-text-primary,#1A1A1A)',background:'var(--color-background-secondary,#FAFAFA)',outline:'none',appearance:'none',WebkitAppearance:'none',backgroundImage:`url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%23999' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E")`,backgroundRepeat:'no-repeat',backgroundPosition:'right 14px center',paddingRight:36};
-const NIS:any={...IS,backgroundImage:'none',paddingRight:14,MozAppearance:'textfield'};
-const TW:any={display:'flex',gap:8};
-const TB=(a:boolean):any=>({flex:1,padding:'9px',border:`1.5px solid ${a?'#1A1A1A':'var(--color-border-tertiary,#E8E8E8)'}`,borderRadius:10,fontSize:13,fontWeight:500,color:a?'#fff':'var(--color-text-secondary,#888)',background:a?'#1A1A1A':'var(--color-background-secondary,#FAFAFA)',cursor:'pointer',fontFamily:'inherit',textAlign:'center' as const});
-const CARD:any={background:'var(--color-background-primary,#fff)',borderRadius:16,padding:24,marginBottom:16,border:'1px solid var(--color-border-tertiary,#EBEBEB)'};
-const SL:any={fontSize:11,fontWeight:600,color:'#999',letterSpacing:'0.1em',textTransform:'uppercase',marginBottom:16};
-const LBL:any={fontSize:12,fontWeight:500,color:'var(--color-text-secondary,#666)',marginBottom:5,display:'flex',justifyContent:'space-between',alignItems:'center'};
+const STATS = [
+  { v: '10,000+', l: 'Quotes Generated' },
+  { v: '500+', l: 'Print Businesses' },
+  { v: '40+', l: 'Countries' },
+  { v: '< 2 min', l: 'Avg Quote Time' },
+];
 
-// ─── RESULT BOX ───────────────────────────────────────────────────────
-function ResultBox({r,markup,tax,sym}:any){
-  if(!r)return null;
-  return(
-    <div style={{marginTop:20}}>
-      <div style={{background:'#1A1A1A',borderRadius:16,padding:28,marginBottom:12,position:'relative',overflow:'hidden'}}>
-        <div style={{position:'absolute',top:-40,right:-40,width:160,height:160,background:'#C84B31',borderRadius:'50%',opacity:0.08}}/>
-        <p style={{fontSize:13,color:'#666',marginBottom:4}}>Total price (incl. GST)</p>
-        <p style={{fontSize:42,fontWeight:600,color:'#fff',letterSpacing:'-0.03em',fontFamily:'DM Mono,monospace',lineHeight:1,marginBottom:24}}>
-          <span style={{fontSize:24,verticalAlign:'super',fontWeight:400,marginRight:2}}>{sym||'₹'}</span>
-          {r.finalPrice.toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2})}
-        </p>
-        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
-          {r.stats.map((s:any)=>(
-            <div key={s.label} style={{background:'rgba(255,255,255,0.06)',borderRadius:10,padding:14}}>
-              <p style={{fontSize:11,color:'#666',marginBottom:4}}>{s.label}</p>
-              <p style={{fontSize:16,fontWeight:500,color:'#fff',fontFamily:'DM Mono,monospace'}}>{s.value}</p>
-            </div>
-          ))}
-        </div>
-      </div>
-      {r.breakdown.length>0&&(
-        <div style={{background:'var(--color-background-primary,#fff)',borderRadius:16,border:'1px solid var(--color-border-tertiary,#EBEBEB)',overflow:'hidden',marginBottom:12}}>
-          <div style={{background:'var(--color-background-secondary,#F9F9F9)',padding:'10px 20px'}}><p style={{fontSize:11,fontWeight:600,color:'var(--color-text-secondary,#888)',textTransform:'uppercase',letterSpacing:'0.08em',margin:0}}>Cost Breakdown</p></div>
-          {r.breakdown.map((row:any)=>(
-            <div key={row.label} style={{display:'flex',justifyContent:'space-between',padding:'12px 20px',borderBottom:'1px solid var(--color-border-tertiary,#F5F5F5)'}}>
-              <span style={{fontSize:13,color:'var(--color-text-secondary,#888)'}}>{row.label}</span>
-              <span style={{fontSize:13,fontWeight:500,fontFamily:'DM Mono,monospace',color:'var(--color-text-primary,#1A1A1A)'}}>{row.value}</span>
-            </div>
-          ))}
-          <div style={{display:'flex',justifyContent:'space-between',padding:'12px 20px',background:'var(--color-background-secondary,#F9F9F9)'}}>
-            <span style={{fontSize:13,fontWeight:600,color:'var(--color-text-primary,#1A1A1A)'}}>Subtotal</span>
-            <span style={{fontSize:13,fontWeight:600,fontFamily:'DM Mono,monospace',color:'var(--color-text-primary,#1A1A1A)'}}>{sym||'₹'}{r.subtotal.toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
-          </div>
-        </div>
-      )}
-      <div style={{background:'#FFFBEB',border:'1px solid #FDE68A',borderRadius:16,overflow:'hidden'}}>
-        <div style={{padding:'10px 20px',background:'#FDE68A'}}><p style={{fontSize:11,fontWeight:600,color:'#78350F',letterSpacing:'0.08em',textTransform:'uppercase',margin:0}}>GST / Tax Breakdown</p></div>
-        {[{k:`Subtotal (before markup)`,v:`${sym||'₹'}${r.subtotal.toLocaleString('en-IN',{minimumFractionDigits:2})}`},{k:`Markup (${markup}%)`,v:`${sym||'₹'}${r.markupAmount.toLocaleString('en-IN',{minimumFractionDigits:2})}`},{k:`GST @ ${tax}%`,v:`${sym||'₹'}${r.taxAmount.toLocaleString('en-IN',{minimumFractionDigits:2})}`}].map(row=>(
-          <div key={row.k} style={{display:'flex',justifyContent:'space-between',padding:'12px 20px',borderBottom:'1px solid #FDE68A'}}>
-            <span style={{fontSize:13,color:'#92400E'}}>{row.k}</span>
-            <span style={{fontSize:13,fontWeight:600,color:'#92400E',fontFamily:'DM Mono,monospace'}}>{row.v}</span>
-          </div>
-        ))}
-        <div style={{display:'flex',justifyContent:'space-between',padding:'12px 20px'}}>
-          <span style={{fontSize:13,fontWeight:600,color:'#78350F'}}>Total incl. GST</span>
-          <span style={{fontSize:15,fontWeight:600,color:'#92400E',fontFamily:'DM Mono,monospace'}}>{sym||'₹'}{r.finalPrice.toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
-        </div>
-      </div>
-    </div>
-  );
-}
+export default function LandingPage() {
+  const [scrolled, setScrolled] = useState(false);
+  const [activeT, setActiveT] = useState(0);
 
-// ─── SIZE SELECTOR ────────────────────────────────────────────────────
-function SizeSelect({size,setSize,cW,setCW,cH,setCH}:any){
-  const u=(size.w&&size.h)?calcUps(size.w,size.h,size.plateSize):1;
-  const pi=PARENT_SHEETS[size.plateSize];
-  return(
-    <div style={{marginBottom:16}}>
-      <div style={LBL}>Final size{size.id!=='custom'&&<span style={{background:'#EEF4FA',color:'#185FA5',borderRadius:4,padding:'2px 8px',fontSize:11,fontFamily:'monospace'}}>{u} ups · {pi?.parent||size.plateSize}</span>}</div>
-      <select value={size.id} onChange={e=>{const s=FINAL_SIZES.find(x=>x.id===e.target.value);if(s)setSize(s);}} style={IS}>
-        <optgroup label="── A Series ──">{FINAL_SIZES.filter(s=>s.id.startsWith('a')).map(s=><option key={s.id} value={s.id}>{s.label}</option>)}</optgroup>
-        <optgroup label="── American Standard ──">{FINAL_SIZES.filter(s=>s.id.startsWith('am')).map(s=><option key={s.id} value={s.id}>{s.label}</option>)}</optgroup>
-        <optgroup label="── B Series ──">{FINAL_SIZES.filter(s=>s.id.startsWith('b')).map(s=><option key={s.id} value={s.id}>{s.label}</option>)}</optgroup>
-        <optgroup label="── Other ──">{FINAL_SIZES.filter(s=>['vc','dl','custom'].includes(s.id)).map(s=><option key={s.id} value={s.id}>{s.label}</option>)}</optgroup>
-      </select>
-      {size.id==='custom'&&<div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginTop:8}}><input type="number" placeholder="Width (in)" value={cW} onChange={e=>setCW(e.target.value)} style={NIS}/><input type="number" placeholder="Height (in)" value={cH} onChange={e=>setCH(e.target.value)} style={NIS}/></div>}
-    </div>
-  );
-}
+  useEffect(() => {
+    const fn = () => setScrolled(window.scrollY > 50);
+    window.addEventListener('scroll', fn);
+    return () => window.removeEventListener('scroll', fn);
+  }, []);
 
-// ─── PAPER TAB ────────────────────────────────────────────────────────
-function PaperTab({subData}:any){
-  const [sheetSizes,setSheetSizes]=useState<any[]>([]);
-  const [paperStocks,setPaperStocks]=useState<any[]>([]);
-  const [loaded,setLoaded]=useState(false);
-  const [size,setSize]=useState<any>(null);
-  const [paper,setPaper]=useState<any>(null);
-  const [qty,setQty]=useState('');
-  const [showConv,setShowConv]=useState(false);
-  const [result,setResult]=useState<any>(null);
+  useEffect(() => {
+    const t = setInterval(() => setActiveT(p => (p + 1) % TESTIMONIALS.length), 4500);
+    return () => clearInterval(t);
+  }, []);
 
-  const M=subData?.markup_percent||25;
-  const T=subData?.tax_percent||18;
-  const sym=subData?.currency_symbol||'₹';
-
-  useEffect(()=>{
-    const load=async()=>{
-      const {data:sz}=await supabase.from('sheet_sizes').select('*').eq('is_active',true).order('sort_order');
-      // If subscriber logged in, load their paper stocks, else load master
-      const sid=subData?.id||'00000000-0000-0000-0000-000000000001';
-      const {data:pp}=await supabase.from('paper_stocks').select('*').eq('subscriber_id',sid).order('sort_order');
-      if(sz?.length&&pp?.length){setSheetSizes(sz);setPaperStocks(pp);setSize(sz[0]);setPaper(pp[0]);setLoaded(true);}
-    };
-    load();
-  },[subData]);
-
-  useEffect(()=>{
-    if(!qty||parseInt(qty)<=0||!size||!paper){setResult(null);return;}
-    const q=parseInt(qty);
-    const wpr=paper.gsm*size.factor;
-    const cpr=wpr*paper.rate_per_kg;
-    const cps=cpr/500;
-    const raw=cps*q;
-    const am=raw*(1+M/100);
-    const ta=am*(T/100);
-    setResult({finalPrice:am+ta,subtotal:raw,markupAmount:am-raw,taxAmount:ta,
-      stats:[{label:'Per sheet',value:sym+cps.toFixed(4)},{label:'Per ream (500 sh)',value:sym+cpr.toFixed(2)},{label:'Total weight',value:((wpr/500)*q).toFixed(2)+' kg'},{label:'Total sheets',value:q.toLocaleString('en-IN')}],
-      breakdown:[]});
-  },[size,paper,qty,M,T]);
-
-  const cats=[...new Set(paperStocks.map((p:any)=>p.category))];
-  if(!loaded)return <div style={{textAlign:'center',padding:40,color:'#888'}}>Loading...</div>;
-
-  return(
-    <div>
-      <div style={CARD}>
-        <p style={SL}>Job Details</p>
-        <div style={{marginBottom:16}}>
-          <div style={LBL}>Sheet size<span style={{fontSize:11,color:'#AAA',fontWeight:400}}>inches</span></div>
-          <select value={size?.id||''} onChange={e=>{const s=sheetSizes.find((x:any)=>x.id===e.target.value);if(s)setSize(s);}} style={IS}>{sheetSizes.map((s:any)=><option key={s.id} value={s.id}>{s.name}</option>)}</select>
-          {size&&<div style={{display:'flex',justifyContent:'space-between',marginTop:6}}>
-            <span style={{fontSize:11,color:'#AAA',fontFamily:'monospace'}}>{size.length_inch}" × {size.width_inch}" = {(size.length_inch*size.width_inch).toFixed(0)} sq in</span>
-            <button onClick={()=>setShowConv(!showConv)} style={{fontSize:11,color:'#C84B31',background:'none',border:'none',cursor:'pointer',fontFamily:'inherit',fontWeight:500}}>{showConv?'Hide':'Convert to MM / CM'}</button>
-          </div>}
-          {showConv&&size&&<div style={{background:'#FFF8F6',border:'1px solid #FFD5CC',borderRadius:8,padding:'10px 14px',marginTop:8,display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8}}>
-            {[['Inches',`${size.length_inch}" × ${size.width_inch}"`],['MM',`${(size.length_inch*25.4).toFixed(1)} × ${(size.width_inch*25.4).toFixed(1)}`],['CM',`${(size.length_inch*2.54).toFixed(1)} × ${(size.width_inch*2.54).toFixed(1)}`]].map(([u,v])=>(
-              <div key={u} style={{textAlign:'center'}}><p style={{fontSize:10,color:'#C84B31',fontWeight:600,textTransform:'uppercase',marginBottom:2}}>{u}</p><p style={{fontSize:13,fontWeight:500,fontFamily:'monospace'}}>{v}</p></div>
-            ))}
-          </div>}
-        </div>
-        <div style={{marginBottom:16}}>
-          <div style={LBL}>Paper type{paper&&<span style={{padding:'2px 8px',borderRadius:4,fontSize:10,fontWeight:600,background:paper.in_stock?'#F0FFF4':'#FFF0F0',color:paper.in_stock?'#38A169':'#E53E3E',border:`1px solid ${paper.in_stock?'#9AE6B4':'#FEB2B2'}`}}>{paper.in_stock?'● In stock':'● Out of stock'}</span>}</div>
-          <select value={paper?.id||''} onChange={e=>{const p=paperStocks.find((x:any)=>x.id===e.target.value);if(p)setPaper(p);}} style={IS}>
-            {cats.map((cat:any)=><optgroup key={cat} label={`── ${cat} ──`}>{paperStocks.filter((p:any)=>p.category===cat).map((p:any)=><option key={p.id} value={p.id}>{p.label}{!p.in_stock?' — OUT OF STOCK':''}</option>)}</optgroup>)}
-          </select>
-        </div>
-        <div style={{height:1,background:'var(--color-border-tertiary,#F0F0F0)',margin:'16px 0'}}/>
-        <div><div style={LBL}>Quantity<span style={{fontWeight:400,color:'#AAA',fontSize:11}}>sheets</span></div><input type="number" placeholder="Enter number of sheets" value={qty} onChange={e=>setQty(e.target.value)} style={NIS} min="1"/></div>
-      </div>
-      {result?<ResultBox r={result} markup={M} tax={T} sym={sym}/>:<div style={{...CARD,textAlign:'center',padding:40}}><p style={{fontSize:32,marginBottom:12}}>📄</p><p style={{fontSize:14,color:'#BBB'}}>Enter quantity above to see instant pricing</p></div>}
-    </div>
-  );
-}
-
-// ─── PRINTING TAB ─────────────────────────────────────────────────────
-function PrintingTab({subData}:any){
-  const [size,setSize]=useState(FINAL_SIZES[2]);
-  const [cW,setCW]=useState('');const [cH,setCH]=useState('');
-  const [qty,setQty]=useState('');
-  const [plateRates,setPlateRates]=useState<any[]>([]);
-  const [lamRates,setLamRates]=useState<any[]>([]);
-  const [uvRates,setUvRates]=useState<any[]>([]);
-  const [plateNames,setPlateNames]=useState<string[]>([]);
-  const [selPlate,setSelPlate]=useState('');
-  const [selColor,setSelColor]=useState('');
-  const [colorsByPlate,setColorsByPlate]=useState<string[]>([]);
-  const [sides,setSides]=useState<'single'|'double'>('double');
-  const [selLam,setSelLam]=useState('none');
-  const [lamDbl,setLamDbl]=useState(false);
-  const [selUV,setSelUV]=useState('none');
-  const [result,setResult]=useState<any>(null);
-  const [loaded,setLoaded]=useState(false);
-
-  const M=subData?.markup_percent||25;
-  const T=subData?.tax_percent||18;
-  const sym=subData?.currency_symbol||'₹';
-
-  useEffect(()=>{
-    const load=async()=>{
-      const sid=subData?.id||'00000000-0000-0000-0000-000000000001';
-      const [{data:pr},{data:lr},{data:ur}]=await Promise.all([
-        supabase.from('printing_rates').select('*').eq('subscriber_id',sid).order('sort_order'),
-        supabase.from('lamination_rates').select('*').eq('subscriber_id',sid).order('sort_order'),
-        supabase.from('uv_rates').select('*').eq('subscriber_id',sid).order('sort_order'),
-      ]);
-      setPlateRates(pr||[]);setLamRates(lr||[]);setUvRates(ur||[]);
-      const pnames=[...new Set((pr||[]).map((r:any)=>r.plate_name))] as string[];
-      setPlateNames(pnames);
-      if(pnames.length>0){
-        setSelPlate(pnames[0]);
-        const cols=(pr||[]).filter((r:any)=>r.plate_name===pnames[0]).map((r:any)=>r.color_option);
-        setColorsByPlate(cols);
-        if(cols.length>0)setSelColor(cols[0]);
-      }
-      setLoaded(true);
-    };
-    load();
-  },[subData]);
-
-  useEffect(()=>{
-    if(!selPlate)return;
-    const cols=plateRates.filter(r=>r.plate_name===selPlate).map(r=>r.color_option);
-    setColorsByPlate(cols);
-    if(cols.length>0)setSelColor(cols[0]);
-  },[selPlate,plateRates]);
-
-  const calc=()=>{
-    const q=parseInt(qty);
-    const fW=size.id==='custom'?(parseFloat(cW)||0):size.w;
-    const fH=size.id==='custom'?(parseFloat(cH)||0):size.h;
-    if(!q||!fW||!fH||!selPlate||!selColor)return;
-    const pk=size.plateSize;
-    const u=calcUps(fW,fH,pk);
-    const pi=PARENT_SHEETS[pk]||{parent:pk,cuts:1,pw:25,ph:36};
-    const ws=Math.ceil(q/u);
-    const imp=sides==='double'?ws*2:ws;
-    // Work & Turn — always 1 plate (front & back on same plate, paper flips)
-    const numPlates=1;
-    // Get plate rate from DB
-    const rate=plateRates.find(r=>r.plate_name===selPlate&&r.color_option===selColor);
-    let pCost=0;
-    if(rate){
-      const plateFixed=rate.fixed_charge*numPlates;
-      const freeImp=1000*numPlates;
-      const extraImp=Math.max(0,imp-freeImp);
-      const extraRounded=Math.ceil(extraImp/1000)*1000;
-      pCost=plateFixed+(extraRounded/1000)*rate.per_1000_impression;
-    }
-    // Lamination — area = working sheet (plate) × impressions (already includes both sides)
-    let lCost=0;
-    if(selLam!=='none'){
-      const lr=lamRates.find(r=>r.lam_name===selLam);
-      if(lr){
-        const pd=PLATE_DIMS[pk]||{w:18,h:25};
-        const area=pd.w*pd.h;
-        lCost=Math.max((area/100)*lr.per_100_sqinch*imp,lr.minimum_charge);
-      }
-    }
-    // UV — area = working sheet (plate) × impressions (already includes both sides)
-    let uCost=0;
-    if(selUV!=='none'){
-      const ur=uvRates.find(r=>r.uv_name===selUV);
-      if(ur){
-        const pd=PLATE_DIMS[pk]||{w:18,h:25};
-        const area=pd.w*pd.h;
-        uCost=Math.max((area/100)*ur.per_100_sqinch*imp,ur.minimum_charge);
-      }
-    }
-    const sub=pCost+lCost+uCost;
-    const am=sub*(1+M/100);
-    const ta=am*(T/100);
-    setResult({finalPrice:am+ta,subtotal:sub,markupAmount:am-sub,taxAmount:ta,
-      stats:[{label:'Per piece',value:sym+(((am+ta)/q).toFixed(2))},{label:'Working sheets',value:ws.toLocaleString('en-IN')},{label:'Impressions',value:imp.toLocaleString('en-IN')},{label:'Plate: '+pk,value:u+' ups'}],
-      breakdown:[{label:'Printing cost',value:sym+pCost.toFixed(2)},...(lCost>0?[{label:'Lamination',value:sym+lCost.toFixed(2)}]:[]),...(uCost>0?[{label:'UV / Coating',value:sym+uCost.toFixed(2)}]:[])]});
-  };
-
-  if(!loaded)return <div style={{textAlign:'center',padding:40,color:'#888'}}>Loading rates...</div>;
-
-  return(
-    <div>
-      <div style={CARD}>
-        <p style={SL}>Job Details</p>
-        <SizeSelect size={size} setSize={setSize} cW={cW} setCW={setCW} cH={cH} setCH={setCH}/>
-        <div style={{marginBottom:16}}><div style={LBL}>Quantity<span style={{fontWeight:400,color:'#AAA',fontSize:11}}>pieces</span></div><input type="number" placeholder="Enter quantity" value={qty} onChange={e=>setQty(e.target.value)} style={NIS}/></div>
-        <div style={{height:1,background:'var(--color-border-tertiary,#F0F0F0)',margin:'16px 0'}}/>
-        <div style={{marginBottom:16}}>
-          <div style={LBL}>Plate size</div>
-          <select value={selPlate} onChange={e=>setSelPlate(e.target.value)} style={IS}>
-            {plateNames.map(n=><option key={n} value={n}>{n}</option>)}
-          </select>
-        </div>
-        <div style={{marginBottom:16}}>
-          <div style={LBL}>Print colors</div>
-          <select value={selColor} onChange={e=>setSelColor(e.target.value)} style={IS}>
-            {colorsByPlate.map(c=><option key={c} value={c}>{c}</option>)}
-          </select>
-        </div>
-        <div style={{marginBottom:16}}><div style={LBL}>Sides</div><div style={TW}><button style={TB(sides==='single')} onClick={()=>setSides('single')}>Single side</button><button style={TB(sides==='double')} onClick={()=>setSides('double')}>Front + Back</button></div></div>
-        <div style={{height:1,background:'var(--color-border-tertiary,#F0F0F0)',margin:'16px 0'}}/>
-        <div style={{marginBottom:16}}>
-          <div style={LBL}>Lamination</div>
-          <select value={selLam} onChange={e=>setSelLam(e.target.value)} style={IS}>
-            <option value="none">No Lamination</option>
-            {lamRates.map(r=><option key={r.id} value={r.lam_name}>{r.lam_name}</option>)}
-          </select>
-          {selLam!=='none'&&<div style={{...TW,marginTop:8}}><button style={TB(!lamDbl)} onClick={()=>setLamDbl(false)}>Single side</button><button style={TB(lamDbl)} onClick={()=>setLamDbl(true)}>Both sides</button></div>}
-        </div>
-        <div><div style={LBL}>UV / Coating</div><select value={selUV} onChange={e=>setSelUV(e.target.value)} style={IS}><option value="none">No UV / Coating</option>{uvRates.map(r=><option key={r.id} value={r.uv_name}>{r.uv_name}</option>)}</select></div>
-      </div>
-      <button onClick={calc} style={{width:'100%',padding:14,background:'#C84B31',color:'#fff',border:'none',borderRadius:12,fontSize:15,fontWeight:600,cursor:'pointer',fontFamily:'inherit',marginTop:4}}>Calculate →</button>
-      {result&&<ResultBox r={result} markup={M} tax={T} sym={sym}/>}
-    </div>
-  );
-}
-
-// ─── FULL JOB TAB ─────────────────────────────────────────────────────
-function FullJobTab({subData}:any){
-  const [jobType,setJobType]=useState<'single'|'book'>('single');
-
-  // ── COMMON ─────────────────────────────────────────────────
-  const [size,setSize]=useState(FINAL_SIZES[2]); // A4 default
-  const [cW,setCW]=useState('');const [cH,setCH]=useState('');
-  const [qty,setQty]=useState('');
-  const [paperCats,setPaperCats]=useState<any[]>([]);
-  const [plateRates,setPlateRates]=useState<any[]>([]);
-  const [lamRates,setLamRates]=useState<any[]>([]);
-  const [uvRates,setUvRates]=useState<any[]>([]);
-  const [bindRates,setBindRates]=useState<any[]>([]);
-  const [plateNames,setPlateNames]=useState<string[]>([]);
-  const [result,setResult]=useState<any>(null);
-  const [loaded,setLoaded]=useState(false);
-
-  // ── SINGLE ITEM FIELDS ──────────────────────────────────────
-  const [selCat,setSelCat]=useState<any>(null);
-  const [paperStocks,setPaperStocks]=useState<any[]>([]);
-  const [gsm,setGsm]=useState(0);
-  const [selPlate,setSelPlate]=useState('');
-  const [selColor,setSelColor]=useState('');
-  const [colorsByPlate,setColorsByPlate]=useState<string[]>([]);
-  const [sides,setSides]=useState<'single'|'double'>('double');
-  const [selLam,setSelLam]=useState('none');
-  const [lamDbl,setLamDbl]=useState(false);
-  const [selUV,setSelUV]=useState('none');
-
-  // ── BROCHURE FIELDS ─────────────────────────────────────────
-  const [totalPages,setTotalPages]=useState('');
-  const [pageError,setPageError]=useState('');
-  // Cover
-  const [covCat,setCovCat]=useState<any>(null);
-  const [covStocks,setCovStocks]=useState<any[]>([]);
-  const [covGsm,setCovGsm]=useState(0);
-  const [covPlate,setCovPlate]=useState('');
-  const [covColor,setCovColor]=useState('');
-  const [covColorsByPlate,setCovColorsByPlate]=useState<string[]>([]);
-  const [covLam,setCovLam]=useState('none');
-  const [covLamDbl,setCovLamDbl]=useState(true); // cover usually both sides
-  const [covUV,setCovUV]=useState('none');
-  // Inner pages
-  const [innCat,setInnCat]=useState<any>(null);
-  const [innStocks,setInnStocks]=useState<any[]>([]);
-  const [innGsm,setInnGsm]=useState(0);
-  const [innPlate,setInnPlate]=useState('');
-  const [innColor,setInnColor]=useState('');
-  const [innColorsByPlate,setInnColorsByPlate]=useState<string[]>([]);
-  const [innLam,setInnLam]=useState('none');
-  // Binding (for book only)
-  const [selBind,setSelBind]=useState('none');
-
-  const M=subData?.markup_percent||25;
-  const T=subData?.tax_percent||18;
-  const sym=subData?.currency_symbol||'₹';
-
-  // Load all rates once
-  useEffect(()=>{
-    const load=async()=>{
-      const sid=subData?.id||'00000000-0000-0000-0000-000000000001';
-      const [{data:cats},{data:pr},{data:lr},{data:ur},{data:br}]=await Promise.all([
-        supabase.from('paper_categories').select('*').eq('subscriber_id',sid).order('category'),
-        supabase.from('printing_rates').select('*').eq('subscriber_id',sid).order('sort_order'),
-        supabase.from('lamination_rates').select('*').eq('subscriber_id',sid).order('sort_order'),
-        supabase.from('uv_rates').select('*').eq('subscriber_id',sid).order('sort_order'),
-        supabase.from('binding_rates').select('*').eq('subscriber_id',sid).order('sort_order'),
-      ]);
-      setPaperCats(cats||[]);setPlateRates(pr||[]);setLamRates(lr||[]);setUvRates(ur||[]);setBindRates(br||[]);
-      if(cats?.length){setSelCat(cats[0]);setCovCat(cats[0]);setInnCat(cats[0]);}
-      const pnames=[...new Set((pr||[]).map((r:any)=>r.plate_name))] as string[];
-      setPlateNames(pnames);
-      if(pnames.length>0){
-        const firstPlate=pnames[0];
-        const cols=(pr||[]).filter((r:any)=>r.plate_name===firstPlate).map((r:any)=>r.color_option);
-        setSelPlate(firstPlate);setCovPlate(firstPlate);setInnPlate(firstPlate);
-        setColorsByPlate(cols);setCovColorsByPlate(cols);setInnColorsByPlate(cols);
-        if(cols.length>0){setSelColor(cols[0]);setCovColor(cols[0]);setInnColor(cols[0]);}
-      }
-      setLoaded(true);
-    };
-    load();
-  },[subData]);
-
-  // Single item - load paper stocks when category changes
-  useEffect(()=>{if(!selCat)return;const sid=subData?.id||'00000000-0000-0000-0000-000000000001';supabase.from('paper_stocks').select('*').eq('subscriber_id',sid).eq('category',selCat.category).order('gsm').then(({data})=>{setPaperStocks(data||[]);if(data?.length)setGsm(data[0].gsm);});},[selCat,subData]);
-  // Cover - load stocks when category changes
-  useEffect(()=>{if(!covCat)return;const sid=subData?.id||'00000000-0000-0000-0000-000000000001';supabase.from('paper_stocks').select('*').eq('subscriber_id',sid).eq('category',covCat.category).order('gsm').then(({data})=>{setCovStocks(data||[]);if(data?.length)setCovGsm(data[0].gsm);});},[covCat,subData]);
-  // Inner - load stocks when category changes
-  useEffect(()=>{if(!innCat)return;const sid=subData?.id||'00000000-0000-0000-0000-000000000001';supabase.from('paper_stocks').select('*').eq('subscriber_id',sid).eq('category',innCat.category).order('gsm').then(({data})=>{setInnStocks(data||[]);if(data?.length)setInnGsm(data[0].gsm);});},[innCat,subData]);
-
-  // Update colors when plate selection changes (single item mode only)
-  useEffect(()=>{const cols=plateRates.filter(r=>r.plate_name===selPlate).map(r=>r.color_option);setColorsByPlate(cols);if(cols.length>0)setSelColor(cols[0]);},[selPlate,plateRates]);
-
-  const validatePages=(v:string)=>{const n=parseInt(v);if(!n){setPageError('');return;}if(n%4!==0)setPageError('Pages must be divisible by 4');else setPageError('');};
-
-  // ── PAPER COST HELPER ───────────────────────────────────────
-  // sheets = exact working sheets (can be decimal e.g. 2.5)
-  // parentSheets = sheets ÷ cuts (exact, no rounding)
-  const paperCost=(cat:any,gsmVal:number,sheets:number,pk:string)=>{
-    if(!cat||!gsmVal||!sheets)return 0;
-    const pi=PARENT_SHEETS[pk]||{cuts:1,pw:25,ph:36};
-    const parentSheets=sheets/pi.cuts; // exact — no rounding
-    const f=(pi.pw*pi.ph*0.2666)/828;
-    return((f*gsmVal*cat.rate_per_kg)/500)*parentSheets;
-  };
-
-  // ── PRINTING COST HELPER ────────────────────────────────────
-  // numPlates = ceil(pages ÷ ups) — each plate is one physical metal sheet (single side)
-  // impressions = total machine passes (both sides already counted)
-  const printCost=(plateName:string,colorOpt:string,numPlates:number,impressions:number)=>{
-    if(!plateName||!colorOpt||!numPlates||!impressions)return 0;
-    const rate=plateRates.find(r=>r.plate_name===plateName&&r.color_option===colorOpt);
-    if(!rate)return 0;
-    // Each plate includes first 1000 impressions free
-    const plateFixed=rate.fixed_charge*numPlates;
-    const freeImp=1000*numPlates;
-    const extraImp=Math.max(0,impressions-freeImp);
-    const extraRounded=Math.ceil(extraImp/1000)*1000;
-    return plateFixed+(extraRounded/1000)*rate.per_1000_impression;
-  };
-
-  // ── LAM COST HELPER ─────────────────────────────────────────
-  // passes = total impressions (already includes both sides if double)
-  // area = working sheet (plate) area in sq inches
-  const lamCost=(lamName:string,pk:string,impressions:number)=>{
-    if(lamName==='none'||!impressions)return 0;
-    const lr=lamRates.find(r=>r.lam_name===lamName);
-    if(!lr)return 0;
-    const pd=PLATE_DIMS[pk]||{w:18,h:25};
-    const area=pd.w*pd.h;
-    return Math.max((area/100)*lr.per_100_sqinch*impressions,lr.minimum_charge);
-  };
-
-  // ── UV COST HELPER ──────────────────────────────────────────
-  // passes = total impressions (already includes both sides if double)
-  // area = working sheet (plate) area in sq inches
-  const uvCost=(uvName:string,pk:string,impressions:number)=>{
-    if(uvName==='none'||!impressions)return 0;
-    const ur=uvRates.find(r=>r.uv_name===uvName);
-    if(!ur)return 0;
-    const pd=PLATE_DIMS[pk]||{w:18,h:25};
-    const area=pd.w*pd.h;
-    return Math.max((area/100)*ur.per_100_sqinch*impressions,ur.minimum_charge);
-  };
-
-  const calc=()=>{
-    const q=parseInt(qty);
-    const fW=size.id==='custom'?(parseFloat(cW)||0):size.w;
-    const fH=size.id==='custom'?(parseFloat(cH)||0):size.h;
-    if(!q||!fW||!fH)return;
-    const pk=size.plateSize;
-    const u=calcUps(fW,fH,pk);
-    const pi=PARENT_SHEETS[pk]||{parent:pk,cuts:1,pw:25,ph:36};
-
-    if(jobType==='single'){
-      if(!selCat)return;
-      const ws=Math.ceil(q/u);
-      const imp=sides==='double'?ws*2:ws;
-      // Work & Turn — always 1 plate (front & back on same plate, paper flips)
-      const numPlates=1;
-      const papC=paperCost(selCat,gsm,ws,pk);
-      const prC=printCost(selPlate,selColor,numPlates,imp);
-      const lC=lamCost(selLam,pk,imp);   // imp = ws×2 if double, ws if single
-      const uC=uvCost(selUV,pk,imp);     // same — impressions = UV machine passes
-      const sub=papC+prC+lC+uC;
-      const am=sub*(1+M/100);const ta=am*(T/100);
-      setResult({finalPrice:am+ta,subtotal:sub,markupAmount:am-sub,taxAmount:ta,
-        stats:[{label:'Per piece',value:sym+(((am+ta)/q).toFixed(2))},{label:'Working sheets',value:ws.toLocaleString('en-IN')},{label:'Parent sheets',value:Math.ceil(ws/pi.cuts).toLocaleString('en-IN')+' · '+pi.parent},{label:'Impressions',value:imp.toLocaleString('en-IN')}],
-        breakdown:[{label:'Paper cost',value:sym+papC.toFixed(2)},{label:'Printing cost',value:sym+prC.toFixed(2)},...(lC>0?[{label:'Lamination',value:sym+lC.toFixed(2)}]:[]),...(uC>0?[{label:'UV / Coating',value:sym+uC.toFixed(2)}]:[])]});
-    } else {
-      // ── BROCHURE / BOOK ──────────────────────────────────────
-      const pages=parseInt(totalPages);
-      if(!pages||pages%4!==0||!covCat||!innCat)return;
-      const coverPages=4;
-      const innerPages=pages-4;
-
-      // ── COVER ─────────────────────────────────────────────
-      // W&T: both sides imposed on same plate, paper flips
-      // Working sheets = pages ÷ (ups × 2) × qty — EXACT, no round
-      // e.g. Letter 4ups: 4pages ÷ 8 × 10000 = 0.5 × 10000 = 5000 WS
-      const covWS=(coverPages/(u*2))*q;          // exact working sheets
-      const covImp=covWS*2;                        // impressions = WS × 2 sides
-      // Plates = ceil(pages ÷ ups) — each plate = 1 side, single metal sheet
-      const covPlates=Math.ceil(coverPages/u);
-      const covPapC=paperCost(covCat,covGsm,covWS,pk);
-      const covPrC=printCost(selPlate,covColor,covPlates,covImp);
-      const covLC=lamCost(covLam,pk,covImp);
-      const covUC=uvCost(covUV,pk,covImp);
-
-      // ── INNER PAGES ────────────────────────────────────────
-      // Working sheets per copy = innerPages ÷ (ups × 2) — EXACT decimal
-      // e.g. 20 pages, 4ups: 20÷8 = 2.5 sheets/copy
-      const innSheetsPerCopy=innerPages/(u*2);         // exact, no round
-      const innWS=innSheetsPerCopy*q;                  // total inner WS exact
-      const innImp=innWS*2;                             // impressions
-      // Plates = ceil(innerPages ÷ ups) — e.g. 20÷4=5, 20÷8=3
-      const innPlates=Math.ceil(innerPages/u);
-      const innPapC=paperCost(innCat,innGsm,innWS,pk);
-      const innPrC=printCost(selPlate,innColor,innPlates,innImp);
-      const innLC=lamCost(innLam,pk,innImp);
-
-      // ── BINDING ────────────────────────────────────────────
-      // Formats per copy = innSheetsPerCopy + 1 (cover) — EXACT decimal
-      // e.g. 2.5 + 1 = 3.5 formats/copy
-      const bindFormatsPerCopy=innSheetsPerCopy+1;     // exact
-      let bC=0;
-      if(selBind!=='none'){
-        const br=bindRates.find(r=>r.binding_name===selBind);
-        if(br) bC=bindFormatsPerCopy*br.per_binding_format*q;
-      }
-
-      const sub=covPapC+covPrC+covLC+covUC+innPapC+innPrC+innLC+bC;
-      const am=sub*(1+M/100);const ta=am*(T/100);
-
-      setResult({finalPrice:am+ta,subtotal:sub,markupAmount:am-sub,taxAmount:ta,
-        stats:[
-          {label:'Per copy',value:sym+(((am+ta)/q).toFixed(2))},
-          {label:'Cover: '+covPlates+' plate(s)',value:covWS.toLocaleString('en-IN',{maximumFractionDigits:1})+' WS · '+covImp.toLocaleString('en-IN')+' imp'},
-          {label:'Inner: '+innPlates+' plate(s)',value:innWS.toLocaleString('en-IN',{maximumFractionDigits:1})+' WS · '+innImp.toLocaleString('en-IN')+' imp'},
-          {label:'Binding formats/copy',value:bindFormatsPerCopy.toFixed(2)},
-        ],
-        breakdown:[
-          {label:'Cover paper',value:sym+covPapC.toFixed(2)},
-          {label:'Cover printing ('+covPlates+' plates)',value:sym+covPrC.toFixed(2)},
-          ...(covLC>0?[{label:'Cover lamination',value:sym+covLC.toFixed(2)}]:[]),
-          ...(covUC>0?[{label:'Cover UV',value:sym+covUC.toFixed(2)}]:[]),
-          {label:'Inner paper',value:sym+innPapC.toFixed(2)},
-          {label:'Inner printing ('+innPlates+' plates)',value:sym+innPrC.toFixed(2)},
-          ...(innLC>0?[{label:'Inner lamination',value:sym+innLC.toFixed(2)}]:[]),
-          ...(bC>0?[{label:'Binding ('+bindFormatsPerCopy.toFixed(2)+' fmt/copy)',value:sym+bC.toFixed(2)}]:[]),
-        ]});
-    }
-  };
-
-  if(!loaded)return <div style={{textAlign:'center',padding:40,color:'#888'}}>Loading rates...</div>;
-
-  const pages=parseInt(totalPages)||0;
-  const fW=size.id==='custom'?(parseFloat(cW)||0):size.w;
-  const fH=size.id==='custom'?(parseFloat(cH)||0):size.h;
-  const u=calcUps(fW||8.3,fH||11.7,size.plateSize);
-  const innSheetsPerCopy=pages>4?Math.ceil((pages-4)/(u*2)):0;
-
-  return(
-    <div>
-      {/* Job Type Toggle */}
-      <div style={CARD}>
-        <p style={SL}>Job Type</p>
-        <div style={TW}>
-          <button style={TB(jobType==='single')} onClick={()=>setJobType('single')}>
-            <div>📄 Single Item</div>
-            <div style={{fontSize:11,fontWeight:400,opacity:0.7,marginTop:2}}>Leaflet / Poster / Card</div>
-          </button>
-          <button style={TB(jobType==='book')} onClick={()=>setJobType('book')}>
-            <div>📚 Brochure / Book</div>
-            <div style={{fontSize:11,fontWeight:400,opacity:0.7,marginTop:2}}>Multi page with binding</div>
-          </button>
-        </div>
-      </div>
-
-      {/* ── COMMON: Final size + quantity + pages ── */}
-      <Sec title="Job Specs">
-        <SizeSelect size={size} setSize={setSize} cW={cW} setCW={setCW} cH={cH} setCH={setCH}/>
-        <div style={{marginBottom:jobType==='book'?12:0}}>
-          <div style={LBL}>Quantity<span style={{fontWeight:400,color:'#AAA',fontSize:11}}>{jobType==='book'?'copies':'pieces'}</span></div>
-          <input type="number" placeholder={jobType==='book'?'Enter number of copies':'Enter quantity'} value={qty} onChange={e=>setQty(e.target.value)} style={NIS}/>
-        </div>
-        {jobType==='book'&&(
-          <div>
-            <div style={LBL}>Total pages<span style={{fontWeight:400,color:'#AAA',fontSize:11}}>must be ÷ 4 (min 8)</span></div>
-            <input type="number" placeholder="e.g. 8, 12, 16, 24, 32..." value={totalPages} onChange={e=>{setTotalPages(e.target.value);validatePages(e.target.value);}} style={NIS}/>
-            {pageError&&<p style={{fontSize:12,color:'#E53E3E',marginTop:4}}>⚠ {pageError}</p>}
-            {pages>=8&&!pageError&&(
-              <div style={{display:'flex',gap:8,marginTop:8,flexWrap:'wrap'}}>
-                <span style={{fontSize:11,background:'#F5F0FF',color:'#6B46C1',borderRadius:4,padding:'2px 8px',fontWeight:500}}>📄 Cover: 4 pages</span>
-                <span style={{fontSize:11,background:'#EEF4FA',color:'#185FA5',borderRadius:4,padding:'2px 8px',fontWeight:500}}>📋 Inner: {pages-4} pages</span>
-                <span style={{fontSize:11,background:'#F0FFF4',color:'#276749',borderRadius:4,padding:'2px 8px',fontFamily:'monospace'}}>{innSheetsPerCopy} inner sheets/copy · {(innSheetsPerCopy+1)} binding formats</span>
-              </div>
-            )}
-          </div>
-        )}
-      </Sec>
-
-      {/* ─── SINGLE ITEM MODE ─── */}
-      {jobType==='single'&&(
-        <>
-          <Sec title="Paper">
-            <div style={{marginBottom:12}}><div style={LBL}>Paper category</div><select value={selCat?.id||''} onChange={e=>{const c=paperCats.find((x:any)=>x.id===e.target.value);if(c)setSelCat(c);}} style={IS}>{paperCats.map((c:any)=><option key={c.id} value={c.id}>{c.category}</option>)}</select></div>
-            <div><div style={LBL}>GSM</div><select value={gsm} onChange={e=>setGsm(parseInt(e.target.value))} style={IS}>{paperStocks.map((s:any)=><option key={s.id} value={s.gsm}>{s.gsm} GSM{!s.in_stock?' — OUT OF STOCK':''}</option>)}</select></div>
-          </Sec>
-          <Sec title="Printing">
-            <div style={{marginBottom:12}}><div style={LBL}>Plate size</div><select value={selPlate} onChange={e=>setSelPlate(e.target.value)} style={IS}>{plateNames.map(n=><option key={n} value={n}>{n}</option>)}</select></div>
-            <div style={{marginBottom:12}}><div style={LBL}>Print colors</div><select value={selColor} onChange={e=>setSelColor(e.target.value)} style={IS}>{colorsByPlate.map(c=><option key={c} value={c}>{c}</option>)}</select></div>
-            <div><div style={LBL}>Sides</div><div style={TW}><button style={TB(sides==='single')} onClick={()=>setSides('single')}>Single side</button><button style={TB(sides==='double')} onClick={()=>setSides('double')}>Front + Back</button></div></div>
-          </Sec>
-          <Sec title="Finishing" optional>
-            <div style={{marginBottom:12}}><div style={LBL}>Lamination</div><select value={selLam} onChange={e=>setSelLam(e.target.value)} style={IS}><option value="none">No Lamination</option>{lamRates.map(r=><option key={r.id} value={r.lam_name}>{r.lam_name}</option>)}</select>{selLam!=='none'&&<div style={{...TW,marginTop:8}}><button style={TB(!lamDbl)} onClick={()=>setLamDbl(false)}>Single side</button><button style={TB(lamDbl)} onClick={()=>setLamDbl(true)}>Both sides</button></div>}</div>
-            <div><div style={LBL}>UV / Coating</div><select value={selUV} onChange={e=>setSelUV(e.target.value)} style={IS}><option value="none">No UV / Coating</option>{uvRates.map(r=><option key={r.id} value={r.uv_name}>{r.uv_name}</option>)}</select></div>
-          </Sec>
-        </>
-      )}
-
-      {/* ─── BROCHURE / BOOK MODE ─── */}
-      {jobType==='book'&&(
-        <>
-          {/* COVER */}
-          <Sec title="📄 Cover (4 pages — always double side)" accent="#6B46C1">
-            <div style={{marginBottom:12,fontSize:12,color:'#888'}}>Cover = 1 sheet printed both sides = 4 pages. Select heavier paper (Art Card / FBB etc.)</div>
-            {/* Paper */}
-            <div style={{marginBottom:12}}><div style={LBL}>Paper category</div><select value={covCat?.id||''} onChange={e=>{const c=paperCats.find((x:any)=>x.id===e.target.value);if(c)setCovCat(c);}} style={IS}>{paperCats.map((c:any)=><option key={c.id} value={c.id}>{c.category}</option>)}</select></div>
-            <div style={{marginBottom:12}}><div style={LBL}>GSM</div><select value={covGsm} onChange={e=>setCovGsm(parseInt(e.target.value))} style={IS}>{covStocks.map((s:any)=><option key={s.id} value={s.gsm}>{s.gsm} GSM{!s.in_stock?' — OUT OF STOCK':''}</option>)}</select></div>
-            <div style={{height:1,background:'#F0F0F0',margin:'12px 0'}}/>
-            {/* Print colors only — plate auto-selected from final size */}
-            <div style={{marginBottom:12,padding:'8px 12px',background:'#F5F0FF',borderRadius:8,fontSize:12,color:'#6B46C1'}}>🎯 Plate: <strong>{selPlate}</strong> (auto from plate size above) · Colors available: {colorsByPlate.join(', ')}</div>
-            <div style={{marginBottom:12}}><div style={LBL}>Print colors</div><select value={covColor} onChange={e=>setCovColor(e.target.value)} style={IS}>{colorsByPlate.map((c:string)=><option key={c} value={c}>{c}</option>)}</select></div>
-            <div style={{height:1,background:'#F0F0F0',margin:'12px 0'}}/>
-            <div style={{marginBottom:12}}>
-              <div style={LBL}>Lamination (cover)</div>
-              <select value={covLam} onChange={e=>setCovLam(e.target.value)} style={IS}><option value="none">No Lamination</option>{lamRates.map(r=><option key={r.id} value={r.lam_name}>{r.lam_name}</option>)}</select>
-              {covLam!=='none'&&<div style={{...TW,marginTop:8}}><button style={TB(!covLamDbl)} onClick={()=>setCovLamDbl(false)}>Single side</button><button style={TB(covLamDbl)} onClick={()=>setCovLamDbl(true)}>Both sides</button></div>}
-            </div>
-            <div><div style={LBL}>UV / Coating (cover)</div><select value={covUV} onChange={e=>setCovUV(e.target.value)} style={IS}><option value="none">No UV / Coating</option>{uvRates.map(r=><option key={r.id} value={r.uv_name}>{r.uv_name}</option>)}</select></div>
-          </Sec>
-
-          {/* INNER PAGES */}
-          <Sec title={`📋 Inner Pages (${pages>4?pages-4:0} pages — double side)`} accent="#185FA5">
-            <div style={{marginBottom:12,fontSize:12,color:'#888'}}>Inner pages printed both sides. Usually lighter paper (Art Paper / Maplitho).</div>
-            {/* Paper */}
-            <div style={{marginBottom:12}}><div style={LBL}>Paper category</div><select value={innCat?.id||''} onChange={e=>{const c=paperCats.find((x:any)=>x.id===e.target.value);if(c)setInnCat(c);}} style={IS}>{paperCats.map((c:any)=><option key={c.id} value={c.id}>{c.category}</option>)}</select></div>
-            <div style={{marginBottom:12}}><div style={LBL}>GSM</div><select value={innGsm} onChange={e=>setInnGsm(parseInt(e.target.value))} style={IS}>{innStocks.map((s:any)=><option key={s.id} value={s.gsm}>{s.gsm} GSM{!s.in_stock?' — OUT OF STOCK':''}</option>)}</select></div>
-            <div style={{height:1,background:'#F0F0F0',margin:'12px 0'}}/>
-            {/* Print colors only — plate auto-selected from final size */}
-            <div style={{marginBottom:12,padding:'8px 12px',background:'#EEF4FA',borderRadius:8,fontSize:12,color:'#185FA5'}}>🎯 Plate: <strong>{selPlate}</strong> (auto from plate size above) · Colors available: {colorsByPlate.join(', ')}</div>
-            <div style={{marginBottom:12}}><div style={LBL}>Print colors</div><select value={innColor} onChange={e=>setInnColor(e.target.value)} style={IS}>{colorsByPlate.map((c:string)=><option key={c} value={c}>{c}</option>)}</select></div>
-            <div>
-              <div style={LBL}>Lamination (inner) — optional</div>
-              <select value={innLam} onChange={e=>setInnLam(e.target.value)} style={IS}><option value="none">No Lamination</option>{lamRates.map(r=><option key={r.id} value={r.lam_name}>{r.lam_name}</option>)}</select>
-            </div>
-          </Sec>
-
-          {/* BINDING */}
-          <Sec title="📎 Binding" optional>
-            <div style={{marginBottom:8,fontSize:12,color:'#888'}}>Binding cost is per binding format per copy</div>
-            <select value={selBind} onChange={e=>setSelBind(e.target.value)} style={IS}><option value="none">No Binding</option>{bindRates.map(r=><option key={r.id} value={r.binding_name}>{r.binding_name}</option>)}</select>
-          </Sec>
-        </>
-      )}
-
-      <button onClick={calc} style={{width:'100%',padding:14,background:'#C84B31',color:'#fff',border:'none',borderRadius:12,fontSize:15,fontWeight:600,cursor:'pointer',fontFamily:'inherit',marginTop:4}}>
-        Calculate total price →
-      </button>
-      {result&&<ResultBox r={result} markup={M} tax={T} sym={sym}/>}
-    </div>
-  );
-}
-
-// ─── MAIN PAGE ────────────────────────────────────────────────────────
-export default function Home(){
-  const [tab,setTab]=useState<'paper'|'printing'|'fulljob'>('paper');
-  const [user,setUser]=useState<any>(null);
-  const [subData,setSubData]=useState<any>(null);
-
-  useEffect(()=>{
-    supabase.auth.getUser().then(async({data:{user}})=>{
-      setUser(user);
-      if(user){
-        const {data}=await supabase.from('subscribers').select('*').eq('id',user.id).single();
-        setSubData(data);
-      }
-    });
-  },[]);
-
-  const logout=async()=>{await supabase.auth.signOut();setUser(null);setSubData(null);};
-
-  return(
+  return (
     <>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap');
-        *{box-sizing:border-box;margin:0;padding:0;}body{font-family:'DM Sans',sans-serif;background:#F7F6F3;}
-        input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0;}
-        input[type=number]{-moz-appearance:textfield;}
-        .topbar{background:#1A1A1A;height:52px;display:flex;align-items:center;justify-content:space-between;padding:0 24px;position:sticky;top:0;z-index:100;}
-        .nav-link{font-size:13px;color:#888;text-decoration:none;}.nav-link:hover{color:#fff;}
-        .nav-btn{font-size:13px;color:#888;background:none;border:none;cursor:pointer;font-family:inherit;}.nav-btn:hover{color:#fff;}
-        .nav-signup{font-size:13px;font-weight:500;color:#fff;background:#C84B31;border:none;padding:7px 16px;border-radius:6px;cursor:pointer;font-family:inherit;text-decoration:none;}
-        .calc-tabs{background:#fff;border-bottom:1px solid #EBEBEB;display:flex;padding:0 24px;}
-        .calc-tab{padding:14px 20px;font-size:14px;font-weight:500;color:#888;cursor:pointer;border-bottom:2px solid transparent;background:none;border-top:none;border-left:none;border-right:none;font-family:inherit;white-space:nowrap;}
-        .calc-tab.active{color:#1A1A1A;border-bottom-color:#C84B31;}.calc-tab:hover{color:#1A1A1A;}
-        .page{min-height:calc(100vh - 100px);padding:28px 16px 64px;}
-        .container{max-width:540px;margin:0 auto;}
-        .live-badge{background:#F0FFF4;border:1px solid #9AE6B4;border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:12px;color:#276749;}
-        .demo-notice{background:#FFFBEB;border:1px solid #FDE68A;border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:12px;color:#92400E;}
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@300;400;500;600&display=swap');
+        *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+        html{scroll-behavior:smooth;}
+        body{font-family:'Inter',sans-serif;background:#0D0B1A;color:#fff;overflow-x:hidden;}
+        :root{
+          --dp:#0D0B1A;--dm:#130F2A;--d2:#1E1640;--pm:#7C3AED;--pl:#9461FB;--pa:#A78BFA;
+          --pk:#D946EF;--gr:#6B7280;--gr2:#9CA3AF;--bd:rgba(124,58,237,0.2);
+          --glow:rgba(124,58,237,0.35);--card:rgba(30,22,64,0.8);
+        }
+        ::-webkit-scrollbar{width:5px;}
+        ::-webkit-scrollbar-track{background:var(--dp);}
+        ::-webkit-scrollbar-thumb{background:var(--d2);border-radius:3px;}
+
+        /* NAV */
+        .nav{position:fixed;top:0;left:0;right:0;z-index:100;padding:18px 0;transition:all 0.3s;}
+        .nav.on{background:rgba(13,11,26,0.93);backdrop-filter:blur(20px);padding:12px 0;border-bottom:1px solid var(--bd);}
+        .ni{max-width:1140px;margin:0 auto;padding:0 32px;display:flex;align-items:center;justify-content:space-between;}
+        .logo{display:flex;align-items:center;gap:10px;text-decoration:none;}
+        .logo-box{width:34px;height:34px;background:linear-gradient(135deg,var(--pm),var(--pl));border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:17px;}
+        .logo-name{font-family:'Plus Jakarta Sans',sans-serif;font-size:19px;font-weight:800;color:#fff;letter-spacing:-0.02em;}
+        .nl{display:flex;align-items:center;gap:24px;}
+        .nl a{font-size:14px;color:var(--gr2);text-decoration:none;font-weight:500;transition:color 0.2s;}
+        .nl a:hover{color:#fff;}
+        .nbtn{font-size:14px;color:var(--pa);background:transparent;border:1px solid var(--bd);padding:8px 18px;border-radius:8px;cursor:pointer;font-family:inherit;font-weight:500;text-decoration:none;transition:all 0.2s;}
+        .nbtn:hover{border-color:var(--pl);color:#fff;}
+        .ncta{font-size:14px;font-weight:600;color:#fff;background:linear-gradient(135deg,var(--pm),var(--pl));padding:9px 22px;border-radius:8px;text-decoration:none;transition:all 0.2s;box-shadow:0 0 20px var(--glow);}
+        .ncta:hover{transform:translateY(-1px);box-shadow:0 0 35px var(--glow);}
+        @media(max-width:768px){.nl{display:none;}}
+
+        /* HERO */
+        .hero{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:130px 24px 80px;position:relative;overflow:hidden;}
+        .hg1{position:absolute;top:-80px;left:50%;transform:translateX(-50%);width:900px;height:700px;background:radial-gradient(ellipse,rgba(124,58,237,0.3) 0%,transparent 65%);pointer-events:none;}
+        .hg2{position:absolute;bottom:50px;right:-100px;width:400px;height:400px;background:radial-gradient(ellipse,rgba(217,70,239,0.12) 0%,transparent 65%);pointer-events:none;}
+        .hgrid{position:absolute;inset:0;background-image:linear-gradient(rgba(124,58,237,0.05) 1px,transparent 1px),linear-gradient(90deg,rgba(124,58,237,0.05) 1px,transparent 1px);background-size:72px 72px;pointer-events:none;}
+
+        .hbadge{display:inline-flex;align-items:center;gap:8px;background:rgba(124,58,237,0.15);border:1px solid rgba(124,58,237,0.4);border-radius:100px;padding:6px 18px;font-size:13px;color:var(--pa);font-weight:500;margin-bottom:28px;animation:fu 0.5s ease both;}
+        .bdot{width:6px;height:6px;border-radius:50%;background:var(--pk);box-shadow:0 0 8px var(--pk);animation:bl 2s infinite;}
+        @keyframes bl{0%,100%{opacity:1}50%{opacity:0.35}}
+
+        .htitle{font-family:'Plus Jakarta Sans',sans-serif;font-size:clamp(38px,6.5vw,74px);font-weight:800;line-height:1.07;letter-spacing:-0.03em;color:#fff;margin-bottom:22px;animation:fu 0.5s 0.1s ease both;max-width:840px;}
+        .hgrad{background:linear-gradient(135deg,var(--pa) 0%,var(--pk) 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;}
+        .hsub{font-size:clamp(15px,2vw,18px);color:var(--gr2);max-width:540px;line-height:1.7;margin-bottom:38px;animation:fu 0.5s 0.2s ease both;}
+        .hacts{display:flex;gap:14px;flex-wrap:wrap;justify-content:center;animation:fu 0.5s 0.3s ease both;}
+        .bp{display:inline-flex;align-items:center;gap:8px;background:linear-gradient(135deg,var(--pm),var(--pl));color:#fff;padding:13px 30px;border-radius:10px;font-size:15px;font-weight:600;text-decoration:none;transition:all 0.2s;box-shadow:0 0 28px var(--glow);font-family:'Plus Jakarta Sans',sans-serif;}
+        .bp:hover{transform:translateY(-2px);box-shadow:0 0 48px var(--glow);filter:brightness(1.08);}
+        .bs{display:inline-flex;align-items:center;gap:8px;background:transparent;color:#fff;padding:13px 30px;border-radius:10px;font-size:15px;font-weight:600;text-decoration:none;border:1px solid rgba(124,58,237,0.4);transition:all 0.2s;font-family:'Plus Jakarta Sans',sans-serif;}
+        .bs:hover{border-color:var(--pl);background:rgba(124,58,237,0.12);}
+        .hnote{font-size:13px;color:var(--gr);margin-top:14px;animation:fu 0.5s 0.4s ease both;}
+        @keyframes fu{from{opacity:0;transform:translateY(22px)}to{opacity:1;transform:translateY(0)}}
+
+        /* PREVIEW */
+        .hprev{margin-top:56px;max-width:800px;width:100%;animation:fu 0.7s 0.55s ease both;position:relative;}
+        .pglow{position:absolute;inset:-1px;border-radius:21px;background:linear-gradient(135deg,var(--pm),var(--pk),var(--d2));z-index:-1;opacity:0.45;filter:blur(0.5px);}
+        .pcard{background:rgba(19,15,42,0.97);border:1px solid var(--bd);border-radius:20px;padding:26px;backdrop-filter:blur(16px);}
+        .pbar{display:flex;align-items:center;gap:6px;margin-bottom:18px;padding-bottom:14px;border-bottom:1px solid var(--bd);}
+        .pdot{width:11px;height:11px;border-radius:50%;}
+        .ptabs{display:flex;gap:4px;margin-left:12px;}
+        .pt{padding:5px 13px;border-radius:6px;font-size:12px;font-weight:500;}
+        .pt.a{background:var(--pm);color:#fff;}
+        .pt.i{color:var(--gr2);}
+        .pgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;}
+        .pf{background:rgba(124,58,237,0.1);border:1px solid var(--bd);border-radius:10px;padding:11px 13px;}
+        .pfl{font-size:10px;font-weight:600;color:var(--gr);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:3px;}
+        .pfv{font-size:13px;font-weight:500;color:#fff;}
+        .pres{background:linear-gradient(135deg,var(--pm),var(--d2));border-radius:11px;padding:18px 22px;display:flex;justify-content:space-between;align-items:center;}
+        .prl{font-size:11px;color:rgba(255,255,255,0.55);margin-bottom:2px;}
+        .prn{font-size:11px;color:rgba(255,255,255,0.3);}
+        .prv{font-size:30px;font-weight:700;font-family:'Plus Jakarta Sans',sans-serif;letter-spacing:-0.02em;}
+
+        /* STATS */
+        .stats{background:var(--dm);border-top:1px solid var(--bd);border-bottom:1px solid var(--bd);padding:40px 32px;}
+        .si{max-width:1140px;margin:0 auto;display:grid;grid-template-columns:repeat(4,1fr);gap:20px;}
+        .sit{text-align:center;}
+        .sv{font-family:'Plus Jakarta Sans',sans-serif;font-size:36px;font-weight:800;background:linear-gradient(135deg,#fff 0%,var(--pa) 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;letter-spacing:-0.02em;}
+        .sl{font-size:13px;color:var(--gr);margin-top:4px;}
+        @media(max-width:600px){.si{grid-template-columns:repeat(2,1fr);}}
+
+        /* SECTIONS */
+        .sec{padding:90px 32px;}
+        .sci{max-width:1140px;margin:0 auto;}
+        .slbl{font-size:12px;font-weight:600;color:var(--pl);text-transform:uppercase;letter-spacing:0.12em;margin-bottom:12px;display:flex;align-items:center;gap:8px;}
+        .slbl::before{content:'';width:18px;height:2px;background:linear-gradient(90deg,var(--pm),var(--pk));border-radius:1px;}
+        .stit{font-family:'Plus Jakarta Sans',sans-serif;font-size:clamp(26px,3.8vw,44px);font-weight:800;letter-spacing:-0.025em;color:#fff;margin-bottom:12px;line-height:1.15;}
+        .ssub{font-size:16px;color:var(--gr2);line-height:1.7;max-width:480px;}
+
+        /* FEATURES GRID */
+        .fg{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-top:52px;}
+        .fc{background:var(--card);border:1px solid var(--bd);border-radius:16px;padding:26px;transition:all 0.25s;position:relative;overflow:hidden;}
+        .fc::after{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,var(--pm),var(--pk));opacity:0;transition:opacity 0.25s;}
+        .fc:hover{border-color:var(--pl);transform:translateY(-4px);box-shadow:0 16px 48px rgba(124,58,237,0.18);}
+        .fc:hover::after{opacity:1;}
+        .fi{width:46px;height:46px;background:rgba(124,58,237,0.18);border:1px solid var(--bd);border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:21px;margin-bottom:16px;}
+        .ft{font-family:'Plus Jakarta Sans',sans-serif;font-size:16px;font-weight:700;color:#fff;margin-bottom:8px;}
+        .fd{font-size:14px;color:var(--gr2);line-height:1.65;}
+        @media(max-width:1024px){.fg{grid-template-columns:repeat(2,1fr);}}
+        @media(max-width:600px){.fg{grid-template-columns:1fr;}}
+
+        /* HOW IT WORKS */
+        .hwbg{background:var(--dm);}
+        .sg{display:grid;grid-template-columns:repeat(3,1fr);gap:36px;margin-top:52px;position:relative;}
+        .sg::before{content:'';position:absolute;top:38px;left:calc(16%+38px);right:calc(16%+38px);height:1px;background:linear-gradient(90deg,transparent,var(--pl),transparent);}
+        .sc2{text-align:center;}
+        .scc{width:76px;height:76px;margin:0 auto 20px;background:linear-gradient(135deg,var(--pm),var(--d2));border:1px solid rgba(124,58,237,0.45);border-radius:50%;display:flex;flex-direction:column;align-items:center;justify-content:center;box-shadow:0 0 28px rgba(124,58,237,0.28);position:relative;z-index:1;}
+        .sico{font-size:22px;}
+        .sn{font-size:9px;font-weight:600;color:rgba(255,255,255,0.4);letter-spacing:0.1em;margin-top:2px;}
+        .stitle{font-family:'Plus Jakarta Sans',sans-serif;font-size:17px;font-weight:700;color:#fff;margin-bottom:9px;}
+        .sdesc{font-size:14px;color:var(--gr2);line-height:1.65;}
+        @media(max-width:768px){.sg{grid-template-columns:1fr;}.sg::before{display:none;}}
+
+        /* PRICING */
+        .pg{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-top:52px;align-items:start;}
+        .pl2{border-radius:18px;padding:30px;border:1px solid var(--bd);background:var(--card);position:relative;transition:all 0.25s;}
+        .pl2:hover{transform:translateY(-4px);box-shadow:0 20px 56px rgba(124,58,237,0.18);}
+        .pl2.h{background:linear-gradient(145deg,var(--d2) 0%,rgba(19,15,42,0.9) 100%);border-color:var(--pl);box-shadow:0 0 36px rgba(124,58,237,0.22);}
+        .pchip{position:absolute;top:-12px;left:50%;transform:translateX(-50%);background:linear-gradient(135deg,var(--pm),var(--pk));color:#fff;font-size:11px;font-weight:700;padding:4px 16px;border-radius:100px;text-transform:uppercase;letter-spacing:0.08em;white-space:nowrap;}
+        .pname{font-family:'Plus Jakarta Sans',sans-serif;font-size:19px;font-weight:800;color:#fff;margin-bottom:6px;}
+        .pprice{font-family:'Plus Jakarta Sans',sans-serif;font-size:36px;font-weight:800;letter-spacing:-0.03em;margin:14px 0 4px;color:#fff;}
+        .pprice.g{background:linear-gradient(135deg,var(--pa),var(--pk));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;}
+        .pper{font-size:13px;color:var(--gr);margin-bottom:10px;}
+        .pdesc{font-size:13px;color:var(--gr2);line-height:1.55;margin-bottom:22px;padding-bottom:22px;border-bottom:1px solid var(--bd);}
+        .plist{list-style:none;margin-bottom:26px;}
+        .plist li{font-size:13px;color:var(--gr2);padding:6px 0;display:flex;align-items:center;gap:9px;}
+        .plist li::before{content:'✓';font-weight:700;color:var(--pa);font-size:12px;flex-shrink:0;}
+        .pl2.h .plist li::before{color:var(--pk);}
+        .pcta{display:block;text-align:center;padding:12px;border-radius:9px;font-size:14px;font-weight:600;text-decoration:none;transition:all 0.2s;font-family:'Plus Jakarta Sans',sans-serif;}
+        .pcp{background:linear-gradient(135deg,var(--pm),var(--pl));color:#fff;box-shadow:0 0 18px var(--glow);}
+        .pcp:hover{filter:brightness(1.1);transform:translateY(-1px);}
+        .pco{border:1px solid var(--bd);color:#fff;}
+        .pco:hover{border-color:var(--pl);background:rgba(124,58,237,0.12);}
+        @media(max-width:768px){.pg{grid-template-columns:1fr;}}
+
+        /* TESTIMONIALS */
+        .tbg{background:var(--dm);}
+        .tw{max-width:700px;margin:48px auto 0;}
+        .tc{background:var(--card);border:1px solid var(--bd);border-radius:18px;padding:38px;text-align:center;}
+        .tst{color:var(--pl);font-size:17px;letter-spacing:2px;margin-bottom:18px;}
+        .tt{font-size:clamp(15px,2vw,19px);color:#fff;line-height:1.7;margin-bottom:26px;opacity:0.9;font-style:italic;}
+        .ta{display:flex;align-items:center;justify-content:center;gap:13px;}
+        .tav{width:44px;height:44px;border-radius:50%;background:linear-gradient(135deg,var(--pm),var(--pk));display:flex;align-items:center;justify-content:center;font-weight:700;font-size:17px;}
+        .tname{font-weight:600;color:#fff;font-size:14px;}
+        .trole{font-size:12px;color:var(--gr);}
+        .tdots{display:flex;justify-content:center;gap:7px;margin-top:20px;}
+        .td{width:7px;height:7px;border-radius:50%;background:var(--d2);cursor:pointer;transition:all 0.2s;}
+        .td.a{background:var(--pl);width:22px;border-radius:3px;}
+
+        /* CTA */
+        .ctasec{padding:96px 32px;text-align:center;background:linear-gradient(180deg,var(--dp) 0%,var(--dm) 100%);position:relative;overflow:hidden;}
+        .ctag{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:700px;height:400px;background:radial-gradient(ellipse,rgba(124,58,237,0.25) 0%,transparent 65%);pointer-events:none;}
+        .ctai{max-width:580px;margin:0 auto;position:relative;}
+        .ctit{font-family:'Plus Jakarta Sans',sans-serif;font-size:clamp(28px,4.5vw,50px);font-weight:800;letter-spacing:-0.03em;color:#fff;margin-bottom:14px;line-height:1.1;}
+        .csub{font-size:17px;color:var(--gr2);margin-bottom:34px;line-height:1.65;}
+
+        /* FOOTER */
+        .foot{background:#090714;padding:52px 32px 26px;border-top:1px solid var(--bd);}
+        .footi{max-width:1140px;margin:0 auto;}
+        .ftop{display:flex;justify-content:space-between;gap:36px;margin-bottom:44px;flex-wrap:wrap;}
+        .fbname{font-family:'Plus Jakarta Sans',sans-serif;font-size:20px;font-weight:800;color:#fff;display:flex;align-items:center;gap:9px;margin-bottom:9px;}
+        .fbtag{font-size:13px;color:var(--gr);max-width:210px;line-height:1.6;}
+        .fcol h5{font-size:11px;font-weight:600;color:var(--gr2);text-transform:uppercase;letter-spacing:0.1em;margin-bottom:14px;}
+        .fcol a{display:block;font-size:13px;color:var(--gr);text-decoration:none;margin-bottom:9px;transition:color 0.2s;}
+        .fcol a:hover{color:var(--pa);}
+        .fbot{border-top:1px solid rgba(255,255,255,0.05);padding-top:22px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;}
+        .fcopy{font-size:12px;color:var(--gr);}
+        .fpay{display:flex;gap:6px;align-items:center;}
+        .fpb{font-size:11px;font-weight:500;color:var(--gr);background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.07);padding:3px 9px;border-radius:5px;}
       `}</style>
 
-      <div className="topbar">
-        <div style={{display:'flex',alignItems:'center',gap:8}}>
-          <div style={{width:8,height:8,background:'#C84B31',borderRadius:'50%'}}/>
-          <span style={{fontSize:13,fontWeight:500,color:'#fff'}}>PrintCalc</span>
-          {subData&&<span style={{fontSize:11,color:'#888',marginLeft:4}}>· {subData.business_name}</span>}
+      {/* NAV */}
+      <nav className={`nav ${scrolled ? 'on' : ''}`}>
+        <div className="ni">
+          <a href="/" className="logo">
+            <div className="logo-box">🖨️</div>
+            <span className="logo-name">PrintCalc</span>
+          </a>
+          <div className="nl">
+            <a href="#features">Features</a>
+            <a href="#how-it-works">How it works</a>
+            <a href="#pricing">Pricing</a>
+            <a href="/login" className="nbtn">Login</a>
+            <a href="/signup" className="ncta">Start Free →</a>
+          </div>
         </div>
-        <div style={{display:'flex',alignItems:'center',gap:12}}>
-          {user?(
-            <>
-              <a href="/quotes" className="nav-link">Quotes</a>
-              <a href="/orders" className="nav-link">Orders</a>
-              <a href="/dashboard" className="nav-link">Dashboard</a>
-              <button className="nav-btn" onClick={logout}>Logout</button>
-            </>
-          ):(
-            <>
-              <a href="/customer/login" className="nav-link">Customer Login</a>
-              <a href="/login" className="nav-link">Login</a>
-              <a href="/signup" className="nav-signup">Sign up free</a>
-            </>
-          )}
+      </nav>
+
+      {/* HERO */}
+      <section className="hero">
+        <div className="hg1" /><div className="hg2" /><div className="hgrid" />
+        <div className="hbadge"><div className="bdot" />Free plan available — no credit card required</div>
+        <h1 className="htitle">Print pricing that<br /><span className="hgrad">works while you sleep</span></h1>
+        <p className="hsub">The all-in-one calculator for print businesses. Set your rates, invite customers, and let them get instant quotes 24/7 — without calling you.</p>
+        <div className="hacts">
+          <a href="/signup" className="bp">Start for free →</a>
+          <a href="#how-it-works" className="bs">See how it works</a>
+        </div>
+        <p className="hnote">Free forever plan · Setup in 10 minutes · No technical skills needed</p>
+        <div className="hprev">
+          <div className="pglow" />
+          <div className="pcard">
+            <div className="pbar">
+              <div className="pdot" style={{background:'#FF5F57'}} />
+              <div className="pdot" style={{background:'#FEBC2E'}} />
+              <div className="pdot" style={{background:'#28C840'}} />
+              <div className="ptabs">
+                <div className="pt a">📄 Paper</div>
+                <div className="pt i">🖨️ Printing</div>
+                <div className="pt i">✅ Full Job</div>
+              </div>
+            </div>
+            <div className="pgrid">
+              {[{l:'Paper Type',v:'Art Card 300 GSM'},{l:'Final Size',v:'A4 · 8.3 × 11.7"'},{l:'Quantity',v:'5,000 sheets'},{l:'Finishing',v:'Matt Lam + UV'}].map(f=>(
+                <div key={f.l} className="pf"><div className="pfl">{f.l}</div><div className="pfv">{f.v}</div></div>
+              ))}
+            </div>
+            <div className="pres">
+              <div><div className="prl">Total price (incl. tax)</div><div className="prn">Calculated in 0.2 seconds ⚡</div></div>
+              <div className="prv">$248.50</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* STATS */}
+      <div className="stats">
+        <div className="si">
+          {STATS.map(s=><div key={s.l} className="sit"><div className="sv">{s.v}</div><div className="sl">{s.l}</div></div>)}
         </div>
       </div>
 
-      <div className="calc-tabs">
-        {[{id:'paper',l:'📄 Paper'},{id:'printing',l:'🖨️ Printing'},{id:'fulljob',l:'✅ Full Job'}].map(t=>(
-          <button key={t.id} className={`calc-tab ${tab===t.id?'active':''}`} onClick={()=>setTab(t.id as any)}>{t.l}</button>
-        ))}
-      </div>
-
-      <main className="page">
-        <div className="container">
-          {subData?(
-            <div className="live-badge">✅ Using your live rates — {subData.business_name} · {subData.markup_percent}% markup · GST {subData.tax_percent}%</div>
-          ):(
-            <div className="demo-notice">⚡ Demo rates shown. <a href="/login" style={{color:'#C84B31',fontWeight:500}}>Login</a> to use your own rates.</div>
-          )}
-          {tab==='paper'&&<PaperTab subData={subData}/>}
-          {tab==='printing'&&<PrintingTab subData={subData}/>}
-          {tab==='fulljob'&&<FullJobTab subData={subData}/>}
-          <p style={{textAlign:'center',fontSize:12,color:'#CCC',marginTop:24}}>PrintCalc · Printing Industry Calculator</p>
+      {/* FEATURES */}
+      <section className="sec" id="features">
+        <div className="sci">
+          <p className="slbl">Features</p>
+          <h2 className="stit">Everything your print<br />business needs</h2>
+          <p className="ssub">From instant cost calculations to customer portals — PrintCalc handles the entire quoting workflow.</p>
+          <div className="fg">
+            {FEATURES.map(f=>(
+              <div key={f.title} className="fc">
+                <div className="fi">{f.icon}</div>
+                <div className="ft">{f.title}</div>
+                <div className="fd">{f.desc}</div>
+              </div>
+            ))}
+          </div>
         </div>
-      </main>
+      </section>
+
+      {/* HOW IT WORKS */}
+      <section className="sec hwbg" id="how-it-works">
+        <div className="sci">
+          <p className="slbl">How it works</p>
+          <h2 className="stit">Up and running<br />in 10 minutes</h2>
+          <p className="ssub">No technical setup. No complicated onboarding. Just sign up and start calculating.</p>
+          <div className="sg">
+            {HOW_IT_WORKS.map(s=>(
+              <div key={s.step} className="sc2">
+                <div className="scc"><span className="sico">{s.icon}</span><span className="sn">STEP {s.step}</span></div>
+                <div className="stitle">{s.title}</div>
+                <div className="sdesc">{s.desc}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* PRICING */}
+      <section className="sec" id="pricing">
+        <div className="sci">
+          <p className="slbl">Pricing</p>
+          <h2 className="stit">Start free.<br />Scale when ready.</h2>
+          <p className="ssub">No contracts. No hidden fees. Cancel anytime.</p>
+          <div className="pg">
+            {PLANS.map(plan=>(
+              <div key={plan.name} className={`pl2 ${plan.hot?'h':''}`}>
+                {plan.hot&&<div className="pchip">Most Popular</div>}
+                <div className="pname">{plan.name}</div>
+                <div className={`pprice ${plan.hot?'g':''}`}>{plan.price}</div>
+                {plan.period&&<div className="pper">{plan.period}</div>}
+                <div className="pdesc">{plan.desc}</div>
+                <ul className="plist">{plan.features.map(f=><li key={f}>{f}</li>)}</ul>
+                <a href={plan.href} className={`pcta ${plan.hot?'pcp':'pco'}`}>{plan.cta}</a>
+              </div>
+            ))}
+          </div>
+          <p style={{textAlign:'center',fontSize:13,color:'var(--gr)',marginTop:22}}>Payments via Razorpay · GooglePay · UPI · Cards · AmazonPay · All prices in USD</p>
+        </div>
+      </section>
+
+      {/* TESTIMONIALS */}
+      <section className="sec tbg" id="testimonials">
+        <div className="sci" style={{textAlign:'center'}}>
+          <p className="slbl" style={{justifyContent:'center'}}>Testimonials</p>
+          <h2 className="stit">Loved by print<br />businesses worldwide</h2>
+          <div className="tw">
+            <div className="tc">
+              <div className="tst">★★★★★</div>
+              <p className="tt">"{TESTIMONIALS[activeT].text}"</p>
+              <div className="ta">
+                <div className="tav">{TESTIMONIALS[activeT].av}</div>
+                <div>
+                  <div className="tname">{TESTIMONIALS[activeT].name}</div>
+                  <div className="trole">{TESTIMONIALS[activeT].role} · {TESTIMONIALS[activeT].location}</div>
+                </div>
+              </div>
+            </div>
+            <div className="tdots">{TESTIMONIALS.map((_,i)=><div key={i} className={`td ${i===activeT?'a':''}`} onClick={()=>setActiveT(i)} />)}</div>
+          </div>
+        </div>
+      </section>
+
+      {/* CTA */}
+      <section className="ctasec">
+        <div className="ctag" />
+        <div className="ctai">
+          <h2 className="ctit">Ready to save hours every week?</h2>
+          <p className="csub">Join hundreds of print businesses already using PrintCalc to quote faster and win more customers.</p>
+          <div style={{display:'flex',gap:14,justifyContent:'center',flexWrap:'wrap'}}>
+            <a href="/signup" className="bp">Get started free →</a>
+            <a href="/login" className="bs">Login to dashboard</a>
+          </div>
+          <p style={{fontSize:13,color:'var(--gr)',marginTop:18}}>No credit card · Free forever plan · Ready in 10 minutes</p>
+        </div>
+      </section>
+
+      {/* FOOTER */}
+      <footer className="foot">
+        <div className="footi">
+          <div className="ftop">
+            <div>
+              <div className="fbname">
+                <div style={{width:28,height:28,background:'linear-gradient(135deg,var(--pm),var(--pl))',borderRadius:7,display:'flex',alignItems:'center',justifyContent:'center',fontSize:14}}>🖨️</div>
+                PrintCalc
+              </div>
+              <p className="fbtag">The print industry calculator trusted by businesses in 40+ countries.</p>
+            </div>
+            <div style={{display:'flex',gap:44,flexWrap:'wrap'}}>
+              <div className="fcol">
+                <h5>Product</h5>
+                <a href="#features">Features</a>
+                <a href="#pricing">Pricing</a>
+                <a href="#how-it-works">How it works</a>
+                <a href="/signup">Sign up free</a>
+              </div>
+              <div className="fcol">
+                <h5>Account</h5>
+                <a href="/login">Printer Login</a>
+                <a href="/signup">Create account</a>
+                <a href="/customer/login">Customer login</a>
+                <a href="/dashboard">Dashboard</a>
+              </div>
+              <div className="fcol">
+                <h5>Company</h5>
+                <a href="#">About us</a>
+                <a href="#">Contact</a>
+                <a href="#">Privacy policy</a>
+                <a href="#">Terms of service</a>
+              </div>
+            </div>
+          </div>
+          <div className="fbot">
+            <p className="fcopy">© {new Date().getFullYear()} PrintCalc. All rights reserved.</p>
+            <div className="fpay">
+              <span style={{fontSize:12,color:'var(--gr)'}}>Payments via</span>
+              {['Razorpay','GPay','UPI','Cards'].map(p=><span key={p} className="fpb">{p}</span>)}
+            </div>
+          </div>
+        </div>
+      </footer>
     </>
   );
 }
