@@ -192,7 +192,7 @@ export default function DashboardPage() {
           <span style={{fontSize:14,fontWeight:500,color:'#fff'}}>PrintCalc</span>
         </div>
         <div style={{display:'flex',alignItems:'center',gap:16}}>
-          <a href="/" style={{fontSize:13,color:'#888',textDecoration:'none'}}>← Calculator</a>
+          <a href="/calculator" style={{fontSize:13,color:'#888',textDecoration:'none'}}>← Calculator</a>
           <span style={{fontSize:13,color:'#888'}}>{sub?.business_name}</span>
           <span className="plan-badge">{sub?.plan}</span>
           <button style={{fontSize:13,color:'#888',background:'none',border:'none',cursor:'pointer',fontFamily:'inherit'}} onClick={logout}>Logout</button>
@@ -251,7 +251,7 @@ export default function DashboardPage() {
             <div className="card">
               <p style={{fontSize:15,fontWeight:600,marginBottom:12}}>Quick links</p>
               <div style={{display:'flex',gap:10,flexWrap:'wrap'}}>
-                <a href="/" style={{padding:'10px 18px',background:'#1A1A1A',color:'#fff',borderRadius:8,textDecoration:'none',fontSize:13,fontWeight:500}}>🖩 Calculator</a>
+                <a href="/calculator" style={{padding:'10px 18px',background:'#1A1A1A',color:'#fff',borderRadius:8,textDecoration:'none',fontSize:13,fontWeight:500}}>🖩 Calculator</a>
                 <a href="/quotes" style={{padding:'10px 18px',background:'#EEF4FA',color:'#185FA5',borderRadius:8,textDecoration:'none',fontSize:13,fontWeight:500}}>📋 Quotes ({liveQuotes.length})</a>
                 <a href="/orders" style={{padding:'10px 18px',background:'#F5F0FF',color:'#6B46C1',borderRadius:8,textDecoration:'none',fontSize:13,fontWeight:500}}>📦 Orders ({liveOrders.length})</a>
                 <a href="/customer/login" style={{padding:'10px 18px',background:'#F0FFF4',color:'#276749',borderRadius:8,textDecoration:'none',fontSize:13,fontWeight:500}}>👤 Customer Portal</a>

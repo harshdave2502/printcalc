@@ -24,7 +24,7 @@ export default function LoginPage() {
       return;
     }
 
-    window.location.href = '/dashboard';
+    window.location.href = '/calculator';
   };
 
   return (
@@ -53,7 +53,7 @@ export default function LoginPage() {
               <span style={{ fontSize: 12, fontWeight: 500, color: '#888', letterSpacing: '0.08em', textTransform: 'uppercase' }}>PrintCalc</span>
             </div>
             <h1 style={{ fontSize: 26, fontWeight: 600, color: '#1A1A1A', letterSpacing: '-0.02em' }}>Welcome back</h1>
-            <p style={{ fontSize: 14, color: '#888', marginTop: 6 }}>Login to your dashboard</p>
+            <p style={{ fontSize: 14, color: '#888', marginTop: 6 }}>Login to use your calculator</p>
           </div>
 
           <div style={{ background: '#fff', borderRadius: 16, padding: 28, border: '1px solid #EBEBEB' }}>
@@ -83,7 +83,7 @@ export default function LoginPage() {
               </div>
 
               <button type="submit" className="btn" disabled={loading} style={{ marginTop: 8 }}>
-                {loading ? 'Logging in...' : 'Login to dashboard'}
+                {loading ? 'Logging in...' : 'Login →'}
               </button>
             </form>
 
