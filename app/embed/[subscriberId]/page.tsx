@@ -42,6 +42,15 @@ const FINAL_SIZES = [
 ];
 function calcUps(w:number,h:number,pk:string){const p=PLATE_DIMS[pk];if(!p)return 1;return Math.max(Math.floor(p.w/w)*Math.floor(p.h/h),Math.floor(p.w/h)*Math.floor(p.h/w),1);}
 
+// ─── GSM CONVERTER ────────────────────────────────────────────────────
+function gsmInfo(gsm:number):string{
+  if(!gsm)return '';
+  const ptMap:Record<number,number>={60:4,70:4,80:5,90:5,100:6,115:7,120:7,130:8,150:9,157:9,170:10,200:12,230:13,250:14,300:16,350:18,400:20};
+  const pt=ptMap[gsm]||Math.round(gsm/20);
+  if(gsm<170){const lb=Math.round(gsm/1.48);return `= ${lb} lb Text · ~${pt}pt`;}
+  else{const lb=Math.round(gsm/2.71);return `= ${lb} lb Cover · ~${pt}pt`;}
+}
+
 // ─── STYLES ───────────────────────────────────────────────────────────
 const IS:any={width:'100%',padding:'10px 14px',border:'1.5px solid #E8E8E8',borderRadius:10,fontSize:14,fontFamily:'DM Sans,sans-serif',color:'#1A1A1A',background:'#FAFAFA',outline:'none',appearance:'none',WebkitAppearance:'none',backgroundImage:`url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%23999' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E")`,backgroundRepeat:'no-repeat',backgroundPosition:'right 14px center',paddingRight:36};
 const NIS:any={...IS,backgroundImage:'none',paddingRight:14,MozAppearance:'textfield'};
@@ -189,6 +198,7 @@ export default function EmbedPage(){
 
   // ── JOB TYPE ──────────────────────────────────────────────────
   const [jobType, setJobType] = useState<'single'|'book'>('single');
+  const [sizeUnit, setSizeUnit] = useState<'in'|'mm'|'cm'>('in');
 
   // ── COMMON FIELDS ─────────────────────────────────────────────
   const [size, setSize] = useState(FINAL_SIZES[2]);
@@ -384,7 +394,7 @@ export default function EmbedPage(){
         {label:'Quantity',value:q.toLocaleString('en-IN')+' pcs'},
         {label:'Paper',value:`${selCat.category} ${gsm} GSM`},
         {label:'Print colors',value:selColor},
-        {label:'Sides',value:sides==='double'?'Front + Back':'Single side'},
+        {label:'Sides',value:sides==='double'?'Both Sides':'Single side'},
         {label:'Working sheets',value:ws.toLocaleString('en-IN')},
         ...(selLam!=='none'?[{label:'Lamination',value:selLam}]:[]),
         ...(selUV!=='none'?[{label:'UV / Coating',value:selUV}]:[]),
@@ -561,7 +571,21 @@ export default function EmbedPage(){
                       <optgroup label="── B Series ──">{FINAL_SIZES.filter(s=>s.id.startsWith('b')).map(s=><option key={s.id} value={s.id}>{s.label}</option>)}</optgroup>
                       <optgroup label="── Other ──">{FINAL_SIZES.filter(s=>['vc','dl','custom'].includes(s.id)).map(s=><option key={s.id} value={s.id}>{s.label}</option>)}</optgroup>
                     </select>
-                    {size.id==='custom'&&<div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginTop:8}}><input type="number" placeholder="Width (in)" value={cW} onChange={e=>setCW(e.target.value)} style={NIS}/><input type="number" placeholder="Height (in)" value={cH} onChange={e=>setCH(e.target.value)} style={NIS}/></div>}
+                    {size.id==='custom'&&(
+                      <div style={{marginTop:8}}>
+                        <div style={{display:'flex',gap:6,marginBottom:8,alignItems:'center'}}>
+                          <span style={{fontSize:11,color:'#888'}}>Unit:</span>
+                          {(['in','mm','cm'] as const).map(u2=>(
+                            <button key={u2} onClick={()=>setSizeUnit(u2)} style={{padding:'3px 10px',fontSize:11,fontWeight:600,border:'1.5px solid',borderColor:sizeUnit===u2?'#1A1A1A':'#E8E8E8',borderRadius:6,background:sizeUnit===u2?'#1A1A1A':'#fff',color:sizeUnit===u2?'#fff':'#888',cursor:'pointer',fontFamily:'inherit',textTransform:'uppercase' as const}}>{u2}</button>
+                          ))}
+                        </div>
+                        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+                          <input type="number" placeholder={`Width (${sizeUnit})`} value={cW?(sizeUnit==='mm'?(parseFloat(cW)*25.4).toFixed(1):sizeUnit==='cm'?(parseFloat(cW)*2.54).toFixed(2):cW):''} onChange={e=>{const v=parseFloat(e.target.value)||0;setCW(sizeUnit==='mm'?(v/25.4).toFixed(3):sizeUnit==='cm'?(v/2.54).toFixed(3):e.target.value);}} style={NIS}/>
+                          <input type="number" placeholder={`Height (${sizeUnit})`} value={cH?(sizeUnit==='mm'?(parseFloat(cH)*25.4).toFixed(1):sizeUnit==='cm'?(parseFloat(cH)*2.54).toFixed(2):cH):''} onChange={e=>{const v=parseFloat(e.target.value)||0;setCH(sizeUnit==='mm'?(v/25.4).toFixed(3):sizeUnit==='cm'?(v/2.54).toFixed(3):e.target.value);}} style={NIS}/>
+                        </div>
+                        {cW&&cH&&<p style={{fontSize:11,color:'#888',marginTop:4}}>= {parseFloat(cW).toFixed(2)}" × {parseFloat(cH).toFixed(2)}" (inches)</p>}
+                      </div>
+                    )}
                   </div>
                   <div style={{marginBottom:jobType==='book'?12:0}}>
                     <div style={LBL}>Quantity<span style={{fontWeight:400,color:'#AAA',fontSize:11}}>{jobType==='book'?'copies':'pieces'}</span></div>
@@ -588,15 +612,18 @@ export default function EmbedPage(){
                   <>
                     <Sec title="Paper">
                       <div style={{marginBottom:12}}><div style={LBL}>Paper category</div><select value={selCat?.id||''} onChange={e=>{const c=paperCats.find((x:any)=>x.id===e.target.value);if(c)setSelCat(c);}} style={IS}>{paperCats.map((c:any)=><option key={c.id} value={c.id}>{c.category}</option>)}</select></div>
-                      <div><div style={LBL}>GSM</div><select value={gsm} onChange={e=>setGsm(parseInt(e.target.value))} style={IS}>{paperStocks.map((s:any)=><option key={s.id} value={s.gsm}>{s.gsm} GSM{!s.in_stock?' — OUT OF STOCK':''}</option>)}</select></div>
+                      <div>
+                        <div style={LBL}>GSM{gsm>0&&<span style={{fontSize:11,color:'#888',fontWeight:400,fontFamily:'monospace'}}>{gsmInfo(gsm)}</span>}</div>
+                        <select value={gsm} onChange={e=>setGsm(parseInt(e.target.value))} style={IS}>{paperStocks.map((s:any)=><option key={s.id} value={s.gsm}>{s.gsm} GSM{!s.in_stock?' — OUT OF STOCK':''}</option>)}</select>
+                      </div>
                     </Sec>
                     <Sec title="Printing">
-                      <div style={{marginBottom:12}}><div style={LBL}>Plate size</div><select value={selPlate} onChange={e=>setSelPlate(e.target.value)} style={IS}>{plateNames.map(n=><option key={n} value={n}>{n}</option>)}</select></div>
+                      <div style={{marginBottom:12,padding:'8px 12px',background:'#F0F7FF',borderRadius:8,fontSize:12,color:'#185FA5'}}>🎯 Plate: <strong>{selPlate}</strong> (auto from final size) · {calcUps(size.w||8.3,size.h||11.7,size.plateSize)} ups</div>
                       <div style={{marginBottom:12}}><div style={LBL}>Print colors</div><select value={selColor} onChange={e=>setSelColor(e.target.value)} style={IS}>{colorsByPlate.map(c=><option key={c} value={c}>{c}</option>)}</select></div>
-                      <div><div style={LBL}>Sides</div><div style={TW}><button style={TB(sides==='single',accentColor)} onClick={()=>setSides('single')}>Single side</button><button style={TB(sides==='double',accentColor)} onClick={()=>setSides('double')}>Front + Back</button></div></div>
+                      <div><div style={LBL}>Sides</div><div style={TW}><button style={TB(sides==='single',accentColor)} onClick={()=>setSides('single')}>Single side</button><button style={TB(sides==='double',accentColor)} onClick={()=>setSides('double')}>Both Sides</button></div></div>
                     </Sec>
                     <Sec title="Finishing (Optional)">
-                      <div style={{marginBottom:12}}><div style={LBL}>Lamination</div><select value={selLam} onChange={e=>setSelLam(e.target.value)} style={IS}><option value="none">No Lamination</option>{lamRates.map(r=><option key={r.id} value={r.lam_name}>{r.lam_name}</option>)}</select>{selLam!=='none'&&<div style={{...TW,marginTop:8}}><button style={TB(!lamDbl,accentColor)} onClick={()=>setLamDbl(false)}>Single side</button><button style={TB(lamDbl,accentColor)} onClick={()=>setLamDbl(true)}>Both sides</button></div>}</div>
+                      <div style={{marginBottom:12}}><div style={LBL}>Lamination</div><select value={selLam} onChange={e=>setSelLam(e.target.value)} style={IS}><option value="none">No Lamination</option>{lamRates.map(r=><option key={r.id} value={r.lam_name}>{r.lam_name}</option>)}</select>{selLam!=='none'&&<div style={{...TW,marginTop:8}}><button style={TB(!lamDbl,accentColor)} onClick={()=>setLamDbl(false)}>Single side</button><button style={TB(lamDbl,accentColor)} onClick={()=>setLamDbl(true)}>Both Sides</button></div>}</div>
                       <div><div style={LBL}>UV / Coating</div><select value={selUV} onChange={e=>setSelUV(e.target.value)} style={IS}><option value="none">No UV</option>{uvRates.map(r=><option key={r.id} value={r.uv_name}>{r.uv_name}</option>)}</select></div>
                     </Sec>
                   </>
@@ -608,19 +635,19 @@ export default function EmbedPage(){
                     <Sec title="📄 Cover (4 pages — double side)" accent="#6B46C1">
                       <p style={{fontSize:12,color:'#888',marginBottom:12}}>Cover = 1 sheet both sides = 4 pages. Use heavier paper.</p>
                       <div style={{marginBottom:12}}><div style={LBL}>Paper category</div><select value={covCat?.id||''} onChange={e=>{const c=paperCats.find((x:any)=>x.id===e.target.value);if(c)setCovCat(c);}} style={IS}>{paperCats.map((c:any)=><option key={c.id} value={c.id}>{c.category}</option>)}</select></div>
-                      <div style={{marginBottom:12}}><div style={LBL}>GSM</div><select value={covGsm} onChange={e=>setCovGsm(parseInt(e.target.value))} style={IS}>{covStocks.map((s:any)=><option key={s.id} value={s.gsm}>{s.gsm} GSM</option>)}</select></div>
+                      <div style={{marginBottom:12}}><div style={LBL}>GSM{covGsm>0&&<span style={{fontSize:11,color:'#888',fontWeight:400,fontFamily:'monospace'}}>{gsmInfo(covGsm)}</span>}</div><select value={covGsm} onChange={e=>setCovGsm(parseInt(e.target.value))} style={IS}>{covStocks.map((s:any)=><option key={s.id} value={s.gsm}>{s.gsm} GSM</option>)}</select></div>
                       <div style={{height:1,background:'#F0F0F0',margin:'12px 0'}}/>
                       <div style={{marginBottom:12,padding:'8px 12px',background:'#F5F0FF',borderRadius:8,fontSize:12,color:'#6B46C1'}}>🎯 Plate: <strong>{selPlate}</strong> · Colors: {colorsByPlate.join(', ')}</div>
                       <div style={{marginBottom:12}}><div style={LBL}>Print colors</div><select value={covColor} onChange={e=>setCovColor(e.target.value)} style={IS}>{covColorsByPlate.map((c:string)=><option key={c} value={c}>{c}</option>)}</select></div>
                       <div style={{height:1,background:'#F0F0F0',margin:'12px 0'}}/>
-                      <div style={{marginBottom:12}}><div style={LBL}>Lamination</div><select value={covLam} onChange={e=>setCovLam(e.target.value)} style={IS}><option value="none">No Lamination</option>{lamRates.map(r=><option key={r.id} value={r.lam_name}>{r.lam_name}</option>)}</select>{covLam!=='none'&&<div style={{...TW,marginTop:8}}><button style={TB(!covLamDbl,accentColor)} onClick={()=>setCovLamDbl(false)}>Single side</button><button style={TB(covLamDbl,accentColor)} onClick={()=>setCovLamDbl(true)}>Both sides</button></div>}</div>
+                      <div style={{marginBottom:12}}><div style={LBL}>Lamination</div><select value={covLam} onChange={e=>setCovLam(e.target.value)} style={IS}><option value="none">No Lamination</option>{lamRates.map(r=><option key={r.id} value={r.lam_name}>{r.lam_name}</option>)}</select>{covLam!=='none'&&<div style={{...TW,marginTop:8}}><button style={TB(!covLamDbl,accentColor)} onClick={()=>setCovLamDbl(false)}>Single side</button><button style={TB(covLamDbl,accentColor)} onClick={()=>setCovLamDbl(true)}>Both Sides</button></div>}</div>
                       <div><div style={LBL}>UV / Coating</div><select value={covUV} onChange={e=>setCovUV(e.target.value)} style={IS}><option value="none">No UV</option>{uvRates.map(r=><option key={r.id} value={r.uv_name}>{r.uv_name}</option>)}</select></div>
                     </Sec>
 
                     <Sec title={`📋 Inner Pages (${pages>4?pages-4:0} pages — double side)`} accent="#185FA5">
                       <p style={{fontSize:12,color:'#888',marginBottom:12}}>Inner pages both sides. Use lighter paper.</p>
                       <div style={{marginBottom:12}}><div style={LBL}>Paper category</div><select value={innCat?.id||''} onChange={e=>{const c=paperCats.find((x:any)=>x.id===e.target.value);if(c)setInnCat(c);}} style={IS}>{paperCats.map((c:any)=><option key={c.id} value={c.id}>{c.category}</option>)}</select></div>
-                      <div style={{marginBottom:12}}><div style={LBL}>GSM</div><select value={innGsm} onChange={e=>setInnGsm(parseInt(e.target.value))} style={IS}>{innStocks.map((s:any)=><option key={s.id} value={s.gsm}>{s.gsm} GSM</option>)}</select></div>
+                      <div style={{marginBottom:12}}><div style={LBL}>GSM{innGsm>0&&<span style={{fontSize:11,color:'#888',fontWeight:400,fontFamily:'monospace'}}>{gsmInfo(innGsm)}</span>}</div><select value={innGsm} onChange={e=>setInnGsm(parseInt(e.target.value))} style={IS}>{innStocks.map((s:any)=><option key={s.id} value={s.gsm}>{s.gsm} GSM</option>)}</select></div>
                       <div style={{height:1,background:'#F0F0F0',margin:'12px 0'}}/>
                       <div style={{marginBottom:12,padding:'8px 12px',background:'#EEF4FA',borderRadius:8,fontSize:12,color:'#185FA5'}}>🎯 Plate: <strong>{selPlate}</strong> · Colors: {innColorsByPlate.join(', ')}</div>
                       <div style={{marginBottom:12}}><div style={LBL}>Print colors</div><select value={innColor} onChange={e=>setInnColor(e.target.value)} style={IS}>{innColorsByPlate.map((c:string)=><option key={c} value={c}>{c}</option>)}</select></div>
