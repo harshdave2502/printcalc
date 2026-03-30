@@ -783,7 +783,18 @@ export default function DashboardPage() {
 
         {/* CUSTOMERS */}
         {tab==='customers'&&(
-          <CustomerTab sub={sub} subId={sub?.id} sym={sub?.currency_symbol||'₹'} paperCats={paperCats} printRates={printRates} lamRates={lamRates} uvRates={uvRates} IS={IS}/>
+          <div>
+            {(!sub?.plan || sub.plan === 'free') ? (
+              <div className="card" style={{textAlign:'center',padding:48}}>
+                <p style={{fontSize:48,marginBottom:12}}>🔒</p>
+                <p style={{fontSize:18,fontWeight:600,marginBottom:8}}>Customer Management</p>
+                <p style={{fontSize:13,color:'#888',marginBottom:16}}>Add customers and share unique calculator links — available on Solo plan and above.</p>
+                <a href="/#pricing" style={{display:'inline-block',background:'linear-gradient(135deg,#7C3AED,#9461FB)',color:'#fff',padding:'10px 24px',borderRadius:8,fontSize:13,fontWeight:600,textDecoration:'none'}}>Upgrade to Solo →</a>
+              </div>
+            ) : (
+              <CustomerTab sub={sub} subId={sub?.id} sym={sub?.currency_symbol||'₹'} paperCats={paperCats} printRates={printRates} lamRates={lamRates} uvRates={uvRates} IS={IS}/>
+            )}
+          </div>
         )}
 
         {/* QUOTES */}
@@ -843,6 +854,14 @@ export default function DashboardPage() {
         {/* EMBED & API */}
         {tab==='embed'&&sub&&(
           <div>
+            {(!sub?.plan || sub.plan === 'free') ? (
+              <div className="card" style={{textAlign:'center',padding:48}}>
+                <p style={{fontSize:48,marginBottom:12}}>🔒</p>
+                <p style={{fontSize:18,fontWeight:600,marginBottom:8}}>Embed Calculator</p>
+                <p style={{fontSize:13,color:'#888',marginBottom:16}}>Give customers their own calculator link — available on Solo plan and above.</p>
+                <a href="/#pricing" style={{display:'inline-block',background:'linear-gradient(135deg,#7C3AED,#9461FB)',color:'#fff',padding:'10px 24px',borderRadius:8,fontSize:13,fontWeight:600,textDecoration:'none'}}>Upgrade to Solo →</a>
+              </div>
+            ) : (
             {/* iFrame Embed */}
             <div className="card" style={{marginBottom:16}}>
               <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:16}}>
@@ -923,6 +942,7 @@ export default function DashboardPage() {
                 <span style={{color:'#666'}}>// Returns calculated price instantly</span>
               </div>
             </div>
+            )}
           </div>
         )}
 
