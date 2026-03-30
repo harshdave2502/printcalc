@@ -7,16 +7,15 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [statusScreen, setStatusScreen] = useState<'pending'|'disabled'|null>(null);
+  const [businessName, setBusinessName] = useState('');
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError('');
 
-    const { error: loginError } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+    const { error: loginError } = await supabase.auth.signInWithPassword({ email, password });
 
     if (loginError) {
       setError(loginError.message);
@@ -24,8 +23,66 @@ export default function LoginPage() {
       return;
     }
 
+    // Check subscriber status
+    const { data: profile } = await supabase.from('subscribers').select('status,business_name').eq('email', email).single();
+
+    if (profile?.status === 'pending') {
+      setBusinessName(profile.business_name || '');
+      setStatusScreen('pending');
+      await supabase.auth.signOut();
+      setLoading(false);
+      return;
+    }
+
+    if (profile?.status === 'disabled' || profile?.status === 'suspended') {
+      setBusinessName(profile.business_name || '');
+      setStatusScreen('disabled');
+      await supabase.auth.signOut();
+      setLoading(false);
+      return;
+    }
+
     window.location.href = '/calculator';
   };
+
+  // Pending approval screen
+  if (statusScreen === 'pending') return (
+    <>
+      <style>{`@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&display=swap');*{box-sizing:border-box;margin:0;padding:0;}body{font-family:'DM Sans',sans-serif;background:#F7F6F3;}`}</style>
+      <main style={{minHeight:'100vh',background:'#F7F6F3',display:'flex',alignItems:'center',justifyContent:'center',padding:'20px'}}>
+        <div style={{maxWidth:460,width:'100%',background:'#fff',borderRadius:16,padding:40,border:'1px solid #EBEBEB',textAlign:'center'}}>
+          <div style={{fontSize:48,marginBottom:16}}>⏳</div>
+          <h2 style={{fontSize:22,fontWeight:600,color:'#1A1A1A',marginBottom:8}}>Awaiting Approval</h2>
+          <p style={{fontSize:14,color:'#555',marginBottom:16}}>Hi <strong>{businessName}</strong>, your account is currently under review.</p>
+          <div style={{background:'#FFFBEB',border:'1px solid #FDE68A',borderRadius:10,padding:16,marginBottom:20,textAlign:'left'}}>
+            <p style={{fontSize:13,color:'#92400E',lineHeight:1.7}}>
+              Our team typically approves accounts within 24 hours. You'll receive an email at <strong>{email}</strong> once your account is approved.
+            </p>
+          </div>
+          <button onClick={()=>setStatusScreen(null)} style={{background:'none',border:'1.5px solid #E8E8E8',borderRadius:8,padding:'10px 20px',color:'#888',cursor:'pointer',fontFamily:'inherit',fontSize:13}}>← Back to login</button>
+          <p style={{fontSize:12,color:'#AAA',marginTop:16}}>Need help? Email support@printcalc.app</p>
+        </div>
+      </main>
+    </>
+  );
+
+  // Disabled screen
+  if (statusScreen === 'disabled') return (
+    <>
+      <style>{`@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&display=swap');*{box-sizing:border-box;margin:0;padding:0;}body{font-family:'DM Sans',sans-serif;background:#F7F6F3;}`}</style>
+      <main style={{minHeight:'100vh',background:'#F7F6F3',display:'flex',alignItems:'center',justifyContent:'center',padding:'20px'}}>
+        <div style={{maxWidth:460,width:'100%',background:'#fff',borderRadius:16,padding:40,border:'1px solid #EBEBEB',textAlign:'center'}}>
+          <div style={{fontSize:48,marginBottom:16}}>🚫</div>
+          <h2 style={{fontSize:22,fontWeight:600,color:'#1A1A1A',marginBottom:8}}>Account Disabled</h2>
+          <p style={{fontSize:14,color:'#555',marginBottom:16}}>Your PrintCalc account has been disabled.</p>
+          <div style={{background:'#FFF0F0',border:'1px solid #FEB2B2',borderRadius:10,padding:16,marginBottom:20}}>
+            <p style={{fontSize:13,color:'#E53E3E'}}>Please contact support@printcalc.app if you believe this is a mistake.</p>
+          </div>
+          <button onClick={()=>setStatusScreen(null)} style={{background:'none',border:'1.5px solid #E8E8E8',borderRadius:8,padding:'10px 20px',color:'#888',cursor:'pointer',fontFamily:'inherit',fontSize:13}}>← Back to login</button>
+        </div>
+      </main>
+    </>
+  );
 
   return (
     <>
