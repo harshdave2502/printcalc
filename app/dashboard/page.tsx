@@ -862,7 +862,7 @@ export default function DashboardPage() {
                 <a href="/#pricing" style={{display:'inline-block',background:'linear-gradient(135deg,#7C3AED,#9461FB)',color:'#fff',padding:'10px 24px',borderRadius:8,fontSize:13,fontWeight:600,textDecoration:'none'}}>Upgrade to Solo →</a>
               </div>
             ) : (
-            {/* iFrame Embed */}
+            <div>
             <div className="card" style={{marginBottom:16}}>
               <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:16}}>
                 <div style={{width:40,height:40,background:'#EEF4FA',borderRadius:10,display:'flex',alignItems:'center',justifyContent:'center',fontSize:20}}>🔗</div>
@@ -941,6 +941,7 @@ export default function DashboardPage() {
                 <span style={{color:'#38A169'}}>{'{'} "size": "A4", "gsm": 300, "qty": 5000 {'}'}</span><br/>
                 <span style={{color:'#666'}}>// Returns calculated price instantly</span>
               </div>
+            </div>
             </div>
             )}
           </div>
