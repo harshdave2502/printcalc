@@ -1,5 +1,6 @@
 'use client';
 import { useState, useEffect } from 'react';
+import { useParams } from 'next/navigation';
 import { supabase } from '../../supabase';
 
 // ─── PLATE DIMS ───────────────────────────────────────────────────────
@@ -114,8 +115,9 @@ function ResultBox({r,markup,tax,sym,accent}:any){
 }
 
 // ─── MAIN EMBED PAGE ──────────────────────────────────────────────────
-export default function EmbedPage({params}:{params:{subscriberId:string}}){
-  const {subscriberId} = params;
+export default function EmbedPage(){
+  const params = useParams();
+  const subscriberId = params?.subscriberId as string;
   const [sub, setSub] = useState<any>(null);
   const [customer, setCustomer] = useState<any>(null);
   const [custRates, setCustRates] = useState<any[]>([]);
