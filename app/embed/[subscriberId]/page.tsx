@@ -63,53 +63,49 @@ const CARD:any={background:'#fff',borderRadius:16,padding:20,marginBottom:12,bor
 const TW:any={display:'flex',gap:8};
 const TB=(a:boolean,c?:string):any=>({flex:1,padding:'9px',border:`1.5px solid ${a?(c||'#1A1A1A'):'#E8E8E8'}`,borderRadius:10,fontSize:13,fontWeight:500,color:a?'#fff':'#888',background:a?(c||'#1A1A1A'):'#FAFAFA',cursor:'pointer',fontFamily:'inherit',textAlign:'center' as const});
 
-// ─── RESULT BOX ───────────────────────────────────────────────────────
-function ResultBox({r,markup,tax,sym,accent}:any){
+// ─── CUSTOMER RESULT BOX (shows price + description, hides cost breakdown) ──
+function CustomerResult({r,sym,accent,onRequestQuote,requesting}:any){
   if(!r)return null;
   return(
     <div style={{marginTop:16}}>
+      {/* Price card */}
       <div style={{background:'#1A1A1A',borderRadius:16,padding:24,marginBottom:10,position:'relative',overflow:'hidden'}}>
         <div style={{position:'absolute',top:-40,right:-40,width:140,height:140,background:accent||'#C84B31',borderRadius:'50%',opacity:0.1}}/>
-        <p style={{fontSize:12,color:'#666',marginBottom:2}}>Total price (incl. GST)</p>
+        <p style={{fontSize:12,color:'#888',marginBottom:2}}>Your price (incl. GST)</p>
         <p style={{fontSize:38,fontWeight:600,color:'#fff',letterSpacing:'-0.03em',fontFamily:'DM Mono,monospace',lineHeight:1,marginBottom:20}}>
-          <span style={{fontSize:20,verticalAlign:'super',fontWeight:400,marginRight:2}}>{sym||'₹'}</span>
+          <span style={{fontSize:20,verticalAlign:'super',fontWeight:400,marginRight:2}}>{sym}</span>
           {r.finalPrice.toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2})}
         </p>
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
-          {r.stats.map((s:any)=>(
-            <div key={s.label} style={{background:'rgba(255,255,255,0.06)',borderRadius:8,padding:12}}>
-              <p style={{fontSize:11,color:'#666',marginBottom:3}}>{s.label}</p>
-              <p style={{fontSize:15,fontWeight:500,color:'#fff',fontFamily:'DM Mono,monospace'}}>{s.value}</p>
+          <div style={{background:'rgba(255,255,255,0.08)',borderRadius:8,padding:12}}>
+            <p style={{fontSize:11,color:'#888',marginBottom:3}}>Per piece</p>
+            <p style={{fontSize:16,fontWeight:600,color:'#fff',fontFamily:'DM Mono,monospace'}}>{sym}{r.perPiece}</p>
+          </div>
+          <div style={{background:'rgba(255,255,255,0.08)',borderRadius:8,padding:12}}>
+            <p style={{fontSize:11,color:'#888',marginBottom:3}}>GST ({r.taxPct}%)</p>
+            <p style={{fontSize:16,fontWeight:600,color:'#fff',fontFamily:'DM Mono,monospace'}}>{sym}{r.taxAmount.toLocaleString('en-IN',{minimumFractionDigits:2})}</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Job summary — what they entered */}
+      <div style={{background:'#F9F9F9',borderRadius:12,border:'1px solid #EBEBEB',padding:16,marginBottom:10}}>
+        <p style={{fontSize:11,fontWeight:600,color:'#888',textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:10}}>Job Summary</p>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:6}}>
+          {r.summary.map((s:any)=>(
+            <div key={s.label} style={{display:'flex',flexDirection:'column' as const}}>
+              <span style={{fontSize:11,color:'#AAA'}}>{s.label}</span>
+              <span style={{fontSize:13,fontWeight:500,color:'#1A1A1A'}}>{s.value}</span>
             </div>
           ))}
         </div>
       </div>
-      <div style={{background:'#fff',borderRadius:12,border:'1px solid #EBEBEB',overflow:'hidden',marginBottom:10}}>
-        <div style={{background:'#F9F9F9',padding:'8px 16px'}}><p style={{fontSize:11,fontWeight:600,color:'#888',textTransform:'uppercase',letterSpacing:'0.08em',margin:0}}>Cost Breakdown</p></div>
-        {r.breakdown.map((row:any)=>(
-          <div key={row.label} style={{display:'flex',justifyContent:'space-between',padding:'10px 16px',borderBottom:'1px solid #F5F5F5'}}>
-            <span style={{fontSize:13,color:'#888'}}>{row.label}</span>
-            <span style={{fontSize:13,fontWeight:500,fontFamily:'DM Mono,monospace'}}>{row.value}</span>
-          </div>
-        ))}
-        <div style={{display:'flex',justifyContent:'space-between',padding:'10px 16px',background:'#F9F9F9'}}>
-          <span style={{fontSize:13,fontWeight:600}}>Subtotal</span>
-          <span style={{fontSize:13,fontWeight:600,fontFamily:'DM Mono,monospace'}}>{sym||'₹'}{r.subtotal.toLocaleString('en-IN',{minimumFractionDigits:2})}</span>
-        </div>
-      </div>
-      <div style={{background:'#FFFBEB',border:'1px solid #FDE68A',borderRadius:12,overflow:'hidden'}}>
-        <div style={{padding:'8px 16px',background:'#FDE68A'}}><p style={{fontSize:11,fontWeight:600,color:'#78350F',letterSpacing:'0.08em',textTransform:'uppercase',margin:0}}>GST Breakdown</p></div>
-        {[{k:`Markup (${markup}%)`,v:`${sym||'₹'}${r.markupAmount.toLocaleString('en-IN',{minimumFractionDigits:2})}`},{k:`GST @ ${tax}%`,v:`${sym||'₹'}${r.taxAmount.toLocaleString('en-IN',{minimumFractionDigits:2})}`}].map(row=>(
-          <div key={row.k} style={{display:'flex',justifyContent:'space-between',padding:'10px 16px',borderBottom:'1px solid #FDE68A'}}>
-            <span style={{fontSize:13,color:'#92400E'}}>{row.k}</span>
-            <span style={{fontSize:13,fontWeight:600,color:'#92400E',fontFamily:'DM Mono,monospace'}}>{row.v}</span>
-          </div>
-        ))}
-        <div style={{display:'flex',justifyContent:'space-between',padding:'10px 16px'}}>
-          <span style={{fontSize:13,fontWeight:600,color:'#78350F'}}>Total incl. GST</span>
-          <span style={{fontSize:15,fontWeight:600,color:'#92400E',fontFamily:'DM Mono,monospace'}}>{sym||'₹'}{r.finalPrice.toLocaleString('en-IN',{minimumFractionDigits:2})}</span>
-        </div>
-      </div>
+
+      {/* Request Quote button */}
+      <button onClick={onRequestQuote} disabled={requesting} style={{width:'100%',padding:14,background:accent||'#C84B31',color:'#fff',border:'none',borderRadius:12,fontSize:15,fontWeight:600,cursor:requesting?'not-allowed':'pointer',fontFamily:'inherit',opacity:requesting?0.7:1}}>
+        {requesting?'Sending request...':'📋 Request this Quote'}
+      </button>
+      <p style={{textAlign:'center',fontSize:11,color:'#AAA',marginTop:8}}>Your request will be sent to {r.businessName}</p>
     </div>
   );
 }
@@ -118,99 +114,84 @@ function ResultBox({r,markup,tax,sym,accent}:any){
 export default function EmbedPage(){
   const params = useParams();
   const subscriberId = params?.subscriberId as string;
+
   const [sub, setSub] = useState<any>(null);
   const [customer, setCustomer] = useState<any>(null);
   const [custRates, setCustRates] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<'paper'|'printing'|'fulljob'>('paper');
+  const [tab, setTab] = useState<'calculator'|'quotes'|'orders'>('calculator');
   const [notFound, setNotFound] = useState(false);
+  const [customerId, setCustomerId] = useState<string|null>(null);
 
-  // Paper tab state
-  const [sheetSizes, setSheetSizes] = useState<any[]>([]);
-  const [paperStocks, setPaperStocks] = useState<any[]>([]);
-  const [selSheet, setSelSheet] = useState<any>(null);
-  const [selPaper, setSelPaper] = useState<any>(null);
-  const [paperQty, setPaperQty] = useState('');
-  const [paperResult, setPaperResult] = useState<any>(null);
-
-  // Printing tab state
+  // Calculator state
+  const [jobType, setJobType] = useState<'single'|'book'>('single');
   const [size, setSize] = useState(FINAL_SIZES[2]);
   const [cW, setCW] = useState(''); const [cH, setCH] = useState('');
-  const [printQty, setPrintQty] = useState('');
+  const [qty, setQty] = useState('');
+  const [sides, setSides] = useState<'single'|'double'>('double');
   const [plateRates, setPlateRates] = useState<any[]>([]);
   const [lamRates, setLamRates] = useState<any[]>([]);
   const [uvRates, setUvRates] = useState<any[]>([]);
+  const [paperCats, setPaperCats] = useState<any[]>([]);
+  const [catStocks, setCatStocks] = useState<any[]>([]);
+  const [selCat, setSelCat] = useState<any>(null);
+  const [selGsm, setSelGsm] = useState(0);
   const [plateNames, setPlateNames] = useState<string[]>([]);
   const [selPlate, setSelPlate] = useState('');
   const [selColor, setSelColor] = useState('');
   const [colorsByPlate, setColorsByPlate] = useState<string[]>([]);
-  const [sides, setSides] = useState<'single'|'double'>('double');
   const [selLam, setSelLam] = useState('none');
   const [selUV, setSelUV] = useState('none');
-  const [printResult, setPrintResult] = useState<any>(null);
-  const [ratesLoaded, setRatesLoaded] = useState(false);
-
-  // Full job tab state
-  const [fjSize, setFjSize] = useState(FINAL_SIZES[2]);
-  const [fjCW, setFjCW] = useState(''); const [fjCH, setFjCH] = useState('');
-  const [fjQty, setFjQty] = useState('');
-  const [paperCats, setPaperCats] = useState<any[]>([]);
-  const [selCat, setSelCat] = useState<any>(null);
-  const [catStocks, setCatStocks] = useState<any[]>([]);
-  const [selGsm, setSelGsm] = useState(0);
-  const [fjSides, setFjSides] = useState<'single'|'double'>('double');
-  const [fjSelPlate, setFjSelPlate] = useState('');
-  const [fjSelColor, setFjSelColor] = useState('');
-  const [fjColorsByPlate, setFjColorsByPlate] = useState<string[]>([]);
-  const [fjSelLam, setFjSelLam] = useState('none');
-  const [fjSelUV, setFjSelUV] = useState('none');
   const [bindRates, setBindRates] = useState<any[]>([]);
-  const [fjResult, setFjResult] = useState<any>(null);
+  const [selBind, setSelBind] = useState('none');
+  const [ratesLoaded, setRatesLoaded] = useState(false);
+  const [result, setResult] = useState<any>(null);
+  const [requesting, setRequesting] = useState(false);
+  const [requestSent, setRequestSent] = useState(false);
 
-  const accentColor = '#C84B31'; // will use subscriber brand color later
+  // Quotes & Orders
+  const [quotes, setQuotes] = useState<any[]>([]);
+  const [orders, setOrders] = useState<any[]>([]);
+  const [quotesLoaded, setQuotesLoaded] = useState(false);
+  const [ordersLoaded, setOrdersLoaded] = useState(false);
+
+  const accentColor = '#C84B31';
 
   useEffect(()=>{
     const load = async()=>{
-      // Get customer ID from URL params if present
       const urlParams = typeof window!=='undefined' ? new URLSearchParams(window.location.search) : null;
-      const customerId = urlParams?.get('c');
+      const cid = urlParams?.get('c');
+      setCustomerId(cid||null);
 
-      // Load subscriber info
       const {data:profile} = await supabase.from('subscribers').select('*').eq('id', subscriberId).single();
       if(!profile){setNotFound(true);setLoading(false);return;}
       setSub(profile);
 
-      // Load customer info and custom rates if customer ID provided
-      if(customerId){
+      if(cid){
         const [{data:cust},{data:cr}] = await Promise.all([
-          supabase.from('customers').select('*').eq('id',customerId).eq('subscriber_id',subscriberId).single(),
-          supabase.from('customer_rates').select('*').eq('customer_id',customerId).eq('subscriber_id',subscriberId),
+          supabase.from('customers').select('*').eq('id',cid).eq('subscriber_id',subscriberId).single(),
+          supabase.from('customer_rates').select('*').eq('customer_id',cid).eq('subscriber_id',subscriberId),
         ]);
         if(cust){setCustomer(cust);setCustRates(cr||[]);}
       }
 
-      // Load all rates for this subscriber
-      const [{data:sz},{data:pp},{data:pr},{data:lr},{data:ur},{data:cats},{data:br}] = await Promise.all([
-        supabase.from('sheet_sizes').select('*').eq('is_active',true).order('sort_order'),
-        supabase.from('paper_stocks').select('*').eq('subscriber_id',subscriberId).order('sort_order'),
+      const [{data:pr},{data:lr},{data:ur},{data:cats},{data:br}] = await Promise.all([
         supabase.from('printing_rates').select('*').eq('subscriber_id',subscriberId).order('sort_order'),
         supabase.from('lamination_rates').select('*').eq('subscriber_id',subscriberId).order('sort_order'),
         supabase.from('uv_rates').select('*').eq('subscriber_id',subscriberId).order('sort_order'),
         supabase.from('paper_categories').select('*').eq('subscriber_id',subscriberId).order('category'),
         supabase.from('binding_rates').select('*').eq('subscriber_id',subscriberId).order('sort_order'),
       ]);
-      if(sz?.length){setSheetSizes(sz);setSelSheet(sz[0]);}
-      if(pp?.length){setPaperStocks(pp);setSelPaper(pp[0]);}
       setPlateRates(pr||[]);setLamRates(lr||[]);setUvRates(ur||[]);setPaperCats(cats||[]);setBindRates(br||[]);
+      if(cats?.length)setSelCat(cats[0]);
       const pnames=[...new Set((pr||[]).map((r:any)=>r.plate_name))] as string[];
       setPlateNames(pnames);
       if(pnames.length){
-        setSelPlate(pnames[0]);setFjSelPlate(pnames[0]);
+        setSelPlate(pnames[0]);
         const cols=(pr||[]).filter((r:any)=>r.plate_name===pnames[0]).map((r:any)=>r.color_option);
-        setColorsByPlate(cols);setFjColorsByPlate(cols);
-        if(cols.length){setSelColor(cols[0]);setFjSelColor(cols[0]);}
+        setColorsByPlate(cols);
+        if(cols.length)setSelColor(cols[0]);
       }
-      if(cats?.length){setSelCat(cats[0]);}
       setRatesLoaded(true);
       setLoading(false);
     };
@@ -218,28 +199,163 @@ export default function EmbedPage(){
   },[subscriberId]);
 
   useEffect(()=>{
-    if(!selCat) return;
+    if(!selCat)return;
     supabase.from('paper_stocks').select('*').eq('subscriber_id',subscriberId).eq('category',selCat.category).order('gsm')
       .then(({data})=>{setCatStocks(data||[]);if(data?.length)setSelGsm(data[0].gsm);});
   },[selCat,subscriberId]);
 
   useEffect(()=>{
-    if(!selPlate) return;
+    if(!selPlate)return;
     const cols=plateRates.filter(r=>r.plate_name===selPlate).map(r=>r.color_option);
     setColorsByPlate(cols);if(cols.length)setSelColor(cols[0]);
   },[selPlate,plateRates]);
 
+  // Load quotes when tab opens
   useEffect(()=>{
-    if(!fjSelPlate) return;
-    const cols=plateRates.filter(r=>r.plate_name===fjSelPlate).map(r=>r.color_option);
-    setFjColorsByPlate(cols);if(cols.length)setFjSelColor(cols[0]);
-  },[fjSelPlate,plateRates]);
+    if(tab==='quotes'&&!quotesLoaded&&customerId){
+      supabase.from('quotes').select('*').eq('customer_email',customer?.email).eq('subscriber_id',subscriberId).order('created_at',{ascending:false})
+        .then(({data})=>{setQuotes(data||[]);setQuotesLoaded(true);});
+    }
+  },[tab,quotesLoaded,customerId]);
+
+  // Load orders when tab opens
+  useEffect(()=>{
+    if(tab==='orders'&&!ordersLoaded&&customerId){
+      supabase.from('orders').select('*').eq('customer_email',customer?.email).eq('subscriber_id',subscriberId).order('created_at',{ascending:false})
+        .then(({data})=>{setOrders(data||[]);setOrdersLoaded(true);});
+    }
+  },[tab,ordersLoaded,customerId]);
+
+  const M = customer?.markup_percent!=null ? customer.markup_percent : (sub?.markup_percent||25);
+  const T = sub?.tax_percent||18;
+  const sym = sub?.currency_symbol||'₹';
+
+  const getCustRate=(type:string,key:string,defaultVal:number)=>{
+    const r=custRates.find((x:any)=>x.rate_type===type&&x.rate_key===key);
+    return r ? r.custom_value : defaultVal;
+  };
+
+  const calc=()=>{
+    const q=parseInt(qty);
+    const fW=size.id==='custom'?(parseFloat(cW)||0):size.w;
+    const fH=size.id==='custom'?(parseFloat(cH)||0):size.h;
+    if(!q||!fW||!fH||!selCat)return;
+    const pk=size.id==='custom'?autoSelectPlate(fW,fH):size.plateSize;
+    const u=calcUps(fW,fH,pk);
+    const pi=PARENT_SHEETS[pk]||{cuts:1,pw:25,ph:36};
+    const ws=Math.ceil(q/u);
+    const imp=sides==='double'?ws*2:ws;
+    const numPlates=1;
+
+    // Paper cost using customer rate if set
+    const catRate=getCustRate('paper',selCat.category,selCat.rate_per_kg);
+    const f=(pi.pw*pi.ph*0.2666)/828;
+    const papC=((f*selGsm*catRate)/500)*(ws/pi.cuts);
+
+    // Print cost using customer rate if set
+    const rate=plateRates.find(r=>r.plate_name===selPlate&&r.color_option===selColor);
+    let prC=0;
+    if(rate){
+      const rkey=`${rate.plate_name}__${rate.color_option}`;
+      const fixedCharge=getCustRate('print_fixed',rkey,rate.fixed_charge);
+      const per1000=getCustRate('print_per1000',rkey,rate.per_1000_impression);
+      const pf=fixedCharge*numPlates;
+      const fi=1000*numPlates;
+      const ei=Math.max(0,imp-fi);
+      const er=Math.ceil(ei/1000)*1000;
+      prC=pf+(er/1000)*per1000;
+    }
+
+    // Lam cost
+    let lC=0;
+    if(selLam!=='none'){
+      const lr=lamRates.find(r=>r.lam_name===selLam);
+      if(lr){
+        const lamRate=getCustRate('lam',lr.lam_name,lr.per_100_sqinch);
+        const pd=PLATE_DIMS[pk]||{w:18,h:25};
+        lC=Math.max((pd.w*pd.h/100)*lamRate*imp,lr.minimum_charge);
+      }
+    }
+
+    // UV cost
+    let uC=0;
+    if(selUV!=='none'){
+      const ur=uvRates.find(r=>r.uv_name===selUV);
+      if(ur){
+        const uvRate=getCustRate('uv',ur.uv_name,ur.per_100_sqinch);
+        const pd=PLATE_DIMS[pk]||{w:18,h:25};
+        uC=Math.max((pd.w*pd.h/100)*uvRate*imp,ur.minimum_charge);
+      }
+    }
+
+    // Binding
+    let bC=0;
+    if(selBind!=='none'){
+      const br=bindRates.find(r=>r.binding_name===selBind);
+      if(br)bC=br.per_binding_format*q;
+    }
+
+    const sub2=papC+prC+lC+uC+bC;
+    const am=sub2*(1+M/100);
+    const ta=am*(T/100);
+    const finalPrice=am+ta;
+
+    setResult({
+      finalPrice,
+      perPiece:(finalPrice/q).toFixed(2),
+      taxAmount:ta,
+      taxPct:T,
+      businessName:sub?.business_name,
+      summary:[
+        {label:'Final size',value:size.id==='custom'?`${fW}" × ${fH}"`:size.label},
+        {label:'Quantity',value:q.toLocaleString('en-IN')+' pcs'},
+        {label:'Paper',value:`${selCat?.category} ${selGsm} GSM`},
+        {label:'Print colors',value:selColor},
+        {label:'Sides',value:sides==='double'?'Front + Back':'Single side'},
+        ...(selLam!=='none'?[{label:'Lamination',value:selLam}]:[]),
+        ...(selUV!=='none'?[{label:'UV / Coating',value:selUV}]:[]),
+        ...(selBind!=='none'?[{label:'Binding',value:selBind}]:[]),
+        {label:'Job type',value:jobType==='book'?'Brochure / Book':'Single item'},
+      ],
+      // Internal details for quote (not shown to customer)
+      _internal:{papC,prC,lC,uC,bC,sub2,markup:M,ws,imp,u,pk,fW,fH,q,sides,selCat,selGsm,selPlate,selColor,selLam,selUV,selBind,sizeName:size.label},
+    });
+    setRequestSent(false);
+  };
+
+  const requestQuote=async()=>{
+    if(!result)return;
+    setRequesting(true);
+    try{
+      await supabase.from('quotes').insert({
+        subscriber_id:subscriberId,
+        customer_name:customer?.name||'Customer',
+        customer_email:customer?.email||'',
+        customer_phone:customer?.phone||'',
+        company:customer?.company||'',
+        job_title:`${result._internal.sizeName} - ${result._internal.q} pcs`,
+        size:`${result._internal.fW}" × ${result._internal.fH}"`,
+        paper_type:`${result._internal.selCat?.category} ${result._internal.selGsm} GSM`,
+        quantity:result._internal.q,
+        sides:result._internal.sides,
+        color_option:result._internal.selColor,
+        lamination:result._internal.selLam,
+        uv_coating:result._internal.selUV,
+        binding:result._internal.selBind,
+        total_amount:result.finalPrice,
+        status:'Sent',
+        notes:`Requested via calculator. UPS: ${result._internal.u}, Working sheets: ${result._internal.ws}`,
+      });
+      setRequestSent(true);
+    }catch(e){console.error(e);}
+    setRequesting(false);
+  };
 
   if(loading) return(
     <div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',fontFamily:'DM Sans,sans-serif',background:'#F7F6F3'}}>
       <div style={{textAlign:'center'}}>
         <div style={{width:40,height:40,border:'3px solid #E8E8E8',borderTopColor:'#C84B31',borderRadius:'50%',animation:'spin 1s linear infinite',margin:'0 auto 12px'}}/>
-        <p style={{color:'#888',fontSize:14}}>Loading calculator...</p>
+        <p style={{color:'#888',fontSize:14}}>Loading...</p>
         <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
       </div>
     </div>
@@ -254,115 +370,8 @@ export default function EmbedPage(){
     </div>
   );
 
-  // Use customer's custom markup if set, otherwise subscriber's default
-  const M = customer?.markup_percent!=null ? customer.markup_percent : (sub?.markup_percent||25);
-  const T = sub?.tax_percent||18;
-  const sym = sub?.currency_symbol||'₹';
-  const fmt = (n:number)=>sym+n.toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2});
-
-  // Helper to get customer-specific rate or fall back to default
-  const getCustRate=(type:string,key:string,defaultVal:number)=>{
-    const r=custRates.find((x:any)=>x.rate_type===type&&x.rate_key===key);
-    return r ? r.custom_value : defaultVal;
-  };
-
-  // Paper calc
-  const calcPaper = ()=>{
-    const q=parseInt(paperQty);
-    if(!q||!selSheet||!selPaper)return;
-    const wpr=selPaper.gsm*selSheet.factor;
-    const cpr=wpr*selPaper.rate_per_kg;
-    const cps=cpr/500;
-    const raw=cps*q;
-    const am=raw*(1+M/100);
-    const ta=am*(T/100);
-    setPaperResult({finalPrice:am+ta,subtotal:raw,markupAmount:am-raw,taxAmount:ta,
-      stats:[{label:'Per sheet',value:sym+cps.toFixed(4)},{label:'Per ream (500)',value:sym+cpr.toFixed(2)},{label:'Total weight',value:((wpr/500)*q).toFixed(2)+' kg'},{label:'Total sheets',value:q.toLocaleString('en-IN')}],
-      breakdown:[]});
-  };
-
-  // Print calc
-  const calcPrint = ()=>{
-    const q=parseInt(printQty);
-    const fW=size.id==='custom'?(parseFloat(cW)||0):size.w;
-    const fH=size.id==='custom'?(parseFloat(cH)||0):size.h;
-    if(!q||!fW||!fH)return;
-    const pk=size.id==='custom'?autoSelectPlate(fW,fH):size.plateSize;
-    const u=calcUps(fW,fH,pk);
-    const ws=Math.ceil(q/u);
-    const imp=sides==='double'?ws*2:ws;
-    const numPlates=1;
-    const rate=plateRates.find(r=>r.plate_name===selPlate&&r.color_option===selColor);
-    let pCost=0;
-    if(rate){
-      const pf=rate.fixed_charge*numPlates;
-      const fi=1000*numPlates;
-      const ei=Math.max(0,imp-fi);
-      const er=Math.ceil(ei/1000)*1000;
-      pCost=pf+(er/1000)*rate.per_1000_impression;
-    }
-    let lCost=0;
-    if(selLam!=='none'){
-      const lr=lamRates.find(r=>r.lam_name===selLam);
-      if(lr){const pd=PLATE_DIMS[pk]||{w:18,h:25};const area=pd.w*pd.h;lCost=Math.max((area/100)*lr.per_100_sqinch*imp,lr.minimum_charge);}
-    }
-    let uCost=0;
-    if(selUV!=='none'){
-      const ur=uvRates.find(r=>r.uv_name===selUV);
-      if(ur){const pd=PLATE_DIMS[pk]||{w:18,h:25};const area=pd.w*pd.h;uCost=Math.max((area/100)*ur.per_100_sqinch*imp,ur.minimum_charge);}
-    }
-    const sub2=pCost+lCost+uCost;
-    const am=sub2*(1+M/100);const ta=am*(T/100);
-    const pi=PARENT_SHEETS[pk]||{parent:pk,cuts:1};
-    setPrintResult({finalPrice:am+ta,subtotal:sub2,markupAmount:am-sub2,taxAmount:ta,
-      stats:[{label:'Per piece',value:sym+(((am+ta)/q).toFixed(2))},{label:'Working sheets',value:ws.toLocaleString('en-IN')},{label:'Impressions',value:imp.toLocaleString('en-IN')},{label:'Plate: '+pk,value:u+' ups'}],
-      breakdown:[{label:'Printing cost',value:sym+pCost.toFixed(2)},...(lCost>0?[{label:'Lamination',value:sym+lCost.toFixed(2)}]:[]),...(uCost>0?[{label:'UV / Coating',value:sym+uCost.toFixed(2)}]:[])]});
-  };
-
-  // Full job calc
-  const calcFullJob = ()=>{
-    const q=parseInt(fjQty);
-    const fW=fjSize.id==='custom'?(parseFloat(fjCW)||0):fjSize.w;
-    const fH=fjSize.id==='custom'?(parseFloat(fjCH)||0):fjSize.h;
-    if(!q||!fW||!fH||!selCat)return;
-    const pk=fjSize.id==='custom'?autoSelectPlate(fW,fH):fjSize.plateSize;
-    const u=calcUps(fW,fH,pk);
-    const pi=PARENT_SHEETS[pk]||{cuts:1,pw:25,ph:36};
-    const ws=Math.ceil(q/u);
-    const imp=fjSides==='double'?ws*2:ws;
-    const numPlates=1;
-    // Paper cost
-    const f=(pi.pw*pi.ph*0.2666)/828;
-    const papC=((f*selGsm*selCat.rate_per_kg)/500)*(ws/pi.cuts);
-    // Print cost
-    const rate=plateRates.find(r=>r.plate_name===fjSelPlate&&r.color_option===fjSelColor);
-    let prC=0;
-    if(rate){
-      const pf=rate.fixed_charge*numPlates;
-      const fi=1000*numPlates;
-      const ei=Math.max(0,imp-fi);
-      const er=Math.ceil(ei/1000)*1000;
-      prC=pf+(er/1000)*rate.per_1000_impression;
-    }
-    // Lam cost
-    let lC=0;
-    if(fjSelLam!=='none'){
-      const lr=lamRates.find(r=>r.lam_name===fjSelLam);
-      if(lr){const pd=PLATE_DIMS[pk]||{w:18,h:25};const area=pd.w*pd.h;lC=Math.max((area/100)*lr.per_100_sqinch*imp,lr.minimum_charge);}
-    }
-    let uC=0;
-    if(fjSelUV!=='none'){
-      const ur=uvRates.find(r=>r.uv_name===fjSelUV);
-      if(ur){const pd=PLATE_DIMS[pk]||{w:18,h:25};const area=pd.w*pd.h;uC=Math.max((area/100)*ur.per_100_sqinch*imp,ur.minimum_charge);}
-    }
-    const sub2=papC+prC+lC+uC;
-    const am=sub2*(1+M/100);const ta=am*(T/100);
-    setFjResult({finalPrice:am+ta,subtotal:sub2,markupAmount:am-sub2,taxAmount:ta,
-      stats:[{label:'Per piece',value:sym+(((am+ta)/q).toFixed(2))},{label:'Working sheets',value:ws.toLocaleString('en-IN')},{label:'Parent sheets',value:Math.ceil(ws/pi.cuts).toLocaleString('en-IN')},{label:'Impressions',value:imp.toLocaleString('en-IN')}],
-      breakdown:[{label:'Paper cost',value:sym+papC.toFixed(2)},{label:'Printing cost',value:sym+prC.toFixed(2)},...(lC>0?[{label:'Lamination',value:sym+lC.toFixed(2)}]:[]),...(uC>0?[{label:'UV / Coating',value:sym+uC.toFixed(2)}]:[])]});
-  };
-
-  const cats=[...new Set(paperStocks.map((p:any)=>p.category))];
+  const SC:Record<string,string>={Draft:'#888',Sent:'#185FA5',Converted:'#38A169',Expired:'#E53E3E',Pending:'#D97706','In Production':'#185FA5',Ready:'#6B46C1',Delivered:'#38A169'};
+  const SBG:Record<string,string>={Draft:'#F5F5F5',Sent:'#EEF4FA',Converted:'#F0FFF4',Expired:'#FFF0F0',Pending:'#FFFBEB','In Production':'#EEF4FA',Ready:'#F5F0FF',Delivered:'#F0FFF4'};
 
   return(
     <>
@@ -372,68 +381,59 @@ export default function EmbedPage(){
         body{font-family:'DM Sans',sans-serif;background:#F7F6F3;}
         input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none;}
         input[type=number]{-moz-appearance:textfield;}
-        .etab{padding:12px 18px;font-size:14px;font-weight:500;color:#888;cursor:pointer;border-bottom:2px solid transparent;background:none;border-top:none;border-left:none;border-right:none;font-family:inherit;white-space:nowrap;}
+        .etab{padding:12px 16px;font-size:13px;font-weight:500;color:#888;cursor:pointer;border-bottom:2px solid transparent;background:none;border-top:none;border-left:none;border-right:none;font-family:inherit;white-space:nowrap;flex-shrink:0;}
         .etab.active{color:#1A1A1A;border-bottom-color:${accentColor};}
         .etab:hover{color:#1A1A1A;}
+        .badge{display:inline-block;padding:3px 8px;border-radius:4px;font-size:11px;font-weight:600;}
       `}</style>
 
-      {/* HEADER — Subscriber branding */}
-      <div style={{background:'#1A1A1A',padding:'14px 20px',display:'flex',alignItems:'center',gap:10}}>
-        {sub?.logo_url && <img src={sub.logo_url} alt={sub.business_name} style={{height:32,borderRadius:4}}/>}
-        <div style={{display:'flex',alignItems:'center',gap:8}}>
-          <div style={{width:8,height:8,background:accentColor,borderRadius:'50%'}}/>
-          <span style={{fontSize:15,fontWeight:600,color:'#fff'}}>{sub?.business_name||'Print Calculator'}</span>
-          {customer&&<span style={{fontSize:11,color:'#888',background:'rgba(255,255,255,0.1)',padding:'2px 8px',borderRadius:4}}>Hi, {customer.name}</span>}
-        </div>
-        <span style={{marginLeft:'auto',fontSize:11,color:'#444'}}>Powered by PrintCalc</span>
+      {/* HEADER */}
+      <div style={{background:'#1A1A1A',padding:'14px 20px',display:'flex',alignItems:'center',gap:10,position:'sticky',top:0,zIndex:100}}>
+        <div style={{width:8,height:8,background:accentColor,borderRadius:'50%'}}/>
+        <span style={{fontSize:15,fontWeight:600,color:'#fff'}}>{sub?.business_name||'Print Calculator'}</span>
+        {customer&&<span style={{fontSize:11,color:'#888',background:'rgba(255,255,255,0.1)',padding:'2px 10px',borderRadius:20,marginLeft:4}}>Hi, {customer.name} 👋</span>}
+        <span style={{marginLeft:'auto',fontSize:10,color:'#444'}}>Powered by PrintCalc</span>
       </div>
 
       {/* TABS */}
       <div style={{background:'#fff',borderBottom:'1px solid #EBEBEB',display:'flex',padding:'0 20px',overflowX:'auto'}}>
-        {[{id:'paper',l:'📄 Paper'},{id:'printing',l:'🖨️ Printing'},{id:'fulljob',l:'✅ Full Job'}].map(t=>(
-          <button key={t.id} className={`etab ${tab===t.id?'active':''}`} onClick={()=>setTab(t.id as any)}>{t.l}</button>
-        ))}
+        <button className={`etab ${tab==='calculator'?'active':''}`} onClick={()=>setTab('calculator')}>🖨️ Calculator</button>
+        {customerId&&<button className={`etab ${tab==='quotes'?'active':''}`} onClick={()=>setTab('quotes')}>📋 My Quotes</button>}
+        {customerId&&<button className={`etab ${tab==='orders'?'active':''}`} onClick={()=>setTab('orders')}>📦 My Orders</button>}
       </div>
 
-      {/* CONTENT */}
-      <div style={{padding:'20px 16px 48px',maxWidth:560,margin:'0 auto'}}>
+      <div style={{padding:'20px 16px 60px',maxWidth:580,margin:'0 auto'}}>
 
-        {/* ── PAPER TAB ── */}
-        {tab==='paper'&&(
+        {/* ── CALCULATOR TAB ── */}
+        {tab==='calculator'&&(
           <div>
-            <div style={CARD}>
-              <p style={{fontSize:11,fontWeight:600,color:'#999',letterSpacing:'0.1em',textTransform:'uppercase',marginBottom:14}}>Job Details</p>
-              <div style={{marginBottom:14}}>
-                <div style={LBL}>Sheet size</div>
-                <select value={selSheet?.id||''} onChange={e=>{const s=sheetSizes.find((x:any)=>x.id===e.target.value);if(s)setSelSheet(s);}} style={IS}>
-                  {sheetSizes.map((s:any)=><option key={s.id} value={s.id}>{s.name}</option>)}
-                </select>
-              </div>
-              <div style={{marginBottom:14}}>
-                <div style={LBL}>Paper type{selPaper&&<span style={{padding:'2px 8px',borderRadius:4,fontSize:10,fontWeight:600,background:selPaper.in_stock?'#F0FFF4':'#FFF0F0',color:selPaper.in_stock?'#38A169':'#E53E3E',border:`1px solid ${selPaper.in_stock?'#9AE6B4':'#FEB2B2'}`}}>{selPaper.in_stock?'● In stock':'● Out of stock'}</span>}</div>
-                <select value={selPaper?.id||''} onChange={e=>{const p=paperStocks.find((x:any)=>x.id===e.target.value);if(p)setSelPaper(p);}} style={IS}>
-                  {cats.map((cat:any)=><optgroup key={cat} label={`── ${cat} ──`}>{paperStocks.filter((p:any)=>p.category===cat).map((p:any)=><option key={p.id} value={p.id}>{p.label}{!p.in_stock?' — OUT OF STOCK':''}</option>)}</optgroup>)}
-                </select>
-              </div>
-              <div><div style={LBL}>Quantity<span style={{fontWeight:400,color:'#AAA',fontSize:11}}>sheets</span></div>
-                <input type="number" placeholder="Enter number of sheets" value={paperQty} onChange={e=>setPaperQty(e.target.value)} style={NIS} min="1"/>
-              </div>
-            </div>
-            <button onClick={calcPaper} style={{width:'100%',padding:13,background:accentColor,color:'#fff',border:'none',borderRadius:12,fontSize:15,fontWeight:600,cursor:'pointer',fontFamily:'inherit',marginBottom:4}}>Calculate →</button>
-            <ResultBox r={paperResult} markup={M} tax={T} sym={sym} accent={accentColor}/>
-          </div>
-        )}
-
-        {/* ── PRINTING TAB ── */}
-        {tab==='printing'&&(
-          <div>
-            {!ratesLoaded?<div style={{textAlign:'center',padding:40,color:'#888'}}>Loading rates...</div>:(
+            {!ratesLoaded?(
+              <div style={{textAlign:'center',padding:40,color:'#888'}}>Loading rates...</div>
+            ):(
               <>
+                {/* Job type toggle */}
+                <div style={CARD}>
+                  <p style={{fontSize:11,fontWeight:600,color:'#999',letterSpacing:'0.1em',textTransform:'uppercase',marginBottom:12}}>Job Type</p>
+                  <div style={TW}>
+                    <button style={TB(jobType==='single',accentColor)} onClick={()=>setJobType('single')}>
+                      <div>📄 Single Item</div>
+                      <div style={{fontSize:11,fontWeight:400,opacity:0.7,marginTop:2}}>Leaflet · Poster · Card</div>
+                    </button>
+                    <button style={TB(jobType==='book',accentColor)} onClick={()=>setJobType('book')}>
+                      <div>📚 Brochure / Book</div>
+                      <div style={{fontSize:11,fontWeight:400,opacity:0.7,marginTop:2}}>Multi-page with binding</div>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Job details */}
                 <div style={CARD}>
                   <p style={{fontSize:11,fontWeight:600,color:'#999',letterSpacing:'0.1em',textTransform:'uppercase',marginBottom:14}}>Job Details</p>
+
+                  {/* Size */}
                   <div style={{marginBottom:14}}>
                     <div style={LBL}>Final size{size.id!=='custom'&&<span style={{background:'#EEF4FA',color:'#185FA5',borderRadius:4,padding:'2px 8px',fontSize:11,fontFamily:'monospace'}}>{calcUps(size.w,size.h,size.plateSize)} ups</span>}</div>
-                    <select value={size.id} onChange={e=>{const s=FINAL_SIZES.find(x=>x.id===e.target.value);if(s){setSize(s);if(s.id==='custom'){const pk=autoSelectPlate(parseFloat(cW)||8.3,parseFloat(cH)||11.7);}}}} style={IS}>
+                    <select value={size.id} onChange={e=>{const s=FINAL_SIZES.find(x=>x.id===e.target.value);if(s)setSize(s);}} style={IS}>
                       <optgroup label="── A Series ──">{FINAL_SIZES.filter(s=>s.id.startsWith('a')).map(s=><option key={s.id} value={s.id}>{s.label}</option>)}</optgroup>
                       <optgroup label="── American ──">{FINAL_SIZES.filter(s=>s.id.startsWith('am')).map(s=><option key={s.id} value={s.id}>{s.label}</option>)}</optgroup>
                       <optgroup label="── B Series ──">{FINAL_SIZES.filter(s=>s.id.startsWith('b')).map(s=><option key={s.id} value={s.id}>{s.label}</option>)}</optgroup>
@@ -441,59 +441,202 @@ export default function EmbedPage(){
                     </select>
                     {size.id==='custom'&&<div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginTop:8}}><input type="number" placeholder="Width (in)" value={cW} onChange={e=>setCW(e.target.value)} style={NIS}/><input type="number" placeholder="Height (in)" value={cH} onChange={e=>setCH(e.target.value)} style={NIS}/></div>}
                   </div>
-                  <div style={{marginBottom:14}}><div style={LBL}>Quantity<span style={{fontWeight:400,color:'#AAA',fontSize:11}}>pieces</span></div><input type="number" placeholder="Enter quantity" value={printQty} onChange={e=>setPrintQty(e.target.value)} style={NIS}/></div>
-                  <div style={{height:1,background:'#F0F0F0',margin:'14px 0'}}/>
-                  <div style={{marginBottom:14}}><div style={LBL}>Plate size</div><select value={selPlate} onChange={e=>setSelPlate(e.target.value)} style={IS}>{plateNames.map(n=><option key={n} value={n}>{n}</option>)}</select></div>
-                  <div style={{marginBottom:14}}><div style={LBL}>Print colors</div><select value={selColor} onChange={e=>setSelColor(e.target.value)} style={IS}>{colorsByPlate.map(c=><option key={c} value={c}>{c}</option>)}</select></div>
-                  <div style={{marginBottom:14}}><div style={LBL}>Sides</div><div style={TW}><button style={TB(sides==='single',accentColor)} onClick={()=>setSides('single')}>Single side</button><button style={TB(sides==='double',accentColor)} onClick={()=>setSides('double')}>Front + Back</button></div></div>
-                  <div style={{height:1,background:'#F0F0F0',margin:'14px 0'}}/>
-                  <div style={{marginBottom:14}}><div style={LBL}>Lamination</div><select value={selLam} onChange={e=>setSelLam(e.target.value)} style={IS}><option value="none">No Lamination</option>{lamRates.map(r=><option key={r.id} value={r.lam_name}>{r.lam_name}</option>)}</select></div>
-                  <div><div style={LBL}>UV / Coating</div><select value={selUV} onChange={e=>setSelUV(e.target.value)} style={IS}><option value="none">No UV / Coating</option>{uvRates.map(r=><option key={r.id} value={r.uv_name}>{r.uv_name}</option>)}</select></div>
-                </div>
-                <button onClick={calcPrint} style={{width:'100%',padding:13,background:accentColor,color:'#fff',border:'none',borderRadius:12,fontSize:15,fontWeight:600,cursor:'pointer',fontFamily:'inherit',marginBottom:4}}>Calculate →</button>
-                <ResultBox r={printResult} markup={M} tax={T} sym={sym} accent={accentColor}/>
-              </>
-            )}
-          </div>
-        )}
 
-        {/* ── FULL JOB TAB ── */}
-        {tab==='fulljob'&&(
-          <div>
-            {!ratesLoaded?<div style={{textAlign:'center',padding:40,color:'#888'}}>Loading rates...</div>:(
-              <>
-                <div style={CARD}>
-                  <p style={{fontSize:11,fontWeight:600,color:'#999',letterSpacing:'0.1em',textTransform:'uppercase',marginBottom:14}}>Job Details</p>
+                  {/* Quantity */}
                   <div style={{marginBottom:14}}>
-                    <div style={LBL}>Final size{fjSize.id!=='custom'&&<span style={{background:'#EEF4FA',color:'#185FA5',borderRadius:4,padding:'2px 8px',fontSize:11,fontFamily:'monospace'}}>{calcUps(fjSize.w,fjSize.h,fjSize.plateSize)} ups</span>}</div>
-                    <select value={fjSize.id} onChange={e=>{const s=FINAL_SIZES.find(x=>x.id===e.target.value);if(s)setFjSize(s);}} style={IS}>
-                      <optgroup label="── A Series ──">{FINAL_SIZES.filter(s=>s.id.startsWith('a')).map(s=><option key={s.id} value={s.id}>{s.label}</option>)}</optgroup>
-                      <optgroup label="── American ──">{FINAL_SIZES.filter(s=>s.id.startsWith('am')).map(s=><option key={s.id} value={s.id}>{s.label}</option>)}</optgroup>
-                      <optgroup label="── B Series ──">{FINAL_SIZES.filter(s=>s.id.startsWith('b')).map(s=><option key={s.id} value={s.id}>{s.label}</option>)}</optgroup>
-                      <optgroup label="── Other ──">{FINAL_SIZES.filter(s=>['vc','dl','custom'].includes(s.id)).map(s=><option key={s.id} value={s.id}>{s.label}</option>)}</optgroup>
-                    </select>
-                    {fjSize.id==='custom'&&<div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginTop:8}}><input type="number" placeholder="Width (in)" value={fjCW} onChange={e=>setFjCW(e.target.value)} style={NIS}/><input type="number" placeholder="Height (in)" value={fjCH} onChange={e=>setFjCH(e.target.value)} style={NIS}/></div>}
+                    <div style={LBL}>Quantity<span style={{fontWeight:400,color:'#AAA',fontSize:11}}>pieces</span></div>
+                    <input type="number" placeholder="Enter quantity" value={qty} onChange={e=>setQty(e.target.value)} style={NIS}/>
                   </div>
-                  <div style={{marginBottom:14}}><div style={LBL}>Quantity<span style={{fontWeight:400,color:'#AAA',fontSize:11}}>pieces</span></div><input type="number" placeholder="Enter quantity" value={fjQty} onChange={e=>setFjQty(e.target.value)} style={NIS}/></div>
+
                   <div style={{height:1,background:'#F0F0F0',margin:'14px 0'}}/>
-                  <div style={{marginBottom:14}}><div style={LBL}>Paper category</div><select value={selCat?.id||''} onChange={e=>{const c=paperCats.find((x:any)=>x.id===e.target.value);if(c)setSelCat(c);}} style={IS}>{paperCats.map((c:any)=><option key={c.id} value={c.id}>{c.category}</option>)}</select></div>
-                  <div style={{marginBottom:14}}><div style={LBL}>GSM</div><select value={selGsm} onChange={e=>setSelGsm(parseInt(e.target.value))} style={IS}>{catStocks.map((s:any)=><option key={s.id} value={s.gsm}>{s.gsm} GSM{!s.in_stock?' — OUT OF STOCK':''}</option>)}</select></div>
+
+                  {/* Paper */}
+                  <div style={{marginBottom:14}}>
+                    <div style={LBL}>Paper category</div>
+                    <select value={selCat?.id||''} onChange={e=>{const c=paperCats.find((x:any)=>x.id===e.target.value);if(c)setSelCat(c);}} style={IS}>
+                      {paperCats.map((c:any)=><option key={c.id} value={c.id}>{c.category}</option>)}
+                    </select>
+                  </div>
+                  <div style={{marginBottom:14}}>
+                    <div style={LBL}>GSM</div>
+                    <select value={selGsm} onChange={e=>setSelGsm(parseInt(e.target.value))} style={IS}>
+                      {catStocks.map((s:any)=><option key={s.id} value={s.gsm}>{s.gsm} GSM{!s.in_stock?' — OUT OF STOCK':''}</option>)}
+                    </select>
+                  </div>
+
                   <div style={{height:1,background:'#F0F0F0',margin:'14px 0'}}/>
-                  <div style={{marginBottom:14}}><div style={LBL}>Plate size</div><select value={fjSelPlate} onChange={e=>setFjSelPlate(e.target.value)} style={IS}>{plateNames.map(n=><option key={n} value={n}>{n}</option>)}</select></div>
-                  <div style={{marginBottom:14}}><div style={LBL}>Print colors</div><select value={fjSelColor} onChange={e=>setFjSelColor(e.target.value)} style={IS}>{fjColorsByPlate.map(c=><option key={c} value={c}>{c}</option>)}</select></div>
-                  <div style={{marginBottom:14}}><div style={LBL}>Sides</div><div style={TW}><button style={TB(fjSides==='single',accentColor)} onClick={()=>setFjSides('single')}>Single side</button><button style={TB(fjSides==='double',accentColor)} onClick={()=>setFjSides('double')}>Front + Back</button></div></div>
+
+                  {/* Print */}
+                  <div style={{marginBottom:14}}>
+                    <div style={LBL}>Plate size</div>
+                    <select value={selPlate} onChange={e=>setSelPlate(e.target.value)} style={IS}>
+                      {plateNames.map(n=><option key={n} value={n}>{n}</option>)}
+                    </select>
+                  </div>
+                  <div style={{marginBottom:14}}>
+                    <div style={LBL}>Print colors</div>
+                    <select value={selColor} onChange={e=>setSelColor(e.target.value)} style={IS}>
+                      {colorsByPlate.map(c=><option key={c} value={c}>{c}</option>)}
+                    </select>
+                  </div>
+                  <div style={{marginBottom:14}}>
+                    <div style={LBL}>Sides</div>
+                    <div style={TW}>
+                      <button style={TB(sides==='single',accentColor)} onClick={()=>setSides('single')}>Single side</button>
+                      <button style={TB(sides==='double',accentColor)} onClick={()=>setSides('double')}>Front + Back</button>
+                    </div>
+                  </div>
+
                   <div style={{height:1,background:'#F0F0F0',margin:'14px 0'}}/>
-                  <div style={{marginBottom:14}}><div style={LBL}>Lamination</div><select value={fjSelLam} onChange={e=>setFjSelLam(e.target.value)} style={IS}><option value="none">No Lamination</option>{lamRates.map(r=><option key={r.id} value={r.lam_name}>{r.lam_name}</option>)}</select></div>
-                  <div><div style={LBL}>UV / Coating</div><select value={fjSelUV} onChange={e=>setFjSelUV(e.target.value)} style={IS}><option value="none">No UV / Coating</option>{uvRates.map(r=><option key={r.id} value={r.uv_name}>{r.uv_name}</option>)}</select></div>
+
+                  {/* Finishing */}
+                  <div style={{marginBottom:14}}>
+                    <div style={LBL}>Lamination</div>
+                    <select value={selLam} onChange={e=>setSelLam(e.target.value)} style={IS}>
+                      <option value="none">No Lamination</option>
+                      {lamRates.map(r=><option key={r.id} value={r.lam_name}>{r.lam_name}</option>)}
+                    </select>
+                  </div>
+                  <div style={{marginBottom:14}}>
+                    <div style={LBL}>UV / Coating</div>
+                    <select value={selUV} onChange={e=>setSelUV(e.target.value)} style={IS}>
+                      <option value="none">No UV</option>
+                      {uvRates.map(r=><option key={r.id} value={r.uv_name}>{r.uv_name}</option>)}
+                    </select>
+                  </div>
+                  {jobType==='book'&&(
+                    <div>
+                      <div style={LBL}>Binding</div>
+                      <select value={selBind} onChange={e=>setSelBind(e.target.value)} style={IS}>
+                        <option value="none">No Binding</option>
+                        {bindRates.map(r=><option key={r.id} value={r.binding_name}>{r.binding_name}</option>)}
+                      </select>
+                    </div>
+                  )}
                 </div>
-                <button onClick={calcFullJob} style={{width:'100%',padding:13,background:accentColor,color:'#fff',border:'none',borderRadius:12,fontSize:15,fontWeight:600,cursor:'pointer',fontFamily:'inherit',marginBottom:4}}>Calculate total price →</button>
-                <ResultBox r={fjResult} markup={M} tax={T} sym={sym} accent={accentColor}/>
+
+                <button onClick={calc} style={{width:'100%',padding:14,background:accentColor,color:'#fff',border:'none',borderRadius:12,fontSize:15,fontWeight:600,cursor:'pointer',fontFamily:'inherit',marginBottom:4}}>
+                  Calculate price →
+                </button>
+
+                {requestSent&&(
+                  <div style={{background:'#F0FFF4',border:'1px solid #9AE6B4',borderRadius:12,padding:16,textAlign:'center',marginTop:12}}>
+                    <p style={{fontSize:16,fontWeight:600,color:'#276749',marginBottom:4}}>✅ Quote requested!</p>
+                    <p style={{fontSize:13,color:'#276749'}}>{sub?.business_name} will contact you soon.</p>
+                  </div>
+                )}
+
+                {!requestSent&&result&&(
+                  <CustomerResult r={result} sym={sym} accent={accentColor} onRequestQuote={requestQuote} requesting={requesting}/>
+                )}
               </>
             )}
           </div>
         )}
 
-        <p style={{textAlign:'center',fontSize:11,color:'#CCC',marginTop:20}}>Powered by <a href="https://printcalc.app" style={{color:'#CCC'}} target="_blank">PrintCalc</a></p>
+        {/* ── MY QUOTES TAB ── */}
+        {tab==='quotes'&&(
+          <div>
+            <p style={{fontSize:16,fontWeight:600,marginBottom:4}}>My Quotes</p>
+            <p style={{fontSize:13,color:'#888',marginBottom:16}}>Quotes from {sub?.business_name}</p>
+            {!quotesLoaded?(
+              <div style={{textAlign:'center',padding:40,color:'#888'}}>Loading quotes...</div>
+            ):quotes.length===0?(
+              <div style={{...CARD,textAlign:'center',padding:40}}>
+                <p style={{fontSize:32,marginBottom:12}}>📋</p>
+                <p style={{fontSize:15,fontWeight:600,marginBottom:6}}>No quotes yet</p>
+                <p style={{fontSize:13,color:'#888'}}>Use the calculator to request your first quote!</p>
+              </div>
+            ):(
+              <div>
+                {quotes.map((q:any)=>(
+                  <div key={q.id} style={{...CARD,marginBottom:10}}>
+                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:10}}>
+                      <div>
+                        <p style={{fontWeight:600,fontSize:14}}>{q.job_title||'Print Job'}</p>
+                        <p style={{fontSize:12,color:'#888',marginTop:2}}>{new Date(q.created_at).toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'})}</p>
+                      </div>
+                      <span className="badge" style={{background:SBG[q.status]||'#F5F5F5',color:SC[q.status]||'#888'}}>{q.status}</span>
+                    </div>
+                    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+                      {[
+                        {l:'Size',v:q.size||'—'},
+                        {l:'Quantity',v:q.quantity?.toLocaleString('en-IN')||'—'},
+                        {l:'Paper',v:q.paper_type||'—'},
+                        {l:'Amount',v:q.total_amount?`${sym}${q.total_amount.toLocaleString('en-IN',{minimumFractionDigits:2})}`:'—'},
+                      ].map(item=>(
+                        <div key={item.l}>
+                          <p style={{fontSize:11,color:'#AAA'}}>{item.l}</p>
+                          <p style={{fontSize:13,fontWeight:500}}>{item.v}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── MY ORDERS TAB ── */}
+        {tab==='orders'&&(
+          <div>
+            <p style={{fontSize:16,fontWeight:600,marginBottom:4}}>My Orders</p>
+            <p style={{fontSize:13,color:'#888',marginBottom:16}}>Orders from {sub?.business_name}</p>
+            {!ordersLoaded?(
+              <div style={{textAlign:'center',padding:40,color:'#888'}}>Loading orders...</div>
+            ):orders.length===0?(
+              <div style={{...CARD,textAlign:'center',padding:40}}>
+                <p style={{fontSize:32,marginBottom:12}}>📦</p>
+                <p style={{fontSize:15,fontWeight:600,marginBottom:6}}>No orders yet</p>
+                <p style={{fontSize:13,color:'#888'}}>Your confirmed orders will appear here.</p>
+              </div>
+            ):(
+              <div>
+                {orders.map((o:any)=>(
+                  <div key={o.id} style={{...CARD,marginBottom:10}}>
+                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:10}}>
+                      <div>
+                        <p style={{fontWeight:600,fontSize:14}}>{o.job_title||'Print Order'}</p>
+                        <p style={{fontSize:12,color:'#888',marginTop:2}}>{new Date(o.created_at).toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'})}</p>
+                      </div>
+                      <span className="badge" style={{background:SBG[o.status]||'#F5F5F5',color:SC[o.status]||'#888'}}>{o.status}</span>
+                    </div>
+                    {/* Progress tracker */}
+                    <div style={{display:'flex',gap:4,marginBottom:12}}>
+                      {['Pending','In Production','Ready','Delivered'].map((st,i)=>{
+                        const steps=['Pending','In Production','Ready','Delivered'];
+                        const curr=steps.indexOf(o.status);
+                        const active=i<=curr;
+                        return(
+                          <div key={st} style={{flex:1}}>
+                            <div style={{height:3,borderRadius:2,background:active?accentColor:'#E8E8E8',marginBottom:4}}/>
+                            <p style={{fontSize:9,color:active?accentColor:'#CCC',textAlign:'center'}}>{st}</p>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+                      {[
+                        {l:'Amount',v:o.total_amount?`${sym}${o.total_amount.toLocaleString('en-IN',{minimumFractionDigits:2})}`:'—'},
+                        {l:'Advance paid',v:o.advance_paid?`${sym}${o.advance_paid.toLocaleString('en-IN',{minimumFractionDigits:2})}`:'—'},
+                        {l:'Due amount',v:o.due_amount?`${sym}${o.due_amount.toLocaleString('en-IN',{minimumFractionDigits:2})}`:'—'},
+                        {l:'Quantity',v:o.quantity?.toLocaleString('en-IN')||'—'},
+                      ].map(item=>(
+                        <div key={item.l}>
+                          <p style={{fontSize:11,color:'#AAA'}}>{item.l}</p>
+                          <p style={{fontSize:13,fontWeight:500}}>{item.v}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        <p style={{textAlign:'center',fontSize:10,color:'#DDD',marginTop:24}}>Powered by <a href="https://printcalc.app" style={{color:'#DDD'}} target="_blank">PrintCalc</a></p>
       </div>
     </>
   );
