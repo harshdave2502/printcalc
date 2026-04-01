@@ -259,7 +259,7 @@ function PrintingTab({subData}:any){
 
 // ─── FULL JOB TAB ────────────────────────────────────────────────────
 function FullJobTab({subData}:any){
-  const [jobType,setJobType]=useState<'single'|'book'>('single');
+  const [jobType,setJobType]=useState<'single'|'book'|'b2b'>('single');
   const [size,setSize]=useState(FINAL_SIZES[2]);
   const [cW,setCW]=useState('');const [cH,setCH]=useState('');
   const [qty,setQty]=useState('');
@@ -299,14 +299,23 @@ function FullJobTab({subData}:any){
   const [innColorsByPlate,setInnColorsByPlate]=useState<string[]>([]);
   const [innLam,setInnLam]=useState('none');
   const [selBind,setSelBind]=useState('none');
+  const [pastingRates,setPastingRates]=useState<any[]>([]);
+  const [selPasting,setSelPasting]=useState('none');
+  const [b2bBackCat,setB2bBackCat]=useState<any>(null);
+  const [b2bBackStocks,setB2bBackStocks]=useState<any[]>([]);
+  const [b2bBackGsm,setB2bBackGsm]=useState(0);
+  const [b2bFinishType,setB2bFinishType]=useState<'none'|'lam'|'uv'>('none');
+  const [b2bLam,setB2bLam]=useState('none');
+  const [b2bUV,setB2bUV]=useState('none');
+  const [b2bFinishSides,setB2bFinishSides]=useState<'both'|'front'|'back'>('both');
   const M=subData?.markup_percent||25;const T=subData?.tax_percent||18;const sym=subData?.currency_symbol||'₹';
 
   useEffect(()=>{
     const load=async()=>{
       const sid=subData?.id||'00000000-0000-0000-0000-000000000001';
-      const [{data:cats},{data:pr},{data:lr},{data:ur},{data:br}]=await Promise.all([supabase.from('paper_categories').select('*').eq('subscriber_id',sid).order('category'),supabase.from('printing_rates').select('*').eq('subscriber_id',sid).order('sort_order'),supabase.from('lamination_rates').select('*').eq('subscriber_id',sid).order('sort_order'),supabase.from('uv_rates').select('*').eq('subscriber_id',sid).order('sort_order'),supabase.from('binding_rates').select('*').eq('subscriber_id',sid).order('sort_order')]);
-      setPaperCats(cats||[]);setPlateRates(pr||[]);setLamRates(lr||[]);setUvRates(ur||[]);setBindRates(br||[]);
-      if(cats?.length){setSelCat(cats[0]);setCovCat(cats[0]);setInnCat(cats[0]);}
+      const [{data:cats},{data:pr},{data:lr},{data:ur},{data:br},{data:pastr}]=await Promise.all([supabase.from('paper_categories').select('*').eq('subscriber_id',sid).order('category'),supabase.from('printing_rates').select('*').eq('subscriber_id',sid).order('sort_order'),supabase.from('lamination_rates').select('*').eq('subscriber_id',sid).order('sort_order'),supabase.from('uv_rates').select('*').eq('subscriber_id',sid).order('sort_order'),supabase.from('binding_rates').select('*').eq('subscriber_id',sid).order('sort_order'),supabase.from('pasting_rates').select('*').eq('subscriber_id',sid).order('sort_order')]);
+      setPaperCats(cats||[]);setPlateRates(pr||[]);setLamRates(lr||[]);setUvRates(ur||[]);setBindRates(br||[]);setPastingRates(pastr||[]);
+      if(cats?.length){setSelCat(cats[0]);setCovCat(cats[0]);setInnCat(cats[0]);setB2bBackCat(cats[0]);}
       const pnames=[...new Set((pr||[]).map((r:any)=>r.plate_name))] as string[];
       setPlateNames(pnames);
       if(pnames.length>0){const fp=pnames[0];const cols=(pr||[]).filter((r:any)=>r.plate_name===fp).map((r:any)=>r.color_option);setSelPlate(fp);setColorsByPlate(cols);setCovColorsByPlate(cols);setInnColorsByPlate(cols);if(cols.length>0){const df=cols.find((c:string)=>c.includes('4'))||cols[cols.length-1];const db=cols.find((c:string)=>c.includes('1'))||cols[0];setSelColor(df);setSelBackColor(db);setCovColor(df);setInnColor(df);}}
@@ -316,6 +325,7 @@ function FullJobTab({subData}:any){
   useEffect(()=>{if(!selCat)return;const sid=subData?.id||'00000000-0000-0000-0000-000000000001';supabase.from('paper_stocks').select('*').eq('subscriber_id',sid).eq('category',selCat.category).order('gsm').then(({data})=>{setPaperStocks(data||[]);if(data?.length)setGsm(data[0].gsm);});},[selCat,subData]);
   useEffect(()=>{if(!covCat)return;const sid=subData?.id||'00000000-0000-0000-0000-000000000001';supabase.from('paper_stocks').select('*').eq('subscriber_id',sid).eq('category',covCat.category).order('gsm').then(({data})=>{setCovStocks(data||[]);if(data?.length)setCovGsm(data[0].gsm);});},[covCat,subData]);
   useEffect(()=>{if(!innCat)return;const sid=subData?.id||'00000000-0000-0000-0000-000000000001';supabase.from('paper_stocks').select('*').eq('subscriber_id',sid).eq('category',innCat.category).order('gsm').then(({data})=>{setInnStocks(data||[]);if(data?.length)setInnGsm(data[0].gsm);});},[innCat,subData]);
+  useEffect(()=>{if(!b2bBackCat)return;const sid=subData?.id||'00000000-0000-0000-0000-000000000001';supabase.from('paper_stocks').select('*').eq('subscriber_id',sid).eq('category',b2bBackCat.category).order('gsm').then(({data})=>{setB2bBackStocks(data||[]);if(data?.length)setB2bBackGsm(data[0].gsm);});},[b2bBackCat,subData]);
   useEffect(()=>{const cols=plateRates.filter(r=>r.plate_name===selPlate).map(r=>r.color_option);setColorsByPlate(cols);setCovColorsByPlate(cols);setInnColorsByPlate(cols);if(cols.length>0){const df=cols.find((c:string)=>c.includes('4'))||cols[cols.length-1];const db=cols.find((c:string)=>c.includes('1'))||cols[0];setSelColor(df);setSelBackColor(db);setCovColor(df);setInnColor(df);};},[selPlate,plateRates]);
 
   const validatePages=(v:string)=>{const n=parseInt(v);if(!n){setPageError('');return;}if(n%4!==0)setPageError('Pages must be divisible by 4');else setPageError('');};
@@ -324,6 +334,7 @@ function FullJobTab({subData}:any){
   const printCost=(plateName:string,colorOpt:string,numPlates:number,impressions:number)=>{if(!plateName||!colorOpt||!numPlates||!impressions)return 0;const rate=plateRates.find(r=>r.plate_name===plateName&&r.color_option===colorOpt);if(!rate)return 0;const pf=rate.fixed_charge*numPlates;const fi=1000*numPlates;const ei=Math.max(0,impressions-fi);const er=Math.ceil(ei/1000)*1000;return pf+(er/1000)*rate.per_1000_impression;};
   const lamCost=(lamName:string,pk:string,impressions:number)=>{if(lamName==='none'||!impressions)return 0;const lr=lamRates.find(r=>r.lam_name===lamName);if(!lr)return 0;const pd=PLATE_DIMS[pk]||{w:18,h:25};return Math.max((pd.w*pd.h/100)*lr.per_100_sqinch*impressions,lr.minimum_charge);};
   const uvCost=(uvName:string,pk:string,impressions:number)=>{if(uvName==='none'||!impressions)return 0;const ur=uvRates.find(r=>r.uv_name===uvName);if(!ur)return 0;const pd=PLATE_DIMS[pk]||{w:18,h:25};return Math.max((pd.w*pd.h/100)*ur.per_100_sqinch*impressions,ur.minimum_charge);};
+  const pastingCost=(pasteName:string,w:number,h:number,qty:number)=>{if(pasteName==='none'||!qty)return 0;const pr=pastingRates.find(r=>r.pasting_name===pasteName);if(!pr)return 0;const sqC=pr.per_100_sqinch>0?(w*h/100)*pr.per_100_sqinch*qty:0;const shC=pr.per_sheet>0?pr.per_sheet*qty:0;const calc=sqC>0&&shC>0?Math.max(sqC,shC):(sqC||shC);return Math.max(pr.minimum_charge||0,calc);};
 
   const calc=()=>{
     const q=parseInt(qty);const fW=size.id==='custom'?(parseFloat(cW)||0):size.w;const fH=size.id==='custom'?(parseFloat(cH)||0):size.h;
@@ -342,7 +353,7 @@ function FullJobTab({subData}:any){
       setResult({finalPrice:am+ta,subtotal:sub,markupAmount:am-sub,taxAmount:ta,
         stats:[{label:'Per piece',value:sym+(((am+ta)/q).toFixed(2))},{label:'Working sheets',value:ws.toLocaleString('en-IN')},{label:'Parent sheets',value:Math.ceil(ws/pi.cuts).toLocaleString('en-IN')+' · '+pi.parent},{label:'Impressions',value:imp.toLocaleString('en-IN')}],
         breakdown:[{label:'Paper cost',value:sym+papC.toFixed(2)},...prBreakdown,...(lC>0?[{label:selLam,value:sym+lC.toFixed(2)}]:[]),...(uC>0?[{label:selUV,value:sym+uC.toFixed(2)}]:[])]});
-    } else {
+    } else if(jobType==='book'){
       const pages=parseInt(totalPages);if(!pages||pages%4!==0||!covCat||!innCat)return;
       const coverPages=4;const innerPages=pages-4;
       const covWS=(coverPages/(u*2))*q;const covImp=covWS*2;const covPlates=Math.ceil(coverPages/u);
@@ -355,6 +366,23 @@ function FullJobTab({subData}:any){
       setResult({finalPrice:am+ta,subtotal:sub,markupAmount:am-sub,taxAmount:ta,
         stats:[{label:'Per copy',value:sym+(((am+ta)/q).toFixed(2))},{label:'Cover: '+covPlates+' plate(s)',value:covWS.toLocaleString('en-IN',{maximumFractionDigits:1})+' WS · '+covImp.toLocaleString('en-IN')+' imp'},{label:'Inner: '+innPlates+' plate(s)',value:innWS.toLocaleString('en-IN',{maximumFractionDigits:1})+' WS · '+innImp.toLocaleString('en-IN')+' imp'},{label:'Binding formats/copy',value:bindFormatsPerCopy.toFixed(2)}],
         breakdown:[{label:'Cover paper',value:sym+covPapC.toFixed(2)},{label:'Cover printing ('+covPlates+' plates)',value:sym+covPrC.toFixed(2)},...(covLC>0?[{label:covLam+' (cover)',value:sym+covLC.toFixed(2)}]:[]),...(covUC>0?[{label:covUV+' (cover)',value:sym+covUC.toFixed(2)}]:[]),{label:'Inner paper',value:sym+innPapC.toFixed(2)},{label:'Inner printing ('+innPlates+' plates)',value:sym+innPrC.toFixed(2)},...(innLC>0?[{label:innLam+' (inner)',value:sym+innLC.toFixed(2)}]:[]),...(bC>0?[{label:selBind+' ('+bindFormatsPerCopy.toFixed(2)+' fmt/copy)',value:sym+bC.toFixed(2)}]:[])]});
+    } else if(jobType==='b2b'){
+      if(!selCat||!b2bBackCat)return;
+      const ws=Math.ceil(q/u);
+      const frontPapC=paperCost(selCat,gsm,ws,pk);
+      const backPapC=paperCost(b2bBackCat,b2bBackGsm,ws,pk);
+      const frontPrC=printCost(selPlate,selColor,1,ws);
+      const backPrC=printCost(selPlate,selBackColor,1,ws);
+      const finImp=b2bFinishSides==='both'?ws*2:ws;
+      let finC=0;let finLabel='';
+      if(b2bFinishType==='lam'&&b2bLam!=='none'){finC=lamCost(b2bLam,pk,finImp);finLabel=b2bLam+(b2bFinishSides==='both'?' (both sheets)':b2bFinishSides==='front'?' (front sheet)':' (back sheet)');}
+      else if(b2bFinishType==='uv'&&b2bUV!=='none'){finC=uvCost(b2bUV,pk,finImp);finLabel=b2bUV+(b2bFinishSides==='both'?' (both sheets)':b2bFinishSides==='front'?' (front sheet)':' (back sheet)');}
+      const pasteC=pastingCost(selPasting,fW,fH,q);
+      const sub=frontPapC+backPapC+frontPrC+backPrC+finC+pasteC;
+      const am=sub*(1+M/100);const ta=am*(T/100);
+      setResult({finalPrice:am+ta,subtotal:sub,markupAmount:am-sub,taxAmount:ta,
+        stats:[{label:'Per piece',value:sym+(((am+ta)/q).toFixed(2))},{label:'Working sheets (each)',value:ws.toLocaleString('en-IN')},{label:'Front: '+selColor,value:sym+frontPrC.toFixed(2)},{label:'Back: '+selBackColor,value:sym+backPrC.toFixed(2)}],
+        breakdown:[{label:'Front sheet paper',value:sym+frontPapC.toFixed(2)},{label:'Back sheet paper',value:sym+backPapC.toFixed(2)},{label:'Front printing ('+selColor+')',value:sym+frontPrC.toFixed(2)},{label:'Back printing ('+selBackColor+')',value:sym+backPrC.toFixed(2)},...(finC>0?[{label:finLabel,value:sym+finC.toFixed(2)}]:[]),...(pasteC>0?[{label:selPasting,value:sym+pasteC.toFixed(2)}]:[])]});
     }
   };
 
@@ -373,12 +401,15 @@ function FullJobTab({subData}:any){
           <button style={TB(jobType==='single')} onClick={()=>setJobType('single')}><div>📄 Single Item</div><div style={{fontSize:11,fontWeight:400,opacity:0.7,marginTop:2}}>Leaflet / Poster / Card</div></button>
           <button style={TB(jobType==='book')} onClick={()=>setJobType('book')}><div>📚 Brochure / Book</div><div style={{fontSize:11,fontWeight:400,opacity:0.7,marginTop:2}}>Multi page with binding</div></button>
         </div>
+        <div style={{...TW,marginTop:8}}>
+          <button style={TB(jobType==='b2b')} onClick={()=>setJobType('b2b')}><div>🗂️ Back to Back</div><div style={{fontSize:11,fontWeight:400,opacity:0.7,marginTop:2}}>Menu / Building brochure</div></button>
+        </div>
       </div>
       <Sec title="Job Specs">
         <SizeSelect size={size} setSize={setSize} cW={cW} setCW={setCW} cH={cH} setCH={setCH}/>
         <div style={{marginBottom:jobType==='book'?12:0}}>
           <div style={LBL}>Quantity<span style={{fontWeight:400,color:'#AAA',fontSize:11}}>{jobType==='book'?'copies':'pieces'}</span></div>
-          <input type="number" placeholder={jobType==='book'?'Enter number of copies':'Enter quantity'} value={qty} onChange={e=>setQty(e.target.value)} style={NIS}/>
+          <input type="number" placeholder={jobType==='book'?'Enter number of copies':jobType==='b2b'?'Enter number of pasted pieces':'Enter quantity'} value={qty} onChange={e=>setQty(e.target.value)} style={NIS}/>
         </div>
         {jobType==='book'&&(
           <div style={{marginTop:12}}>
@@ -404,6 +435,43 @@ function FullJobTab({subData}:any){
           <Sec title="Finishing" optional>
             <div style={{marginBottom:12}}><div style={LBL}>Lamination</div><select value={selLam} onChange={e=>setSelLam(e.target.value)} style={IS}><option value="none">No Lamination</option>{lamRates.map(r=><option key={r.id} value={r.lam_name}>{r.lam_name}</option>)}</select>{selLam!=='none'&&<div style={{...TW,marginTop:8}}><button style={TB(!lamDbl)} onClick={()=>setLamDbl(false)}>Single side</button><button style={TB(lamDbl)} onClick={()=>setLamDbl(true)}>Both Sides</button></div>}</div>
             <div><div style={LBL}>UV / Coating</div><select value={selUV} onChange={e=>setSelUV(e.target.value)} style={IS}><option value="none">No UV / Coating</option>{uvRates.map(r=><option key={r.id} value={r.uv_name}>{r.uv_name}</option>)}</select></div>
+          </Sec>
+        </>
+      )}
+      {jobType==='b2b'&&(
+        <>
+          <Sec title="🗂️ Front Sheet" accent="#C84B31">
+            <p style={{marginBottom:12,fontSize:12,color:'#888'}}>Printed single-side. This becomes the outer face of the final pasted piece.</p>
+            <div style={{marginBottom:12}}><div style={LBL}>Paper category</div><select value={selCat?.id||''} onChange={e=>{const c=paperCats.find((x:any)=>x.id===e.target.value);if(c)setSelCat(c);}} style={IS}>{paperCats.map((c:any)=><option key={c.id} value={c.id}>{c.category}</option>)}</select></div>
+            <div style={{marginBottom:12}}><div style={LBL}>GSM{gsm>0&&<span style={{fontSize:11,color:'#888',fontWeight:400,fontFamily:'monospace'}}>{gsmInfo(gsm)}</span>}</div><select value={gsm} onChange={e=>setGsm(parseInt(e.target.value))} style={IS}>{paperStocks.map((s:any)=><option key={s.id} value={s.gsm}>{s.gsm} GSM{!s.in_stock?' — OUT OF STOCK':''}</option>)}</select></div>
+            <div style={{height:1,background:'#F0F0F0',margin:'12px 0'}}/>
+            <div style={{marginBottom:8,padding:'8px 12px',background:'#FFF4F2',borderRadius:8,fontSize:12,color:'#C84B31'}}>🎯 Plate: <strong>{selPlate}</strong> · {u} ups</div>
+            <div><div style={LBL}>Front print color</div><select value={selColor} onChange={e=>setSelColor(e.target.value)} style={IS}>{colorsByPlate.map(c=><option key={c} value={c}>{c}</option>)}</select></div>
+          </Sec>
+          <Sec title="🗂️ Back Sheet" accent="#185FA5">
+            <p style={{marginBottom:12,fontSize:12,color:'#888'}}>Printed single-side. Pasted back-to-back with the front sheet.</p>
+            <div style={{marginBottom:12}}><div style={LBL}>Paper category</div><select value={b2bBackCat?.id||''} onChange={e=>{const c=paperCats.find((x:any)=>x.id===e.target.value);if(c)setB2bBackCat(c);}} style={IS}>{paperCats.map((c:any)=><option key={c.id} value={c.id}>{c.category}</option>)}</select></div>
+            <div style={{marginBottom:12}}><div style={LBL}>GSM{b2bBackGsm>0&&<span style={{fontSize:11,color:'#888',fontWeight:400,fontFamily:'monospace'}}>{gsmInfo(b2bBackGsm)}</span>}</div><select value={b2bBackGsm} onChange={e=>setB2bBackGsm(parseInt(e.target.value))} style={IS}>{b2bBackStocks.map((s:any)=><option key={s.id} value={s.gsm}>{s.gsm} GSM{!s.in_stock?' — OUT OF STOCK':''}</option>)}</select></div>
+            <div style={{height:1,background:'#F0F0F0',margin:'12px 0'}}/>
+            <div><div style={LBL}>Back print color</div><select value={selBackColor} onChange={e=>setSelBackColor(e.target.value)} style={IS}>{colorsByPlate.map(c=><option key={c} value={c}>{c}</option>)}</select></div>
+          </Sec>
+          <Sec title="✨ Finishing" optional accent="#276749">
+            <div style={{marginBottom:12}}>
+              <div style={LBL}>Finish type</div>
+              <div style={TW}>
+                <button style={TB(b2bFinishType==='none')} onClick={()=>setB2bFinishType('none')}>None</button>
+                <button style={TB(b2bFinishType==='lam')} onClick={()=>setB2bFinishType('lam')}>Lamination</button>
+                <button style={TB(b2bFinishType==='uv')} onClick={()=>setB2bFinishType('uv')}>Coating / UV</button>
+              </div>
+            </div>
+            {b2bFinishType==='lam'&&<div style={{marginBottom:12}}><div style={LBL}>Lamination</div><select value={b2bLam} onChange={e=>setB2bLam(e.target.value)} style={IS}><option value="none">Select lamination...</option>{lamRates.map(r=><option key={r.id} value={r.lam_name}>{r.lam_name}</option>)}</select></div>}
+            {b2bFinishType==='uv'&&<div style={{marginBottom:12}}><div style={LBL}>Coating / UV</div><select value={b2bUV} onChange={e=>setB2bUV(e.target.value)} style={IS}><option value="none">Select coating / UV...</option>{uvRates.map(r=><option key={r.id} value={r.uv_name}>{r.uv_name}</option>)}</select></div>}
+            {b2bFinishType!=='none'&&<div><div style={LBL}>Apply finishing to</div><div style={TW}><button style={TB(b2bFinishSides==='both')} onClick={()=>setB2bFinishSides('both')}>Both sheets</button><button style={TB(b2bFinishSides==='front')} onClick={()=>setB2bFinishSides('front')}>Front only</button><button style={TB(b2bFinishSides==='back')} onClick={()=>setB2bFinishSides('back')}>Back only</button></div></div>}
+          </Sec>
+          <Sec title="📌 Pasting">
+            <p style={{marginBottom:8,fontSize:12,color:'#888'}}>Back-to-back pasting joins two sheets face-out</p>
+            <select value={selPasting} onChange={e=>setSelPasting(e.target.value)} style={IS}><option value="none">Select pasting rate...</option>{pastingRates.map(r=><option key={r.id} value={r.pasting_name}>{r.pasting_name}</option>)}</select>
+            {selPasting!=='none'&&(()=>{const pr=pastingRates.find(r=>r.pasting_name===selPasting);return pr?(<div style={{marginTop:8,padding:'8px 12px',background:'#F0FFF4',borderRadius:8,fontSize:11,color:'#276749'}}>Min ₹{pr.minimum_charge} · {pr.per_100_sqinch>0?`₹${pr.per_100_sqinch}/100 sq in`:''}{pr.per_100_sqinch>0&&pr.per_sheet>0?' · ':''}{pr.per_sheet>0?`₹${pr.per_sheet}/sheet`:''}</div>):null;})()}
           </Sec>
         </>
       )}
