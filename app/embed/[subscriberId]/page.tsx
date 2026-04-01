@@ -291,7 +291,7 @@ export default function EmbedPage(){
         setSelPlate(pnames[0]);
         const cols=(pr||[]).filter((r:any)=>r.plate_name===pnames[0]).map((r:any)=>r.color_option);
         setColorsByPlate(cols);setCovColorsByPlate(cols);setInnColorsByPlate(cols);
-        if(cols.length){setSelColor(cols[0]);setSelBackColor(cols[0]);setCovColor(cols[0]);setInnColor(cols[0]);}
+        if(cols.length){const df=cols.find((c:string)=>c.includes('4'))||cols[cols.length-1];const db=cols.find((c:string)=>c.includes('1'))||cols[0];setSelColor(df);setSelBackColor(db);setCovColor(df);setInnColor(df);}
       }
       setRatesLoaded(true);setLoading(false);
     };
@@ -305,7 +305,7 @@ export default function EmbedPage(){
   // Load inner stocks
   useEffect(()=>{if(!innCat)return;supabase.from('paper_stocks').select('*').eq('subscriber_id',subscriberId).eq('category',innCat.category).order('gsm').then(({data})=>{setInnStocks(data||[]);if(data?.length)setInnGsm(data[0].gsm);});},[innCat,subscriberId]);
   // Update colors on plate change
-  useEffect(()=>{const cols=plateRates.filter(r=>r.plate_name===selPlate).map(r=>r.color_option);setColorsByPlate(cols);setCovColorsByPlate(cols);setInnColorsByPlate(cols);if(cols.length){setSelColor(cols[0]);setSelBackColor(cols[0]);setCovColor(cols[0]);setInnColor(cols[0]);};},[selPlate,plateRates]);
+  useEffect(()=>{const cols=plateRates.filter(r=>r.plate_name===selPlate).map(r=>r.color_option);setColorsByPlate(cols);setCovColorsByPlate(cols);setInnColorsByPlate(cols);if(cols.length){const df=cols.find((c:string)=>c.includes('4'))||cols[cols.length-1];const db=cols.find((c:string)=>c.includes('1'))||cols[0];setSelColor(df);setSelBackColor(db);setCovColor(df);setInnColor(df);};},[selPlate,plateRates]);
 
   // Load quotes/orders when tab opens
   useEffect(()=>{
