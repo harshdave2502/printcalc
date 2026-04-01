@@ -359,6 +359,7 @@ export default function DashboardPage() {
   const [lamRates,setLamRates]=useState<any[]>([]);
   const [uvRates,setUvRates]=useState<any[]>([]);
   const [bindRates,setBindRates]=useState<any[]>([]);
+  const [pastingRates,setPastingRates]=useState<any[]>([]);
   const [colorOpts,setColorOpts]=useState<any[]>([]);
   const [loading,setLoading]=useState(true);
   const [tab,setTab]=useState('overview');
@@ -375,17 +376,20 @@ export default function DashboardPage() {
   const [editLam,setEditLam]=useState<any>(null);
   const [editUV,setEditUV]=useState<any>(null);
   const [editBind,setEditBind]=useState<any>(null);
+  const [editPasting,setEditPasting]=useState<any>(null);
   const [editColor,setEditColor]=useState<any>(null);
   // add new states
   const [addPrint,setAddPrint]=useState(false);
   const [addLam,setAddLam]=useState(false);
   const [addUV,setAddUV]=useState(false);
   const [addBind,setAddBind]=useState(false);
+  const [addPasting,setAddPasting]=useState(false);
   const [addColor,setAddColor]=useState(false);
   const [newPrint,setNewPrint]=useState({plate_name:'',color_option:'',fixed_charge:'',per_1000_impression:''});
   const [newLam,setNewLam]=useState({lam_name:'',minimum_charge:'',per_100_sqinch:''});
   const [newUV,setNewUV]=useState({uv_name:'',minimum_charge:'',per_100_sqinch:''});
   const [newBind,setNewBind]=useState({binding_name:'',per_binding_format:''});
+  const [newPasting,setNewPasting]=useState({pasting_name:'',minimum_charge:'',per_100_sqinch:'',per_sheet:''});
   const [newColor,setNewColor]=useState({color_name:''});
 
   useEffect(()=>{load();},[]);
@@ -396,7 +400,7 @@ export default function DashboardPage() {
     if(!user){window.location.href='/login';return;}
     const {data:profile}=await supabase.from('subscribers').select('*').eq('id',user.id).single();
     if(profile)setSub(profile);
-    const [{data:cats},{data:stocks},{data:pr},{data:lr},{data:ur},{data:br},{data:co}]=await Promise.all([
+    const [{data:cats},{data:stocks},{data:pr},{data:lr},{data:ur},{data:br},{data:co},{data:pastr}]=await Promise.all([
       supabase.from('paper_categories').select('*').eq('subscriber_id',user.id).order('category'),
       supabase.from('paper_stocks').select('*').eq('subscriber_id',user.id).order('sort_order'),
       supabase.from('printing_rates').select('*').eq('subscriber_id',user.id).order('sort_order'),
@@ -404,9 +408,10 @@ export default function DashboardPage() {
       supabase.from('uv_rates').select('*').eq('subscriber_id',user.id).order('sort_order'),
       supabase.from('binding_rates').select('*').eq('subscriber_id',user.id).order('sort_order'),
       supabase.from('color_options').select('*').eq('subscriber_id',user.id).order('sort_order'),
+      supabase.from('pasting_rates').select('*').eq('subscriber_id',user.id).order('sort_order'),
     ]);
     setPaperCats(cats||[]);setPaperStocks(stocks||[]);setPrintRates(pr||[]);
-    setLamRates(lr||[]);setUvRates(ur||[]);setBindRates(br||[]);setColorOpts(co||[]);
+    setLamRates(lr||[]);setUvRates(ur||[]);setBindRates(br||[]);setColorOpts(co||[]);setPastingRates(pastr||[]);
     // load live orders + quotes for overview
     const [{data:ord},{data:quo}]=await Promise.all([
       supabase.from('orders').select('*').eq('subscriber_id',user.id).order('created_at',{ascending:false}),
@@ -434,6 +439,8 @@ export default function DashboardPage() {
   const delLam=async(id:string)=>{if(!confirm('Delete this?'))return;await supabase.from('lamination_rates').delete().eq('id',id);setLamRates(p=>p.filter(x=>x.id!==id));saved('Deleted!');};
   const delUV=async(id:string)=>{if(!confirm('Delete this?'))return;await supabase.from('uv_rates').delete().eq('id',id);setUvRates(p=>p.filter(x=>x.id!==id));saved('Deleted!');};
   const delBind=async(id:string)=>{if(!confirm('Delete this?'))return;await supabase.from('binding_rates').delete().eq('id',id);setBindRates(p=>p.filter(x=>x.id!==id));saved('Deleted!');};
+  const savePasting=async(r:any)=>{setSaving(true);await supabase.from('pasting_rates').update({pasting_name:r.pasting_name,minimum_charge:r.minimum_charge,per_100_sqinch:r.per_100_sqinch,per_sheet:r.per_sheet}).eq('id',r.id);setPastingRates(p=>p.map(x=>x.id===r.id?r:x));saved('Saved!');setSaving(false);setEditPasting(null);};
+  const delPasting=async(id:string)=>{if(!confirm('Delete this?'))return;await supabase.from('pasting_rates').delete().eq('id',id);setPastingRates(p=>p.filter(x=>x.id!==id));saved('Deleted!');};
   const delColor=async(id:string)=>{if(!confirm('Delete this color option?'))return;await supabase.from('color_options').delete().eq('id',id);setColorOpts(p=>p.filter(x=>x.id!==id));saved('Deleted!');};
 
   // Add helpers
@@ -454,6 +461,12 @@ export default function DashboardPage() {
     const {data:{user}}=await supabase.auth.getUser();
     const {data}=await supabase.from('uv_rates').insert({subscriber_id:user!.id,uv_name:newUV.uv_name,minimum_charge:parseFloat(newUV.minimum_charge)||0,per_100_sqinch:parseFloat(newUV.per_100_sqinch)||0,sort_order:uvRates.length+1}).select().single();
     if(data){setUvRates(p=>[...p,data]);setNewUV({uv_name:'',minimum_charge:'',per_100_sqinch:''});setAddUV(false);saved('Added!');}
+  };
+  const addPastingRate=async()=>{
+    if(!newPasting.pasting_name)return;
+    const {data:{user}}=await supabase.auth.getUser();
+    const {data}=await supabase.from('pasting_rates').insert({subscriber_id:user!.id,pasting_name:newPasting.pasting_name,minimum_charge:parseFloat(newPasting.minimum_charge)||0,per_100_sqinch:parseFloat(newPasting.per_100_sqinch)||0,per_sheet:parseFloat(newPasting.per_sheet)||0,sort_order:pastingRates.length+1}).select().single();
+    if(data){setPastingRates(p=>[...p,data]);setNewPasting({pasting_name:'',minimum_charge:'',per_100_sqinch:'',per_sheet:''});setAddPasting(false);saved('Added!');}
   };
   const addBindRate=async()=>{
     if(!newBind.binding_name)return;
@@ -811,6 +824,32 @@ export default function DashboardPage() {
                   )}
                 </tbody>
               </table>
+            </div>
+
+            {/* PASTING RATES */}
+            <div className="card" style={{padding:0,overflow:'hidden',marginTop:16}}>
+              <div className="sh"><p className="st">Pasting Rates</p><button className="btn-add" onClick={()=>setAddPasting(true)}>+ Add pasting</button></div>
+              <table className="table">
+                <thead><tr><th>Pasting Name</th><th>Min Charge (₹)</th><th>Per 100 sq in (₹)</th><th>Per Sheet (₹)</th><th>Action</th></tr></thead>
+                <tbody>
+                  {pastingRates.map(r=>(
+                    <tr key={r.id}>
+                      {editPasting?.id===r.id?(
+                        <><td><input type="text" value={editPasting.pasting_name} onChange={e=>setEditPasting({...editPasting,pasting_name:e.target.value})} style={{...IS,width:180}}/></td><td><input type="number" value={editPasting.minimum_charge??''} onChange={e=>setEditPasting({...editPasting,minimum_charge:parseFloat(e.target.value)||0})} style={{...IS,width:80}}/></td><td><input type="number" value={editPasting.per_100_sqinch??''} onChange={e=>setEditPasting({...editPasting,per_100_sqinch:parseFloat(e.target.value)||0})} style={{...IS,width:80}}/></td><td><input type="number" value={editPasting.per_sheet??''} onChange={e=>setEditPasting({...editPasting,per_sheet:parseFloat(e.target.value)||0})} style={{...IS,width:80}}/></td><td><button className="btn-primary" style={{padding:'5px 14px',fontSize:12}} onClick={()=>savePasting(editPasting)} disabled={saving}>Save</button><button className="btn-cancel" onClick={()=>setEditPasting(null)}>Cancel</button></td></>
+                      ):(
+                        <><td style={{fontWeight:500}}>{r.pasting_name}</td><td style={{fontFamily:'monospace'}}>₹{r.minimum_charge}</td><td style={{fontFamily:'monospace'}}>{r.per_100_sqinch>0?`₹${r.per_100_sqinch}`:'—'}</td><td style={{fontFamily:'monospace'}}>{r.per_sheet>0?`₹${r.per_sheet}`:'—'}</td><td><button className="btn-sm" onClick={()=>setEditPasting({...r})}>Edit</button><button className="btn-del" onClick={()=>delPasting(r.id)}>Delete</button></td></>
+                      )}
+                    </tr>
+                  ))}
+                  {addPasting&&(
+                    <tr className="add-row"><td><input type="text" placeholder="e.g. Standard Pasting" value={newPasting.pasting_name} onChange={e=>setNewPasting({...newPasting,pasting_name:e.target.value})} style={{...IS,width:180}}/></td><td><input type="number" placeholder="Min" value={newPasting.minimum_charge} onChange={e=>setNewPasting({...newPasting,minimum_charge:e.target.value})} style={{...IS,width:70}}/></td><td><input type="number" placeholder="Per 100 sqin" value={newPasting.per_100_sqinch} onChange={e=>setNewPasting({...newPasting,per_100_sqinch:e.target.value})} style={{...IS,width:70}}/></td><td><input type="number" placeholder="Per sheet" value={newPasting.per_sheet} onChange={e=>setNewPasting({...newPasting,per_sheet:e.target.value})} style={{...IS,width:70}}/></td><td><button className="btn-add" onClick={addPastingRate}>Add</button><button className="btn-cancel" onClick={()=>setAddPasting(false)}>Cancel</button></td></tr>
+                  )}
+                  {pastingRates.length===0&&!addPasting&&(<tr><td colSpan={5} style={{textAlign:'center',color:'#AAA',padding:'16px',fontSize:13}}>No pasting rates yet. Click + Add pasting to get started.</td></tr>)}
+                </tbody>
+              </table>
+              <div style={{padding:'10px 16px',background:'#FAFAFA',borderTop:'1px solid #F0F0F0',fontSize:11,color:'#AAA'}}>
+                💡 Used for back-to-back pasting jobs (restaurant menus, building brochures). Set either Per 100 sq in OR Per Sheet — whichever you charge. Minimum charge always applies.
+              </div>
             </div>
           </div>
         )}

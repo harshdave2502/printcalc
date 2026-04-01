@@ -63,6 +63,10 @@ const DEFAULT_BINDING_RATES = [
   {binding_name:'Perfect Binding', per_binding_format:5, sort_order:2},
   {binding_name:'Spiral Binding', per_binding_format:8, sort_order:3},
 ];
+const DEFAULT_PASTING_RATES = [
+  {pasting_name:'Standard Pasting', minimum_charge:500, per_100_sqinch:1.5, per_sheet:3, sort_order:1},
+  {pasting_name:'Premium Pasting',  minimum_charge:800, per_100_sqinch:2.5, per_sheet:5, sort_order:2},
+];
 
 const CSS = `
 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&family=Inter:wght@400;500;600&display=swap');
@@ -132,6 +136,7 @@ export default function SignupPage() {
     await supabase.from('lamination_rates').insert(DEFAULT_LAM_RATES.map(r=>({...r,subscriber_id:userId})));
     await supabase.from('uv_rates').insert(DEFAULT_UV_RATES.map(r=>({...r,subscriber_id:userId})));
     await supabase.from('binding_rates').insert(DEFAULT_BINDING_RATES.map(r=>({...r,subscriber_id:userId})));
+    await supabase.from('pasting_rates').insert(DEFAULT_PASTING_RATES.map(r=>({...r,subscriber_id:userId})));
   };
 
   const handleSignup = async (e: React.FormEvent) => {
