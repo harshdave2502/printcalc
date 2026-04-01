@@ -4,7 +4,7 @@ import { useParams } from 'next/navigation';
 import { supabase } from '../../supabase';
 
 // Board papers: one smooth side, one rough — need 2 plates for both sides (no Work & Turn)
-const BOARD_PAPER_CATS=['SBS','FBB','Ultima','Duplex Grey Back','Duplex White Back'];
+const BOARD_PAPER_CATS=['SBS','FBB','Duplex Grey Back','Duplex White Back'];
 
 // ─── PLATE DIMS (exact same as subscriber calculator) ─────────────────
 const PLATE_DIMS: Record<string,{w:number;h:number}> = {
@@ -222,6 +222,7 @@ export default function EmbedPage(){
   const [gsm, setGsm] = useState(0);
   const [selPlate, setSelPlate] = useState('');
   const [selColor, setSelColor] = useState('');
+  const [selBackColor, setSelBackColor] = useState('');
   const [colorsByPlate, setColorsByPlate] = useState<string[]>([]);
   const [sides, setSides] = useState<'single'|'double'>('double');
   const [selLam, setSelLam] = useState('none');
@@ -290,7 +291,7 @@ export default function EmbedPage(){
         setSelPlate(pnames[0]);
         const cols=(pr||[]).filter((r:any)=>r.plate_name===pnames[0]).map((r:any)=>r.color_option);
         setColorsByPlate(cols);setCovColorsByPlate(cols);setInnColorsByPlate(cols);
-        if(cols.length){setSelColor(cols[0]);setCovColor(cols[0]);setInnColor(cols[0]);}
+        if(cols.length){setSelColor(cols[0]);setSelBackColor(cols[0]);setCovColor(cols[0]);setInnColor(cols[0]);}
       }
       setRatesLoaded(true);setLoading(false);
     };
@@ -304,7 +305,7 @@ export default function EmbedPage(){
   // Load inner stocks
   useEffect(()=>{if(!innCat)return;supabase.from('paper_stocks').select('*').eq('subscriber_id',subscriberId).eq('category',innCat.category).order('gsm').then(({data})=>{setInnStocks(data||[]);if(data?.length)setInnGsm(data[0].gsm);});},[innCat,subscriberId]);
   // Update colors on plate change
-  useEffect(()=>{const cols=plateRates.filter(r=>r.plate_name===selPlate).map(r=>r.color_option);setColorsByPlate(cols);setCovColorsByPlate(cols);setInnColorsByPlate(cols);if(cols.length){setSelColor(cols[0]);setCovColor(cols[0]);setInnColor(cols[0]);};},[selPlate,plateRates]);
+  useEffect(()=>{const cols=plateRates.filter(r=>r.plate_name===selPlate).map(r=>r.color_option);setColorsByPlate(cols);setCovColorsByPlate(cols);setInnColorsByPlate(cols);if(cols.length){setSelColor(cols[0]);setSelBackColor(cols[0]);setCovColor(cols[0]);setInnColor(cols[0]);};},[selPlate,plateRates]);
 
   // Load quotes/orders when tab opens
   useEffect(()=>{
@@ -383,9 +384,9 @@ export default function EmbedPage(){
       if(!selCat)return;
       const ws=Math.ceil(q/u);
       const isBoardPaper=BOARD_PAPER_CATS.includes(selCat?.category||'');const useDoublePlate=isBoardPaper&&sides==='double';
-      const imp=useDoublePlate?ws:(sides==='double'?ws*2:ws);const numPl=useDoublePlate?2:1;
+      const imp=useDoublePlate?ws:(sides==='double'?ws*2:ws);
       const papC=paperCost(selCat,gsm,ws,pk);
-      const prC=printCost(selPlate,selColor,numPl,imp);
+      const prC=useDoublePlate?printCost(selPlate,selColor,1,ws)+printCost(selPlate,selBackColor,1,ws):printCost(selPlate,selColor,1,imp);
       const lC=lamCost(selLam,pk,imp);
       const uC=uvCost(selUV,pk,imp);
       const sub2=papC+prC+lC+uC;
@@ -623,7 +624,8 @@ export default function EmbedPage(){
                     </Sec>
                     <Sec title="Printing">
                       <div style={{marginBottom:12,padding:'8px 12px',background:'#F0F7FF',borderRadius:8,fontSize:12,color:'#185FA5'}}>🎯 Plate: <strong>{selPlate}</strong> (auto from final size) · {calcUps(size.w||8.3,size.h||11.7,size.plateSize)} ups</div>
-                      <div style={{marginBottom:12}}><div style={LBL}>Print colors</div><select value={selColor} onChange={e=>setSelColor(e.target.value)} style={IS}>{colorsByPlate.map(c=><option key={c} value={c}>{c}</option>)}</select></div>
+                      <div style={{marginBottom:12}}><div style={LBL}>{BOARD_PAPER_CATS.includes(selCat?.category||'')&&sides==='double'?'Front side color':'Print colors'}</div><select value={selColor} onChange={e=>setSelColor(e.target.value)} style={IS}>{colorsByPlate.map(c=><option key={c} value={c}>{c}</option>)}</select></div>
+                      {BOARD_PAPER_CATS.includes(selCat?.category||'')&&sides==='double'&&<div style={{marginBottom:12}}><div style={LBL}>Back side color<span style={{fontWeight:400,color:'#AAA',fontSize:11,marginLeft:6}}>usually 1 Color</span></div><select value={selBackColor} onChange={e=>setSelBackColor(e.target.value)} style={IS}>{colorsByPlate.map(c=><option key={c} value={c}>{c}</option>)}</select></div>}
                       <div><div style={LBL}>Sides</div><div style={TW}><button style={TB(sides==='single',accentColor)} onClick={()=>setSides('single')}>Single side</button><button style={TB(sides==='double',accentColor)} onClick={()=>setSides('double')}>Both Sides</button></div></div>
                     </Sec>
                     <Sec title="Finishing (Optional)">

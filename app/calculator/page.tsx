@@ -50,7 +50,7 @@ function autoSelectPlate(w:number,h:number):string{
 }
 const fmt=(n:number)=>'₹'+n.toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2});
 // Board papers: one smooth side, one rough — cannot use Work & Turn, need 2 separate plates for both sides
-const BOARD_PAPER_CATS=['SBS','FBB','Ultima','Duplex Grey Back','Duplex White Back'];
+const BOARD_PAPER_CATS=['SBS','FBB','Duplex Grey Back','Duplex White Back'];
 
 function Sec({title,children,optional,accent}:any){
   return(
@@ -197,6 +197,7 @@ function PrintingTab({subData}:any){
   const [plateNames,setPlateNames]=useState<string[]>([]);
   const [selPlate,setSelPlate]=useState('');
   const [selColor,setSelColor]=useState('');
+  const [selBackColor,setSelBackColor]=useState('');
   const [colorsByPlate,setColorsByPlate]=useState<string[]>([]);
   const [sides,setSides]=useState<'single'|'double'>('double');
   const [paperType,setPaperType]=useState<'normal'|'board'>('normal');
@@ -206,25 +207,34 @@ function PrintingTab({subData}:any){
   const [result,setResult]=useState<any>(null);
   const [loaded,setLoaded]=useState(false);
   const M=subData?.markup_percent||25;const T=subData?.tax_percent||18;const sym=subData?.currency_symbol||'₹';
-  useEffect(()=>{const load=async()=>{const sid=subData?.id||'00000000-0000-0000-0000-000000000001';const [{data:pr},{data:lr},{data:ur}]=await Promise.all([supabase.from('printing_rates').select('*').eq('subscriber_id',sid).order('sort_order'),supabase.from('lamination_rates').select('*').eq('subscriber_id',sid).order('sort_order'),supabase.from('uv_rates').select('*').eq('subscriber_id',sid).order('sort_order')]);setPlateRates(pr||[]);setLamRates(lr||[]);setUvRates(ur||[]);const pnames=[...new Set((pr||[]).map((r:any)=>r.plate_name))] as string[];setPlateNames(pnames);if(pnames.length>0){setSelPlate(pnames[0]);const cols=(pr||[]).filter((r:any)=>r.plate_name===pnames[0]).map((r:any)=>r.color_option);setColorsByPlate(cols);if(cols.length>0)setSelColor(cols[0]);}setLoaded(true);};load();},[subData]);
-  useEffect(()=>{if(!selPlate)return;const cols=plateRates.filter(r=>r.plate_name===selPlate).map(r=>r.color_option);setColorsByPlate(cols);if(cols.length>0)setSelColor(cols[0]);},[selPlate,plateRates]);
+  useEffect(()=>{const load=async()=>{const sid=subData?.id||'00000000-0000-0000-0000-000000000001';const [{data:pr},{data:lr},{data:ur}]=await Promise.all([supabase.from('printing_rates').select('*').eq('subscriber_id',sid).order('sort_order'),supabase.from('lamination_rates').select('*').eq('subscriber_id',sid).order('sort_order'),supabase.from('uv_rates').select('*').eq('subscriber_id',sid).order('sort_order')]);setPlateRates(pr||[]);setLamRates(lr||[]);setUvRates(ur||[]);const pnames=[...new Set((pr||[]).map((r:any)=>r.plate_name))] as string[];setPlateNames(pnames);if(pnames.length>0){setSelPlate(pnames[0]);const cols=(pr||[]).filter((r:any)=>r.plate_name===pnames[0]).map((r:any)=>r.color_option);setColorsByPlate(cols);if(cols.length>0){setSelColor(cols[0]);setSelBackColor(cols[0]);}}setLoaded(true);};load();},[subData]);
+  useEffect(()=>{if(!selPlate)return;const cols=plateRates.filter(r=>r.plate_name===selPlate).map(r=>r.color_option);setColorsByPlate(cols);if(cols.length>0){setSelColor(cols[0]);setSelBackColor(cols[0]);}},[selPlate,plateRates]);
   const calc=()=>{
     const q=parseInt(qty);const fW=size.id==='custom'?(parseFloat(cW)||0):size.w;const fH=size.id==='custom'?(parseFloat(cH)||0):size.h;
     if(!q||!fW||!fH||!selPlate||!selColor)return;
     const pk=size.id==='custom'?autoSelectPlate(fW,fH):size.plateSize;
     const u=calcUps(fW,fH,pk);const pi=PARENT_SHEETS[pk]||{parent:pk,cuts:1,pw:25,ph:36};
-    const ws=Math.ceil(q/u);const useDoublePlate=paperType==='board'&&sides==='double';const imp=useDoublePlate?ws:(sides==='double'?ws*2:ws);const numPl=useDoublePlate?2:1;
-    const rate=plateRates.find(r=>r.plate_name===selPlate&&r.color_option===selColor);
-    let pCost=0;
-    if(rate){const pf=rate.fixed_charge*numPl;const fi=1000*numPl;const ei=Math.max(0,imp-fi);const er=Math.ceil(ei/1000)*1000;pCost=pf+(er/1000)*rate.per_1000_impression;}
+    const ws=Math.ceil(q/u);const useDoublePlate=paperType==='board'&&sides==='double';const imp=useDoublePlate?ws:(sides==='double'?ws*2:ws);
+    let pCost=0;let pBreakdown:any[]=[];
+    if(useDoublePlate){
+      const rf=plateRates.find(r=>r.plate_name===selPlate&&r.color_option===selColor);
+      const rb=plateRates.find(r=>r.plate_name===selPlate&&r.color_option===selBackColor);
+      let fc=0;if(rf){const ei=Math.max(0,ws-1000);const er=Math.ceil(ei/1000)*1000;fc=rf.fixed_charge+(er/1000)*rf.per_1000_impression;}
+      let bc=0;if(rb){const ei=Math.max(0,ws-1000);const er=Math.ceil(ei/1000)*1000;bc=rb.fixed_charge+(er/1000)*rb.per_1000_impression;}
+      pCost=fc+bc;pBreakdown=[{label:'Front printing ('+selColor+')',value:sym+fc.toFixed(2)},{label:'Back printing ('+selBackColor+')',value:sym+bc.toFixed(2)}];
+    } else {
+      const rate=plateRates.find(r=>r.plate_name===selPlate&&r.color_option===selColor);
+      if(rate){const pf=rate.fixed_charge;const fi=1000;const ei=Math.max(0,imp-fi);const er=Math.ceil(ei/1000)*1000;pCost=pf+(er/1000)*rate.per_1000_impression;}
+      pBreakdown=[{label:'Printing ('+selColor+')',value:sym+pCost.toFixed(2)}];
+    }
     let lCost=0;
     if(selLam!=='none'){const lr=lamRates.find(r=>r.lam_name===selLam);if(lr){const pd=PLATE_DIMS[pk]||{w:18,h:25};lCost=Math.max((pd.w*pd.h/100)*lr.per_100_sqinch*imp,lr.minimum_charge);}}
     let uCost=0;
     if(selUV!=='none'){const ur=uvRates.find(r=>r.uv_name===selUV);if(ur){const pd=PLATE_DIMS[pk]||{w:18,h:25};uCost=Math.max((pd.w*pd.h/100)*ur.per_100_sqinch*imp,ur.minimum_charge);}}
     const sub=pCost+lCost+uCost;const am=sub*(1+M/100);const ta=am*(T/100);
     setResult({finalPrice:am+ta,subtotal:sub,markupAmount:am-sub,taxAmount:ta,
-      stats:[{label:'Per piece',value:sym+(((am+ta)/q).toFixed(2))},{label:'Working sheets',value:ws.toLocaleString('en-IN')},{label:'Impressions',value:imp.toLocaleString('en-IN')},{label:numPl+' plate(s) · '+pk,value:u+' ups'}],
-      breakdown:[{label:'Printing ('+numPl+' plate'+(numPl>1?'s':'')+' · '+selColor+')',value:sym+pCost.toFixed(2)},...(lCost>0?[{label:selLam,value:sym+lCost.toFixed(2)}]:[]),...(uCost>0?[{label:selUV,value:sym+uCost.toFixed(2)}]:[])]});
+      stats:[{label:'Per piece',value:sym+(((am+ta)/q).toFixed(2))},{label:'Working sheets',value:ws.toLocaleString('en-IN')},{label:'Impressions',value:imp.toLocaleString('en-IN')},{label:(useDoublePlate?'2 plates':'1 plate')+' · '+pk,value:u+' ups'}],
+      breakdown:[...pBreakdown,...(lCost>0?[{label:selLam,value:sym+lCost.toFixed(2)}]:[]),...(uCost>0?[{label:selUV,value:sym+uCost.toFixed(2)}]:[])]});
   };
   if(!loaded)return <div style={{textAlign:'center',padding:40,color:'#888'}}>Loading rates...</div>;
   return(
@@ -235,9 +245,10 @@ function PrintingTab({subData}:any){
         <div style={{marginBottom:16}}><div style={LBL}>Quantity<span style={{fontWeight:400,color:'#AAA',fontSize:11}}>pieces</span></div><input type="number" placeholder="Enter quantity" value={qty} onChange={e=>setQty(e.target.value)} style={NIS}/></div>
         <div style={{height:1,background:'var(--color-border-tertiary,#F0F0F0)',margin:'16px 0'}}/>
         <div style={{marginBottom:16,padding:'8px 12px',background:'#F0F7FF',borderRadius:8,fontSize:12,color:'#185FA5'}}>🎯 Plate: <strong>{selPlate}</strong> (auto from final size) · {calcUps(size.w||8.3,size.h||11.7,size.plateSize)} ups</div>
-        <div style={{marginBottom:16}}><div style={LBL}>Print colors</div><select value={selColor} onChange={e=>setSelColor(e.target.value)} style={IS}>{colorsByPlate.map(c=><option key={c} value={c}>{c}</option>)}</select></div>
+        <div style={{marginBottom:16}}><div style={LBL}>{paperType==='board'&&sides==='double'?'Front side color':'Print colors'}</div><select value={selColor} onChange={e=>setSelColor(e.target.value)} style={IS}>{colorsByPlate.map(c=><option key={c} value={c}>{c}</option>)}</select></div>
         <div style={{marginBottom:16}}><div style={LBL}>Sides</div><div style={TW}><button style={TB(sides==='single')} onClick={()=>setSides('single')}>Single side</button><button style={TB(sides==='double')} onClick={()=>setSides('double')}>Both Sides</button></div></div>
-        <div style={{marginBottom:16}}><div style={LBL}>Paper type</div><div style={TW}><button style={TB(paperType==='normal')} onClick={()=>setPaperType('normal')}>Normal Paper</button><button style={TB(paperType==='board')} onClick={()=>setPaperType('board')}>Board Paper (FBB / SBS / Duplex)</button></div>{paperType==='board'&&sides==='double'&&<div style={{marginTop:8,padding:'8px 12px',background:'#FFF8E1',border:'1px solid #FFD54F',borderRadius:8,fontSize:12,color:'#7B5800'}}>⚠️ Board paper has one smooth side &amp; one rough side — 2 separate plates will be used for Both Sides (no Work &amp; Turn)</div>}</div>
+        <div style={{marginBottom:16}}><div style={LBL}>Paper type</div><div style={TW}><button style={TB(paperType==='normal')} onClick={()=>setPaperType('normal')}>Normal Paper</button><button style={TB(paperType==='board')} onClick={()=>setPaperType('board')}>Board Paper (FBB / SBS / Duplex)</button></div>{paperType==='board'&&sides==='double'&&<div style={{marginTop:8,padding:'8px 12px',background:'#FFF8E1',border:'1px solid #FFD54F',borderRadius:8,fontSize:12,color:'#7B5800'}}>⚠️ Board paper has one smooth side &amp; one rough side — 2 separate plates used (no Work &amp; Turn)</div>}</div>
+        {paperType==='board'&&sides==='double'&&<div style={{marginBottom:16}}><div style={LBL}>Back side color<span style={{fontWeight:400,color:'#AAA',fontSize:11,marginLeft:6}}>usually 1 Color</span></div><select value={selBackColor} onChange={e=>setSelBackColor(e.target.value)} style={IS}>{colorsByPlate.map(c=><option key={c} value={c}>{c}</option>)}</select></div>}
         <div style={{height:1,background:'var(--color-border-tertiary,#F0F0F0)',margin:'16px 0'}}/>
         <div style={{marginBottom:16}}><div style={LBL}>Lamination</div><select value={selLam} onChange={e=>setSelLam(e.target.value)} style={IS}><option value="none">No Lamination</option>{lamRates.map(r=><option key={r.id} value={r.lam_name}>{r.lam_name}</option>)}</select>{selLam!=='none'&&<div style={{...TW,marginTop:8}}><button style={TB(!lamDbl)} onClick={()=>setLamDbl(false)}>Single side</button><button style={TB(lamDbl)} onClick={()=>setLamDbl(true)}>Both Sides</button></div>}</div>
         <div><div style={LBL}>UV / Coating</div><select value={selUV} onChange={e=>setSelUV(e.target.value)} style={IS}><option value="none">No UV / Coating</option>{uvRates.map(r=><option key={r.id} value={r.uv_name}>{r.uv_name}</option>)}</select></div>
@@ -267,6 +278,7 @@ function FullJobTab({subData}:any){
   const [gsm,setGsm]=useState(0);
   const [selPlate,setSelPlate]=useState('');
   const [selColor,setSelColor]=useState('');
+  const [selBackColor,setSelBackColor]=useState('');
   const [colorsByPlate,setColorsByPlate]=useState<string[]>([]);
   const [sides,setSides]=useState<'single'|'double'>('double');
   const [selLam,setSelLam]=useState('none');
@@ -299,14 +311,14 @@ function FullJobTab({subData}:any){
       if(cats?.length){setSelCat(cats[0]);setCovCat(cats[0]);setInnCat(cats[0]);}
       const pnames=[...new Set((pr||[]).map((r:any)=>r.plate_name))] as string[];
       setPlateNames(pnames);
-      if(pnames.length>0){const fp=pnames[0];const cols=(pr||[]).filter((r:any)=>r.plate_name===fp).map((r:any)=>r.color_option);setSelPlate(fp);setColorsByPlate(cols);setCovColorsByPlate(cols);setInnColorsByPlate(cols);if(cols.length>0){setSelColor(cols[0]);setCovColor(cols[0]);setInnColor(cols[0]);}}
+      if(pnames.length>0){const fp=pnames[0];const cols=(pr||[]).filter((r:any)=>r.plate_name===fp).map((r:any)=>r.color_option);setSelPlate(fp);setColorsByPlate(cols);setCovColorsByPlate(cols);setInnColorsByPlate(cols);if(cols.length>0){setSelColor(cols[0]);setSelBackColor(cols[0]);setCovColor(cols[0]);setInnColor(cols[0]);}}
       setLoaded(true);
     };load();
   },[subData]);
   useEffect(()=>{if(!selCat)return;const sid=subData?.id||'00000000-0000-0000-0000-000000000001';supabase.from('paper_stocks').select('*').eq('subscriber_id',sid).eq('category',selCat.category).order('gsm').then(({data})=>{setPaperStocks(data||[]);if(data?.length)setGsm(data[0].gsm);});},[selCat,subData]);
   useEffect(()=>{if(!covCat)return;const sid=subData?.id||'00000000-0000-0000-0000-000000000001';supabase.from('paper_stocks').select('*').eq('subscriber_id',sid).eq('category',covCat.category).order('gsm').then(({data})=>{setCovStocks(data||[]);if(data?.length)setCovGsm(data[0].gsm);});},[covCat,subData]);
   useEffect(()=>{if(!innCat)return;const sid=subData?.id||'00000000-0000-0000-0000-000000000001';supabase.from('paper_stocks').select('*').eq('subscriber_id',sid).eq('category',innCat.category).order('gsm').then(({data})=>{setInnStocks(data||[]);if(data?.length)setInnGsm(data[0].gsm);});},[innCat,subData]);
-  useEffect(()=>{const cols=plateRates.filter(r=>r.plate_name===selPlate).map(r=>r.color_option);setColorsByPlate(cols);setCovColorsByPlate(cols);setInnColorsByPlate(cols);if(cols.length>0){setSelColor(cols[0]);setCovColor(cols[0]);setInnColor(cols[0]);};},[selPlate,plateRates]);
+  useEffect(()=>{const cols=plateRates.filter(r=>r.plate_name===selPlate).map(r=>r.color_option);setColorsByPlate(cols);setCovColorsByPlate(cols);setInnColorsByPlate(cols);if(cols.length>0){setSelColor(cols[0]);setSelBackColor(cols[0]);setCovColor(cols[0]);setInnColor(cols[0]);};},[selPlate,plateRates]);
 
   const validatePages=(v:string)=>{const n=parseInt(v);if(!n){setPageError('');return;}if(n%4!==0)setPageError('Pages must be divisible by 4');else setPageError('');};
 
@@ -322,12 +334,16 @@ function FullJobTab({subData}:any){
     const u=calcUps(fW,fH,pk);const pi=PARENT_SHEETS[pk]||{parent:pk,cuts:1,pw:25,ph:36};
     if(jobType==='single'){
       if(!selCat)return;
-      const ws=Math.ceil(q/u);const isBoardPaper=BOARD_PAPER_CATS.includes(selCat?.category||'');const useDoublePlate=isBoardPaper&&sides==='double';const imp=useDoublePlate?ws:(sides==='double'?ws*2:ws);const numPl=useDoublePlate?2:1;
-      const papC=paperCost(selCat,gsm,ws,pk);const prC=printCost(selPlate,selColor,numPl,imp);const lC=lamCost(selLam,pk,imp);const uC=uvCost(selUV,pk,imp);
+      const ws=Math.ceil(q/u);const isBoardPaper=BOARD_PAPER_CATS.includes(selCat?.category||'');const useDoublePlate=isBoardPaper&&sides==='double';const imp=useDoublePlate?ws:(sides==='double'?ws*2:ws);
+      const papC=paperCost(selCat,gsm,ws,pk);
+      let prC=0;let prBreakdown:any[]=[];
+      if(useDoublePlate){const fC=printCost(selPlate,selColor,1,ws);const bC=printCost(selPlate,selBackColor,1,ws);prC=fC+bC;prBreakdown=[{label:'Front printing ('+selColor+')',value:sym+fC.toFixed(2)},{label:'Back printing ('+selBackColor+')',value:sym+bC.toFixed(2)}];}
+      else{prC=printCost(selPlate,selColor,1,imp);prBreakdown=[{label:'Printing ('+selColor+')',value:sym+prC.toFixed(2)}];}
+      const lC=lamCost(selLam,pk,imp);const uC=uvCost(selUV,pk,imp);
       const sub=papC+prC+lC+uC;const am=sub*(1+M/100);const ta=am*(T/100);
       setResult({finalPrice:am+ta,subtotal:sub,markupAmount:am-sub,taxAmount:ta,
         stats:[{label:'Per piece',value:sym+(((am+ta)/q).toFixed(2))},{label:'Working sheets',value:ws.toLocaleString('en-IN')},{label:'Parent sheets',value:Math.ceil(ws/pi.cuts).toLocaleString('en-IN')+' · '+pi.parent},{label:'Impressions',value:imp.toLocaleString('en-IN')}],
-        breakdown:[{label:'Paper cost',value:sym+papC.toFixed(2)},{label:'Printing ('+numPl+' plate'+(numPl>1?'s':'')+' · '+selColor+')',value:sym+prC.toFixed(2)},...(lC>0?[{label:selLam,value:sym+lC.toFixed(2)}]:[]),...(uC>0?[{label:selUV,value:sym+uC.toFixed(2)}]:[])]});
+        breakdown:[{label:'Paper cost',value:sym+papC.toFixed(2)},...prBreakdown,...(lC>0?[{label:selLam,value:sym+lC.toFixed(2)}]:[]),...(uC>0?[{label:selUV,value:sym+uC.toFixed(2)}]:[])]});
     } else {
       const pages=parseInt(totalPages);if(!pages||pages%4!==0||!covCat||!innCat)return;
       const coverPages=4;const innerPages=pages-4;
@@ -383,8 +399,9 @@ function FullJobTab({subData}:any){
           </Sec>
           <Sec title="Printing">
             <div style={{marginBottom:12,padding:'8px 12px',background:'#F0F7FF',borderRadius:8,fontSize:12,color:'#185FA5'}}>🎯 Plate: <strong>{selPlate}</strong> (auto from final size) · {u} ups</div>
-            <div style={{marginBottom:12}}><div style={LBL}>Print colors</div><select value={selColor} onChange={e=>setSelColor(e.target.value)} style={IS}>{colorsByPlate.map(c=><option key={c} value={c}>{c}</option>)}</select></div>
-            <div><div style={LBL}>Sides</div><div style={TW}><button style={TB(sides==='single')} onClick={()=>setSides('single')}>Single side</button><button style={TB(sides==='double')} onClick={()=>setSides('double')}>Both Sides</button></div>{BOARD_PAPER_CATS.includes(selCat?.category||'')&&sides==='double'&&<div style={{marginTop:8,padding:'8px 12px',background:'#FFF8E1',border:'1px solid #FFD54F',borderRadius:8,fontSize:12,color:'#7B5800'}}>⚠️ Board paper detected — 2 separate plates used for both sides (smooth front + rough back). Cost calculated accordingly.</div>}</div>
+            <div style={{marginBottom:12}}><div style={LBL}>{BOARD_PAPER_CATS.includes(selCat?.category||'')&&sides==='double'?'Front side color':'Print colors'}</div><select value={selColor} onChange={e=>setSelColor(e.target.value)} style={IS}>{colorsByPlate.map(c=><option key={c} value={c}>{c}</option>)}</select></div>
+            <div style={{marginBottom:BOARD_PAPER_CATS.includes(selCat?.category||'')&&sides==='double'?12:0}}><div style={LBL}>Sides</div><div style={TW}><button style={TB(sides==='single')} onClick={()=>setSides('single')}>Single side</button><button style={TB(sides==='double')} onClick={()=>setSides('double')}>Both Sides</button></div>{BOARD_PAPER_CATS.includes(selCat?.category||'')&&sides==='double'&&<div style={{marginTop:8,padding:'8px 12px',background:'#FFF8E1',border:'1px solid #FFD54F',borderRadius:8,fontSize:12,color:'#7B5800'}}>⚠️ Board paper — 2 plates used (smooth front + rough back, no Work &amp; Turn)</div>}</div>
+            {BOARD_PAPER_CATS.includes(selCat?.category||'')&&sides==='double'&&<div style={{marginTop:12}}><div style={LBL}>Back side color<span style={{fontWeight:400,color:'#AAA',fontSize:11,marginLeft:6}}>usually 1 Color</span></div><select value={selBackColor} onChange={e=>setSelBackColor(e.target.value)} style={IS}>{colorsByPlate.map(c=><option key={c} value={c}>{c}</option>)}</select></div>}
           </Sec>
           <Sec title="Finishing" optional>
             <div style={{marginBottom:12}}><div style={LBL}>Lamination</div><select value={selLam} onChange={e=>setSelLam(e.target.value)} style={IS}><option value="none">No Lamination</option>{lamRates.map(r=><option key={r.id} value={r.lam_name}>{r.lam_name}</option>)}</select>{selLam!=='none'&&<div style={{...TW,marginTop:8}}><button style={TB(!lamDbl)} onClick={()=>setLamDbl(false)}>Single side</button><button style={TB(lamDbl)} onClick={()=>setLamDbl(true)}>Both Sides</button></div>}</div>
