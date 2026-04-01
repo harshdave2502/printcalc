@@ -308,6 +308,8 @@ function FullJobTab({subData}:any){
   const [b2bLam,setB2bLam]=useState('none');
   const [b2bUV,setB2bUV]=useState('none');
   const [b2bFinishSides,setB2bFinishSides]=useState<'both'|'front'|'back'>('both');
+  const [b2bPages,setB2bPages]=useState('');
+  const [b2bPageError,setB2bPageError]=useState('');
   const M=subData?.markup_percent||25;const T=subData?.tax_percent||18;const sym=subData?.currency_symbol||'₹';
 
   useEffect(()=>{
@@ -368,7 +370,10 @@ function FullJobTab({subData}:any){
         breakdown:[{label:'Cover paper',value:sym+covPapC.toFixed(2)},{label:'Cover printing ('+covPlates+' plates)',value:sym+covPrC.toFixed(2)},...(covLC>0?[{label:covLam+' (cover)',value:sym+covLC.toFixed(2)}]:[]),...(covUC>0?[{label:covUV+' (cover)',value:sym+covUC.toFixed(2)}]:[]),{label:'Inner paper',value:sym+innPapC.toFixed(2)},{label:'Inner printing ('+innPlates+' plates)',value:sym+innPrC.toFixed(2)},...(innLC>0?[{label:innLam+' (inner)',value:sym+innLC.toFixed(2)}]:[]),...(bC>0?[{label:selBind+' ('+bindFormatsPerCopy.toFixed(2)+' fmt/copy)',value:sym+bC.toFixed(2)}]:[])]});
     } else if(jobType==='b2b'){
       if(!selCat||!b2bBackCat)return;
-      const ws=Math.ceil(q/u);
+      const pg=parseInt(b2bPages)||2;if(pg<2||pg%2!==0)return;
+      const unitsPerCopy=pg/2;
+      const totalUnits=unitsPerCopy*q;
+      const ws=Math.ceil(totalUnits/u);
       const frontPapC=paperCost(selCat,gsm,ws,pk);
       const backPapC=paperCost(b2bBackCat,b2bBackGsm,ws,pk);
       const frontPrC=printCost(selPlate,selColor,1,ws);
@@ -377,12 +382,12 @@ function FullJobTab({subData}:any){
       let finC=0;let finLabel='';
       if(b2bFinishType==='lam'&&b2bLam!=='none'){finC=lamCost(b2bLam,pk,finImp);finLabel=b2bLam+(b2bFinishSides==='both'?' (both sheets)':b2bFinishSides==='front'?' (front sheet)':' (back sheet)');}
       else if(b2bFinishType==='uv'&&b2bUV!=='none'){finC=uvCost(b2bUV,pk,finImp);finLabel=b2bUV+(b2bFinishSides==='both'?' (both sheets)':b2bFinishSides==='front'?' (front sheet)':' (back sheet)');}
-      const pasteC=pastingCost(selPasting,fW,fH,q);
+      const pasteC=pastingCost(selPasting,fW,fH,totalUnits);
       const sub=frontPapC+backPapC+frontPrC+backPrC+finC+pasteC;
       const am=sub*(1+M/100);const ta=am*(T/100);
       setResult({finalPrice:am+ta,subtotal:sub,markupAmount:am-sub,taxAmount:ta,
-        stats:[{label:'Per piece',value:sym+(((am+ta)/q).toFixed(2))},{label:'Working sheets (each)',value:ws.toLocaleString('en-IN')},{label:'Front: '+selColor,value:sym+frontPrC.toFixed(2)},{label:'Back: '+selBackColor,value:sym+backPrC.toFixed(2)}],
-        breakdown:[{label:'Front sheet paper',value:sym+frontPapC.toFixed(2)},{label:'Back sheet paper',value:sym+backPapC.toFixed(2)},{label:'Front printing ('+selColor+')',value:sym+frontPrC.toFixed(2)},{label:'Back printing ('+selBackColor+')',value:sym+backPrC.toFixed(2)},...(finC>0?[{label:finLabel,value:sym+finC.toFixed(2)}]:[]),...(pasteC>0?[{label:selPasting,value:sym+pasteC.toFixed(2)}]:[])]});
+        stats:[{label:'Per piece ('+pg+' pages)',value:sym+(((am+ta)/q).toFixed(2))},{label:'Working sheets (each side)',value:ws.toLocaleString('en-IN')},{label:'Pasted units total',value:totalUnits.toLocaleString('en-IN')},{label:'Plate: '+selPlate,value:u+' ups · '+pk}],
+        breakdown:[{label:'Front sheet paper',value:sym+frontPapC.toFixed(2)},{label:'Back sheet paper',value:sym+backPapC.toFixed(2)},{label:'Front printing ('+selColor+')',value:sym+frontPrC.toFixed(2)},{label:'Back printing ('+selBackColor+')',value:sym+backPrC.toFixed(2)},...(finC>0?[{label:finLabel,value:sym+finC.toFixed(2)}]:[]),...(pasteC>0?[{label:selPasting+' ('+totalUnits+' units)',value:sym+pasteC.toFixed(2)}]:[])]});
     }
   };
 
@@ -392,24 +397,26 @@ function FullJobTab({subData}:any){
   const fH=size.id==='custom'?(parseFloat(cH)||0):size.h;
   const u=calcUps(fW||8.3,fH||11.7,size.plateSize);
   const innSheetsPerCopy=pages>4?Math.ceil((pages-4)/(u*2)):0;
+  const gussetMM=(innerPg:number,gsm:number)=>+(((innerPg/2)*gsm*0.0013)).toFixed(2);
+  const bookGusset=pages>4?gussetMM(pages-4,innGsm):0;
+  const b2bPg=parseInt(b2bPages)||0;
+  const b2bUnitsPerCopy=b2bPg>=2?b2bPg/2:1;
 
   return(
     <div>
       <div style={CARD}>
         <p style={SL}>Job Type</p>
-        <div style={TW}>
-          <button style={TB(jobType==='single')} onClick={()=>setJobType('single')}><div>📄 Single Item</div><div style={{fontSize:11,fontWeight:400,opacity:0.7,marginTop:2}}>Leaflet / Poster / Card</div></button>
-          <button style={TB(jobType==='book')} onClick={()=>setJobType('book')}><div>📚 Brochure / Book</div><div style={{fontSize:11,fontWeight:400,opacity:0.7,marginTop:2}}>Multi page with binding</div></button>
-        </div>
-        <div style={{...TW,marginTop:8}}>
-          <button style={TB(jobType==='b2b')} onClick={()=>setJobType('b2b')}><div>🗂️ Back to Back</div><div style={{fontSize:11,fontWeight:400,opacity:0.7,marginTop:2}}>Menu / Building brochure</div></button>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8}}>
+          <button style={TB(jobType==='single')} onClick={()=>setJobType('single')}><div style={{fontSize:13}}>📄</div><div style={{fontSize:12,fontWeight:600,marginTop:3}}>Single Item</div><div style={{fontSize:10,fontWeight:400,opacity:0.65,marginTop:2}}>Leaflet / Card</div></button>
+          <button style={TB(jobType==='book')} onClick={()=>setJobType('book')}><div style={{fontSize:13}}>📚</div><div style={{fontSize:12,fontWeight:600,marginTop:3}}>Brochure / Book</div><div style={{fontSize:10,fontWeight:400,opacity:0.65,marginTop:2}}>Multi-page + binding</div></button>
+          <button style={TB(jobType==='b2b')} onClick={()=>setJobType('b2b')}><div style={{fontSize:13}}>🗂️</div><div style={{fontSize:12,fontWeight:600,marginTop:3}}>Premium Brochure</div><div style={{fontSize:10,fontWeight:400,opacity:0.65,marginTop:2}}>Back to Back</div></button>
         </div>
       </div>
       <Sec title="Job Specs">
         <SizeSelect size={size} setSize={setSize} cW={cW} setCW={setCW} cH={cH} setCH={setCH}/>
-        <div style={{marginBottom:jobType==='book'?12:0}}>
+        <div style={{marginBottom:(jobType==='book'||jobType==='b2b')?12:0}}>
           <div style={LBL}>Quantity<span style={{fontWeight:400,color:'#AAA',fontSize:11}}>{jobType==='book'?'copies':'pieces'}</span></div>
-          <input type="number" placeholder={jobType==='book'?'Enter number of copies':jobType==='b2b'?'Enter number of pasted pieces':'Enter quantity'} value={qty} onChange={e=>setQty(e.target.value)} style={NIS}/>
+          <input type="number" placeholder={jobType==='book'?'Enter number of copies':'Enter quantity'} value={qty} onChange={e=>setQty(e.target.value)} style={NIS}/>
         </div>
         {jobType==='book'&&(
           <div style={{marginTop:12}}>
@@ -417,6 +424,14 @@ function FullJobTab({subData}:any){
             <input type="number" placeholder="e.g. 8, 12, 16, 24, 32..." value={totalPages} onChange={e=>{setTotalPages(e.target.value);validatePages(e.target.value);}} style={NIS}/>
             {pageError&&<p style={{fontSize:12,color:'#E53E3E',marginTop:4}}>⚠ {pageError}</p>}
             {pages>=8&&!pageError&&(<div style={{display:'flex',gap:8,marginTop:8,flexWrap:'wrap' as const}}><span style={{fontSize:11,background:'#F5F0FF',color:'#6B46C1',borderRadius:4,padding:'2px 8px',fontWeight:500}}>📄 Cover: 4 pages</span><span style={{fontSize:11,background:'#EEF4FA',color:'#185FA5',borderRadius:4,padding:'2px 8px',fontWeight:500}}>📋 Inner: {pages-4} pages</span><span style={{fontSize:11,background:'#F0FFF4',color:'#276749',borderRadius:4,padding:'2px 8px',fontFamily:'monospace'}}>{innSheetsPerCopy} inner sheets/copy · {(innSheetsPerCopy+1)} binding formats</span></div>)}
+          </div>
+        )}
+        {jobType==='b2b'&&(
+          <div style={{marginTop:12}}>
+            <div style={LBL}>Total pages<span style={{fontWeight:400,color:'#AAA',fontSize:11}}>must be ÷ 2 (min 2)</span></div>
+            <input type="number" placeholder="e.g. 2, 4, 6, 8, 10..." value={b2bPages} onChange={e=>{setB2bPages(e.target.value);const n=parseInt(e.target.value);if(!n){setB2bPageError('');return;}if(n%2!==0)setB2bPageError('Pages must be divisible by 2');else if(n<2)setB2bPageError('Minimum 2 pages');else setB2bPageError('');}} style={NIS}/>
+            {b2bPageError&&<p style={{fontSize:12,color:'#E53E3E',marginTop:4}}>⚠ {b2bPageError}</p>}
+            {b2bPg>=2&&!b2bPageError&&(<div style={{display:'flex',gap:8,marginTop:8,flexWrap:'wrap' as const}}><span style={{fontSize:11,background:'#FFF4F2',color:'#C84B31',borderRadius:4,padding:'2px 8px',fontWeight:500}}>🗂️ {b2bUnitsPerCopy} pasted unit{b2bUnitsPerCopy>1?'s':''}/copy</span><span style={{fontSize:11,background:'#EEF4FA',color:'#185FA5',borderRadius:4,padding:'2px 8px',fontFamily:'monospace'}}>Each unit = 2 sheets pasted</span></div>)}
           </div>
         )}
       </Sec>
@@ -440,15 +455,15 @@ function FullJobTab({subData}:any){
       )}
       {jobType==='b2b'&&(
         <>
-          <Sec title="🗂️ Front Sheet" accent="#C84B31">
-            <p style={{marginBottom:12,fontSize:12,color:'#888'}}>Printed single-side. This becomes the outer face of the final pasted piece.</p>
+          <Sec title="Front Sheet" accent="#C84B31">
+            <p style={{marginBottom:12,fontSize:12,color:'#888'}}>Printed single-side. Becomes the outer face of each pasted unit.</p>
             <div style={{marginBottom:12}}><div style={LBL}>Paper category</div><select value={selCat?.id||''} onChange={e=>{const c=paperCats.find((x:any)=>x.id===e.target.value);if(c)setSelCat(c);}} style={IS}>{paperCats.map((c:any)=><option key={c.id} value={c.id}>{c.category}</option>)}</select></div>
             <div style={{marginBottom:12}}><div style={LBL}>GSM{gsm>0&&<span style={{fontSize:11,color:'#888',fontWeight:400,fontFamily:'monospace'}}>{gsmInfo(gsm)}</span>}</div><select value={gsm} onChange={e=>setGsm(parseInt(e.target.value))} style={IS}>{paperStocks.map((s:any)=><option key={s.id} value={s.gsm}>{s.gsm} GSM{!s.in_stock?' — OUT OF STOCK':''}</option>)}</select></div>
             <div style={{height:1,background:'#F0F0F0',margin:'12px 0'}}/>
             <div style={{marginBottom:8,padding:'8px 12px',background:'#FFF4F2',borderRadius:8,fontSize:12,color:'#C84B31'}}>🎯 Plate: <strong>{selPlate}</strong> · {u} ups</div>
             <div><div style={LBL}>Front print color</div><select value={selColor} onChange={e=>setSelColor(e.target.value)} style={IS}>{colorsByPlate.map(c=><option key={c} value={c}>{c}</option>)}</select></div>
           </Sec>
-          <Sec title="🗂️ Back Sheet" accent="#185FA5">
+          <Sec title="Back Sheet" accent="#185FA5">
             <p style={{marginBottom:12,fontSize:12,color:'#888'}}>Printed single-side. Pasted back-to-back with the front sheet.</p>
             <div style={{marginBottom:12}}><div style={LBL}>Paper category</div><select value={b2bBackCat?.id||''} onChange={e=>{const c=paperCats.find((x:any)=>x.id===e.target.value);if(c)setB2bBackCat(c);}} style={IS}>{paperCats.map((c:any)=><option key={c.id} value={c.id}>{c.category}</option>)}</select></div>
             <div style={{marginBottom:12}}><div style={LBL}>GSM{b2bBackGsm>0&&<span style={{fontSize:11,color:'#888',fontWeight:400,fontFamily:'monospace'}}>{gsmInfo(b2bBackGsm)}</span>}</div><select value={b2bBackGsm} onChange={e=>setB2bBackGsm(parseInt(e.target.value))} style={IS}>{b2bBackStocks.map((s:any)=><option key={s.id} value={s.gsm}>{s.gsm} GSM{!s.in_stock?' — OUT OF STOCK':''}</option>)}</select></div>
@@ -498,8 +513,29 @@ function FullJobTab({subData}:any){
             <div><div style={LBL}>Lamination (inner) — optional</div><select value={innLam} onChange={e=>setInnLam(e.target.value)} style={IS}><option value="none">No Lamination</option>{lamRates.map(r=><option key={r.id} value={r.lam_name}>{r.lam_name}</option>)}</select></div>
           </Sec>
           <Sec title="📎 Binding" optional>
-            <p style={{marginBottom:8,fontSize:12,color:'#888'}}>Binding cost is per binding format per copy</p>
+            <div style={{marginBottom:10,padding:'8px 12px',background:'#F9F9F9',borderRadius:8,fontSize:11,color:'#666'}}>Binding cost is per binding format per copy · {innSheetsPerCopy+1} formats/copy</div>
             <select value={selBind} onChange={e=>setSelBind(e.target.value)} style={IS}><option value="none">No Binding</option>{bindRates.map(r=><option key={r.id} value={r.binding_name}>{r.binding_name}</option>)}</select>
+            {selBind!=='none'&&pages>4&&(
+              <div style={{marginTop:10,display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+                <div style={{padding:'8px 12px',background:'#F5F0FF',borderRadius:8,fontSize:11,color:'#6B46C1'}}>
+                  <div style={{fontWeight:600,marginBottom:2}}>Spine gusset</div>
+                  <div style={{fontFamily:'monospace',fontSize:13}}>{bookGusset} mm</div>
+                  <div style={{opacity:0.7,marginTop:2}}>{pages-4} inner pages · {innGsm} GSM</div>
+                </div>
+                {selBind.toLowerCase().includes('stitch')||selBind.toLowerCase().includes('saddle')||selBind.toLowerCase().includes('centre')||selBind.toLowerCase().includes('center')?(
+                  <div style={{padding:'8px 12px',background:pages-4>96?'#FFF0F0':'#F0FFF4',borderRadius:8,fontSize:11,color:pages-4>96?'#E53E3E':'#276749'}}>
+                    <div style={{fontWeight:600,marginBottom:2}}>{pages-4>96?'⚠ Too many pages':'✓ Suitable'}</div>
+                    <div style={{opacity:0.8}}>{pages-4>96?'Centre stitch max ~96 inner pages':'Centre stitch works up to 96 inner pages'}</div>
+                  </div>
+                ):(
+                  <div style={{padding:'8px 12px',background:'#EEF4FA',borderRadius:8,fontSize:11,color:'#185FA5'}}>
+                    <div style={{fontWeight:600,marginBottom:2}}>Cover extra width</div>
+                    <div style={{fontFamily:'monospace',fontSize:13}}>{bookGusset} mm spine</div>
+                    <div style={{opacity:0.7,marginTop:2}}>Add to cover width for perfect/hard bind</div>
+                  </div>
+                )}
+              </div>
+            )}
           </Sec>
         </>
       )}
