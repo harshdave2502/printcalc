@@ -200,7 +200,6 @@ function PrintingTab({subData}:any){
   const [selBackColor,setSelBackColor]=useState('');
   const [colorsByPlate,setColorsByPlate]=useState<string[]>([]);
   const [sides,setSides]=useState<'single'|'double'>('double');
-  const [paperType,setPaperType]=useState<'normal'|'board'>('normal');
   const [selLam,setSelLam]=useState('none');
   const [lamDbl,setLamDbl]=useState(false);
   const [selUV,setSelUV]=useState('none');
@@ -214,7 +213,7 @@ function PrintingTab({subData}:any){
     if(!q||!fW||!fH||!selPlate||!selColor)return;
     const pk=size.id==='custom'?autoSelectPlate(fW,fH):size.plateSize;
     const u=calcUps(fW,fH,pk);const pi=PARENT_SHEETS[pk]||{parent:pk,cuts:1,pw:25,ph:36};
-    const ws=Math.ceil(q/u);const useDoublePlate=paperType==='board'&&sides==='double';const imp=useDoublePlate?ws:(sides==='double'?ws*2:ws);
+    const ws=Math.ceil(q/u);const useDoublePlate=sides==='double';const imp=ws;
     let pCost=0;let pBreakdown:any[]=[];
     if(useDoublePlate){
       const rf=plateRates.find(r=>r.plate_name===selPlate&&r.color_option===selColor);
@@ -233,7 +232,7 @@ function PrintingTab({subData}:any){
     if(selUV!=='none'){const ur=uvRates.find(r=>r.uv_name===selUV);if(ur){const pd=PLATE_DIMS[pk]||{w:18,h:25};uCost=Math.max((pd.w*pd.h/100)*ur.per_100_sqinch*imp,ur.minimum_charge);}}
     const sub=pCost+lCost+uCost;const am=sub*(1+M/100);const ta=am*(T/100);
     setResult({finalPrice:am+ta,subtotal:sub,markupAmount:am-sub,taxAmount:ta,
-      stats:[{label:'Per piece',value:sym+(((am+ta)/q).toFixed(2))},{label:'Working sheets',value:ws.toLocaleString('en-IN')},{label:'Impressions',value:imp.toLocaleString('en-IN')},{label:(useDoublePlate?'2 plates':'1 plate')+' · '+pk,value:u+' ups'}],
+      stats:[{label:'Per piece',value:sym+(((am+ta)/q).toFixed(2))},{label:'Working sheets',value:ws.toLocaleString('en-IN')},{label:'Impressions',value:imp.toLocaleString('en-IN')},{label:(sides==='double'?'2 plates':'1 plate')+' · '+pk,value:u+' ups'}],
       breakdown:[...pBreakdown,...(lCost>0?[{label:selLam,value:sym+lCost.toFixed(2)}]:[]),...(uCost>0?[{label:selUV,value:sym+uCost.toFixed(2)}]:[])]});
   };
   if(!loaded)return <div style={{textAlign:'center',padding:40,color:'#888'}}>Loading rates...</div>;
@@ -245,9 +244,9 @@ function PrintingTab({subData}:any){
         <div style={{marginBottom:16}}><div style={LBL}>Quantity<span style={{fontWeight:400,color:'#AAA',fontSize:11}}>pieces</span></div><input type="number" placeholder="Enter quantity" value={qty} onChange={e=>setQty(e.target.value)} style={NIS}/></div>
         <div style={{height:1,background:'var(--color-border-tertiary,#F0F0F0)',margin:'16px 0'}}/>
         <div style={{marginBottom:16,padding:'8px 12px',background:'#F0F7FF',borderRadius:8,fontSize:12,color:'#185FA5'}}>🎯 Plate: <strong>{selPlate}</strong> (auto from final size) · {calcUps(size.w||8.3,size.h||11.7,size.plateSize)} ups</div>
-        <div style={{marginBottom:16}}><div style={LBL}>{paperType==='board'&&sides==='double'?'Front side color':'Print colors'}</div><select value={selColor} onChange={e=>setSelColor(e.target.value)} style={IS}>{colorsByPlate.map(c=><option key={c} value={c}>{c}</option>)}</select></div>
-        <div style={{marginBottom:sides==='double'?8:16}}><div style={LBL}>Sides</div><div style={TW}><button style={TB(sides==='single')} onClick={()=>{setSides('single');setPaperType('normal');}}>Single side</button><button style={TB(sides==='double')} onClick={()=>setSides('double')}>Both Sides</button></div></div>
-        {sides==='double'&&<div style={{marginBottom:16,padding:'10px 12px',background:'var(--color-background-secondary,#F9F9F9)',border:'1.5px solid var(--color-border-tertiary,#E8E8E8)',borderRadius:10}}><div style={{fontSize:12,color:'#666',marginBottom:8}}>Board paper? <span style={{color:'#AAA',fontSize:11}}>(FBB / SBS / Duplex — one smooth, one rough side)</span></div><div style={TW}><button style={TB(paperType==='normal')} onClick={()=>setPaperType('normal')}>No — normal paper</button><button style={TB(paperType==='board')} onClick={()=>setPaperType('board')}>Yes — board paper</button></div>{paperType==='board'&&<div style={{marginTop:10}}><div style={LBL}>Back side color<span style={{fontWeight:400,color:'#AAA',fontSize:11,marginLeft:6}}>usually 1 Color</span></div><select value={selBackColor} onChange={e=>setSelBackColor(e.target.value)} style={IS}>{colorsByPlate.map(c=><option key={c} value={c}>{c}</option>)}</select></div>}</div>}
+        <div style={{marginBottom:16}}><div style={LBL}>{sides==='double'?'Front side color':'Print colors'}</div><select value={selColor} onChange={e=>setSelColor(e.target.value)} style={IS}>{colorsByPlate.map(c=><option key={c} value={c}>{c}</option>)}</select></div>
+        <div style={{marginBottom:16}}><div style={LBL}>Sides</div><div style={TW}><button style={TB(sides==='single')} onClick={()=>setSides('single')}>Single side</button><button style={TB(sides==='double')} onClick={()=>setSides('double')}>Both Sides</button></div></div>
+        {sides==='double'&&<div style={{marginBottom:16}}><div style={LBL}>2nd plate color<span style={{fontWeight:400,color:'#AAA',fontSize:11,marginLeft:6}}>usually 1 Color for back side</span></div><select value={selBackColor} onChange={e=>setSelBackColor(e.target.value)} style={IS}>{colorsByPlate.map(c=><option key={c} value={c}>{c}</option>)}</select></div>}
         <div style={{height:1,background:'var(--color-border-tertiary,#F0F0F0)',margin:'16px 0'}}/>
         <div style={{marginBottom:16}}><div style={LBL}>Lamination</div><select value={selLam} onChange={e=>setSelLam(e.target.value)} style={IS}><option value="none">No Lamination</option>{lamRates.map(r=><option key={r.id} value={r.lam_name}>{r.lam_name}</option>)}</select>{selLam!=='none'&&<div style={{...TW,marginTop:8}}><button style={TB(!lamDbl)} onClick={()=>setLamDbl(false)}>Single side</button><button style={TB(lamDbl)} onClick={()=>setLamDbl(true)}>Both Sides</button></div>}</div>
         <div><div style={LBL}>UV / Coating</div><select value={selUV} onChange={e=>setSelUV(e.target.value)} style={IS}><option value="none">No UV / Coating</option>{uvRates.map(r=><option key={r.id} value={r.uv_name}>{r.uv_name}</option>)}</select></div>
@@ -399,8 +398,8 @@ function FullJobTab({subData}:any){
           <Sec title="Printing">
             <div style={{marginBottom:12,padding:'8px 12px',background:'#F0F7FF',borderRadius:8,fontSize:12,color:'#185FA5'}}>🎯 Plate: <strong>{selPlate}</strong> (auto from final size) · {u} ups</div>
             <div style={{marginBottom:12}}><div style={LBL}>{BOARD_PAPER_CATS.includes(selCat?.category||'')&&sides==='double'?'Front side color':'Print colors'}</div><select value={selColor} onChange={e=>setSelColor(e.target.value)} style={IS}>{colorsByPlate.map(c=><option key={c} value={c}>{c}</option>)}</select></div>
-            <div style={{marginBottom:BOARD_PAPER_CATS.includes(selCat?.category||'')&&sides==='double'?12:0}}><div style={LBL}>Sides</div><div style={TW}><button style={TB(sides==='single')} onClick={()=>setSides('single')}>Single side</button><button style={TB(sides==='double')} onClick={()=>setSides('double')}>Both Sides</button></div>{BOARD_PAPER_CATS.includes(selCat?.category||'')&&sides==='double'&&<div style={{marginTop:8,padding:'8px 12px',background:'#FFF8E1',border:'1px solid #FFD54F',borderRadius:8,fontSize:12,color:'#7B5800'}}>⚠️ Board paper — 2 plates used (smooth front + rough back, no Work &amp; Turn)</div>}</div>
-            {BOARD_PAPER_CATS.includes(selCat?.category||'')&&sides==='double'&&<div style={{marginTop:12}}><div style={LBL}>Back side color<span style={{fontWeight:400,color:'#AAA',fontSize:11,marginLeft:6}}>usually 1 Color</span></div><select value={selBackColor} onChange={e=>setSelBackColor(e.target.value)} style={IS}>{colorsByPlate.map(c=><option key={c} value={c}>{c}</option>)}</select></div>}
+            <div style={{marginBottom:12}}><div style={LBL}>Sides</div><div style={TW}><button style={TB(sides==='single')} onClick={()=>setSides('single')}>Single side</button><button style={TB(sides==='double')} onClick={()=>setSides('double')}>Both Sides</button></div></div>
+            {BOARD_PAPER_CATS.includes(selCat?.category||'')&&sides==='double'&&<div style={{marginBottom:12}}><div style={LBL}>2nd plate color<span style={{fontWeight:400,color:'#AAA',fontSize:11,marginLeft:6}}>usually 1 Color for back side</span></div><select value={selBackColor} onChange={e=>setSelBackColor(e.target.value)} style={IS}>{colorsByPlate.map(c=><option key={c} value={c}>{c}</option>)}</select></div>}
           </Sec>
           <Sec title="Finishing" optional>
             <div style={{marginBottom:12}}><div style={LBL}>Lamination</div><select value={selLam} onChange={e=>setSelLam(e.target.value)} style={IS}><option value="none">No Lamination</option>{lamRates.map(r=><option key={r.id} value={r.lam_name}>{r.lam_name}</option>)}</select>{selLam!=='none'&&<div style={{...TW,marginTop:8}}><button style={TB(!lamDbl)} onClick={()=>setLamDbl(false)}>Single side</button><button style={TB(lamDbl)} onClick={()=>setLamDbl(true)}>Both Sides</button></div>}</div>
