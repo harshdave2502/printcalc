@@ -49,6 +49,8 @@ function autoSelectPlate(w:number,h:number):string{
   return bestPlate;
 }
 const fmt=(n:number)=>'₹'+n.toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2});
+// Board papers: one smooth side, one rough — cannot use Work & Turn, need 2 separate plates for both sides
+const BOARD_PAPER_CATS=['SBS','FBB','Ultima','Duplex Grey Back','Duplex White Back'];
 
 function Sec({title,children,optional,accent}:any){
   return(
@@ -197,6 +199,7 @@ function PrintingTab({subData}:any){
   const [selColor,setSelColor]=useState('');
   const [colorsByPlate,setColorsByPlate]=useState<string[]>([]);
   const [sides,setSides]=useState<'single'|'double'>('double');
+  const [paperType,setPaperType]=useState<'normal'|'board'>('normal');
   const [selLam,setSelLam]=useState('none');
   const [lamDbl,setLamDbl]=useState(false);
   const [selUV,setSelUV]=useState('none');
@@ -210,18 +213,18 @@ function PrintingTab({subData}:any){
     if(!q||!fW||!fH||!selPlate||!selColor)return;
     const pk=size.id==='custom'?autoSelectPlate(fW,fH):size.plateSize;
     const u=calcUps(fW,fH,pk);const pi=PARENT_SHEETS[pk]||{parent:pk,cuts:1,pw:25,ph:36};
-    const ws=Math.ceil(q/u);const imp=sides==='double'?ws*2:ws;
+    const ws=Math.ceil(q/u);const useDoublePlate=paperType==='board'&&sides==='double';const imp=useDoublePlate?ws:(sides==='double'?ws*2:ws);const numPl=useDoublePlate?2:1;
     const rate=plateRates.find(r=>r.plate_name===selPlate&&r.color_option===selColor);
     let pCost=0;
-    if(rate){const pf=rate.fixed_charge;const fi=1000;const ei=Math.max(0,imp-fi);const er=Math.ceil(ei/1000)*1000;pCost=pf+(er/1000)*rate.per_1000_impression;}
+    if(rate){const pf=rate.fixed_charge*numPl;const fi=1000*numPl;const ei=Math.max(0,imp-fi);const er=Math.ceil(ei/1000)*1000;pCost=pf+(er/1000)*rate.per_1000_impression;}
     let lCost=0;
     if(selLam!=='none'){const lr=lamRates.find(r=>r.lam_name===selLam);if(lr){const pd=PLATE_DIMS[pk]||{w:18,h:25};lCost=Math.max((pd.w*pd.h/100)*lr.per_100_sqinch*imp,lr.minimum_charge);}}
     let uCost=0;
     if(selUV!=='none'){const ur=uvRates.find(r=>r.uv_name===selUV);if(ur){const pd=PLATE_DIMS[pk]||{w:18,h:25};uCost=Math.max((pd.w*pd.h/100)*ur.per_100_sqinch*imp,ur.minimum_charge);}}
     const sub=pCost+lCost+uCost;const am=sub*(1+M/100);const ta=am*(T/100);
     setResult({finalPrice:am+ta,subtotal:sub,markupAmount:am-sub,taxAmount:ta,
-      stats:[{label:'Per piece',value:sym+(((am+ta)/q).toFixed(2))},{label:'Working sheets',value:ws.toLocaleString('en-IN')},{label:'Impressions',value:imp.toLocaleString('en-IN')},{label:'Plate: '+pk,value:u+' ups'}],
-      breakdown:[{label:'Printing cost',value:sym+pCost.toFixed(2)},...(lCost>0?[{label:selLam,value:sym+lCost.toFixed(2)}]:[]),...(uCost>0?[{label:selUV,value:sym+uCost.toFixed(2)}]:[])]});
+      stats:[{label:'Per piece',value:sym+(((am+ta)/q).toFixed(2))},{label:'Working sheets',value:ws.toLocaleString('en-IN')},{label:'Impressions',value:imp.toLocaleString('en-IN')},{label:numPl+' plate(s) · '+pk,value:u+' ups'}],
+      breakdown:[{label:'Printing ('+numPl+' plate'+(numPl>1?'s':'')+' · '+selColor+')',value:sym+pCost.toFixed(2)},...(lCost>0?[{label:selLam,value:sym+lCost.toFixed(2)}]:[]),...(uCost>0?[{label:selUV,value:sym+uCost.toFixed(2)}]:[])]});
   };
   if(!loaded)return <div style={{textAlign:'center',padding:40,color:'#888'}}>Loading rates...</div>;
   return(
@@ -234,6 +237,7 @@ function PrintingTab({subData}:any){
         <div style={{marginBottom:16,padding:'8px 12px',background:'#F0F7FF',borderRadius:8,fontSize:12,color:'#185FA5'}}>🎯 Plate: <strong>{selPlate}</strong> (auto from final size) · {calcUps(size.w||8.3,size.h||11.7,size.plateSize)} ups</div>
         <div style={{marginBottom:16}}><div style={LBL}>Print colors</div><select value={selColor} onChange={e=>setSelColor(e.target.value)} style={IS}>{colorsByPlate.map(c=><option key={c} value={c}>{c}</option>)}</select></div>
         <div style={{marginBottom:16}}><div style={LBL}>Sides</div><div style={TW}><button style={TB(sides==='single')} onClick={()=>setSides('single')}>Single side</button><button style={TB(sides==='double')} onClick={()=>setSides('double')}>Both Sides</button></div></div>
+        <div style={{marginBottom:16}}><div style={LBL}>Paper type</div><div style={TW}><button style={TB(paperType==='normal')} onClick={()=>setPaperType('normal')}>Normal Paper</button><button style={TB(paperType==='board')} onClick={()=>setPaperType('board')}>Board Paper (FBB / SBS / Duplex)</button></div>{paperType==='board'&&sides==='double'&&<div style={{marginTop:8,padding:'8px 12px',background:'#FFF8E1',border:'1px solid #FFD54F',borderRadius:8,fontSize:12,color:'#7B5800'}}>⚠️ Board paper has one smooth side &amp; one rough side — 2 separate plates will be used for Both Sides (no Work &amp; Turn)</div>}</div>
         <div style={{height:1,background:'var(--color-border-tertiary,#F0F0F0)',margin:'16px 0'}}/>
         <div style={{marginBottom:16}}><div style={LBL}>Lamination</div><select value={selLam} onChange={e=>setSelLam(e.target.value)} style={IS}><option value="none">No Lamination</option>{lamRates.map(r=><option key={r.id} value={r.lam_name}>{r.lam_name}</option>)}</select>{selLam!=='none'&&<div style={{...TW,marginTop:8}}><button style={TB(!lamDbl)} onClick={()=>setLamDbl(false)}>Single side</button><button style={TB(lamDbl)} onClick={()=>setLamDbl(true)}>Both Sides</button></div>}</div>
         <div><div style={LBL}>UV / Coating</div><select value={selUV} onChange={e=>setSelUV(e.target.value)} style={IS}><option value="none">No UV / Coating</option>{uvRates.map(r=><option key={r.id} value={r.uv_name}>{r.uv_name}</option>)}</select></div>
@@ -318,12 +322,12 @@ function FullJobTab({subData}:any){
     const u=calcUps(fW,fH,pk);const pi=PARENT_SHEETS[pk]||{parent:pk,cuts:1,pw:25,ph:36};
     if(jobType==='single'){
       if(!selCat)return;
-      const ws=Math.ceil(q/u);const imp=sides==='double'?ws*2:ws;
-      const papC=paperCost(selCat,gsm,ws,pk);const prC=printCost(selPlate,selColor,1,imp);const lC=lamCost(selLam,pk,imp);const uC=uvCost(selUV,pk,imp);
+      const ws=Math.ceil(q/u);const isBoardPaper=BOARD_PAPER_CATS.includes(selCat?.category||'');const useDoublePlate=isBoardPaper&&sides==='double';const imp=useDoublePlate?ws:(sides==='double'?ws*2:ws);const numPl=useDoublePlate?2:1;
+      const papC=paperCost(selCat,gsm,ws,pk);const prC=printCost(selPlate,selColor,numPl,imp);const lC=lamCost(selLam,pk,imp);const uC=uvCost(selUV,pk,imp);
       const sub=papC+prC+lC+uC;const am=sub*(1+M/100);const ta=am*(T/100);
       setResult({finalPrice:am+ta,subtotal:sub,markupAmount:am-sub,taxAmount:ta,
         stats:[{label:'Per piece',value:sym+(((am+ta)/q).toFixed(2))},{label:'Working sheets',value:ws.toLocaleString('en-IN')},{label:'Parent sheets',value:Math.ceil(ws/pi.cuts).toLocaleString('en-IN')+' · '+pi.parent},{label:'Impressions',value:imp.toLocaleString('en-IN')}],
-        breakdown:[{label:'Paper cost',value:sym+papC.toFixed(2)},{label:'Printing cost',value:sym+prC.toFixed(2)},...(lC>0?[{label:selLam,value:sym+lC.toFixed(2)}]:[]),...(uC>0?[{label:selUV,value:sym+uC.toFixed(2)}]:[])]});
+        breakdown:[{label:'Paper cost',value:sym+papC.toFixed(2)},{label:'Printing ('+numPl+' plate'+(numPl>1?'s':'')+' · '+selColor+')',value:sym+prC.toFixed(2)},...(lC>0?[{label:selLam,value:sym+lC.toFixed(2)}]:[]),...(uC>0?[{label:selUV,value:sym+uC.toFixed(2)}]:[])]});
     } else {
       const pages=parseInt(totalPages);if(!pages||pages%4!==0||!covCat||!innCat)return;
       const coverPages=4;const innerPages=pages-4;
@@ -380,7 +384,7 @@ function FullJobTab({subData}:any){
           <Sec title="Printing">
             <div style={{marginBottom:12,padding:'8px 12px',background:'#F0F7FF',borderRadius:8,fontSize:12,color:'#185FA5'}}>🎯 Plate: <strong>{selPlate}</strong> (auto from final size) · {u} ups</div>
             <div style={{marginBottom:12}}><div style={LBL}>Print colors</div><select value={selColor} onChange={e=>setSelColor(e.target.value)} style={IS}>{colorsByPlate.map(c=><option key={c} value={c}>{c}</option>)}</select></div>
-            <div><div style={LBL}>Sides</div><div style={TW}><button style={TB(sides==='single')} onClick={()=>setSides('single')}>Single side</button><button style={TB(sides==='double')} onClick={()=>setSides('double')}>Both Sides</button></div></div>
+            <div><div style={LBL}>Sides</div><div style={TW}><button style={TB(sides==='single')} onClick={()=>setSides('single')}>Single side</button><button style={TB(sides==='double')} onClick={()=>setSides('double')}>Both Sides</button></div>{BOARD_PAPER_CATS.includes(selCat?.category||'')&&sides==='double'&&<div style={{marginTop:8,padding:'8px 12px',background:'#FFF8E1',border:'1px solid #FFD54F',borderRadius:8,fontSize:12,color:'#7B5800'}}>⚠️ Board paper detected — 2 separate plates used for both sides (smooth front + rough back). Cost calculated accordingly.</div>}</div>
           </Sec>
           <Sec title="Finishing" optional>
             <div style={{marginBottom:12}}><div style={LBL}>Lamination</div><select value={selLam} onChange={e=>setSelLam(e.target.value)} style={IS}><option value="none">No Lamination</option>{lamRates.map(r=><option key={r.id} value={r.lam_name}>{r.lam_name}</option>)}</select>{selLam!=='none'&&<div style={{...TW,marginTop:8}}><button style={TB(!lamDbl)} onClick={()=>setLamDbl(false)}>Single side</button><button style={TB(lamDbl)} onClick={()=>setLamDbl(true)}>Both Sides</button></div>}</div>

@@ -3,6 +3,9 @@ import { useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
 import { supabase } from '../../supabase';
 
+// Board papers: one smooth side, one rough — need 2 plates for both sides (no Work & Turn)
+const BOARD_PAPER_CATS=['SBS','FBB','Ultima','Duplex Grey Back','Duplex White Back'];
+
 // ─── PLATE DIMS (exact same as subscriber calculator) ─────────────────
 const PLATE_DIMS: Record<string,{w:number;h:number}> = {
   '15×20"': {w:14.5, h:19.5},
@@ -379,9 +382,10 @@ export default function EmbedPage(){
     if(jobType==='single'){
       if(!selCat)return;
       const ws=Math.ceil(q/u);
-      const imp=sides==='double'?ws*2:ws;
+      const isBoardPaper=BOARD_PAPER_CATS.includes(selCat?.category||'');const useDoublePlate=isBoardPaper&&sides==='double';
+      const imp=useDoublePlate?ws:(sides==='double'?ws*2:ws);const numPl=useDoublePlate?2:1;
       const papC=paperCost(selCat,gsm,ws,pk);
-      const prC=printCost(selPlate,selColor,1,imp);
+      const prC=printCost(selPlate,selColor,numPl,imp);
       const lC=lamCost(selLam,pk,imp);
       const uC=uvCost(selUV,pk,imp);
       const sub2=papC+prC+lC+uC;

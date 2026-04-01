@@ -5,7 +5,7 @@ import { supabase } from '../supabase';
 const DEFAULT_PAPER_CATS = [
   {category:'Maplitho', rate_per_kg:58},{category:'Art Paper', rate_per_kg:72},
   {category:'Art Card', rate_per_kg:85},{category:'Art Card Heavy', rate_per_kg:90},
-  {category:'FBB / Ultima / SBS', rate_per_kg:95},{category:'Duplex Grey Back', rate_per_kg:48},
+  {category:'SBS', rate_per_kg:95},{category:'FBB', rate_per_kg:93},{category:'Ultima', rate_per_kg:95},{category:'Duplex Grey Back', rate_per_kg:48},
   {category:'Duplex White Back', rate_per_kg:55},
 ];
 const DEFAULT_PAPER_STOCKS = [
@@ -21,13 +21,19 @@ const DEFAULT_PAPER_STOCKS = [
   {category:'Art Card Heavy', gsm:250, label:'Art Card 250 GSM', rate_per_kg:90, in_stock:true, sort_order:10},
   {category:'Art Card Heavy', gsm:300, label:'Art Card 300 GSM', rate_per_kg:90, in_stock:true, sort_order:11},
   {category:'Art Card Heavy', gsm:350, label:'Art Card 350 GSM', rate_per_kg:90, in_stock:true, sort_order:12},
-  {category:'FBB / Ultima / SBS', gsm:200, label:'FBB 200 GSM', rate_per_kg:95, in_stock:true, sort_order:13},
-  {category:'FBB / Ultima / SBS', gsm:250, label:'FBB 250 GSM', rate_per_kg:95, in_stock:true, sort_order:14},
-  {category:'FBB / Ultima / SBS', gsm:300, label:'FBB 300 GSM', rate_per_kg:95, in_stock:true, sort_order:15},
-  {category:'Duplex Grey Back', gsm:200, label:'Duplex Grey 200 GSM', rate_per_kg:48, in_stock:true, sort_order:16},
-  {category:'Duplex Grey Back', gsm:250, label:'Duplex Grey 250 GSM', rate_per_kg:48, in_stock:true, sort_order:17},
-  {category:'Duplex White Back', gsm:200, label:'Duplex White 200 GSM', rate_per_kg:55, in_stock:true, sort_order:18},
-  {category:'Duplex White Back', gsm:250, label:'Duplex White 250 GSM', rate_per_kg:55, in_stock:true, sort_order:19},
+  {category:'SBS', gsm:200, label:'SBS 200 GSM', rate_per_kg:95, in_stock:true, sort_order:13},
+  {category:'SBS', gsm:250, label:'SBS 250 GSM', rate_per_kg:95, in_stock:true, sort_order:14},
+  {category:'SBS', gsm:300, label:'SBS 300 GSM', rate_per_kg:95, in_stock:true, sort_order:15},
+  {category:'FBB', gsm:200, label:'FBB 200 GSM', rate_per_kg:93, in_stock:true, sort_order:16},
+  {category:'FBB', gsm:250, label:'FBB 250 GSM', rate_per_kg:93, in_stock:true, sort_order:17},
+  {category:'FBB', gsm:300, label:'FBB 300 GSM', rate_per_kg:93, in_stock:true, sort_order:18},
+  {category:'Ultima', gsm:200, label:'Ultima 200 GSM', rate_per_kg:95, in_stock:true, sort_order:19},
+  {category:'Ultima', gsm:250, label:'Ultima 250 GSM', rate_per_kg:95, in_stock:true, sort_order:20},
+  {category:'Ultima', gsm:300, label:'Ultima 300 GSM', rate_per_kg:95, in_stock:true, sort_order:21},
+  {category:'Duplex Grey Back', gsm:200, label:'Duplex Grey 200 GSM', rate_per_kg:48, in_stock:true, sort_order:22},
+  {category:'Duplex Grey Back', gsm:250, label:'Duplex Grey 250 GSM', rate_per_kg:48, in_stock:true, sort_order:23},
+  {category:'Duplex White Back', gsm:200, label:'Duplex White 200 GSM', rate_per_kg:55, in_stock:true, sort_order:24},
+  {category:'Duplex White Back', gsm:250, label:'Duplex White 250 GSM', rate_per_kg:55, in_stock:true, sort_order:25},
 ];
 const DEFAULT_PRINTING_RATES = [
   {plate_name:'18x23', color_option:'1 Color', fixed_charge:500, per_1000_impression:200, sort_order:1},
