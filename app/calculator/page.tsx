@@ -304,7 +304,7 @@ function FullJobTab({subData}:any){
   const [b2bBackCat,setB2bBackCat]=useState<any>(null);
   const [b2bBackStocks,setB2bBackStocks]=useState<any[]>([]);
   const [b2bBackGsm,setB2bBackGsm]=useState(0);
-  const [b2bFinishType,setB2bFinishType]=useState<'none'|'lam'|'uv'>('none');
+  const [b2bFinishType,setB2bFinishType]=useState<'lam'|'uv'>('lam');
   const [b2bLam,setB2bLam]=useState('none');
   const [b2bUV,setB2bUV]=useState('none');
   const [b2bFinishSides,setB2bFinishSides]=useState<'both'|'front'|'back'>('both');
@@ -378,16 +378,18 @@ function FullJobTab({subData}:any){
       const backPapC=paperCost(b2bBackCat,b2bBackGsm,ws,pk);
       const frontPrC=printCost(selPlate,selColor,1,ws);
       const backPrC=printCost(selPlate,selBackColor,1,ws);
-      const finImp=b2bFinishSides==='both'?ws*2:ws;
+      const finImp=ws*2;// both printed sides always get finished
       let finC=0;let finLabel='';
-      if(b2bFinishType==='lam'&&b2bLam!=='none'){finC=lamCost(b2bLam,pk,finImp);finLabel=b2bLam+(b2bFinishSides==='both'?' (both sheets)':b2bFinishSides==='front'?' (front sheet)':' (back sheet)');}
-      else if(b2bFinishType==='uv'&&b2bUV!=='none'){finC=uvCost(b2bUV,pk,finImp);finLabel=b2bUV+(b2bFinishSides==='both'?' (both sheets)':b2bFinishSides==='front'?' (front sheet)':' (back sheet)');}
+      if(b2bFinishType==='lam'&&b2bLam!=='none'){finC=lamCost(b2bLam,pk,finImp);finLabel=b2bLam+' (both sheets)';}
+      else if(b2bFinishType==='uv'&&b2bUV!=='none'){finC=uvCost(b2bUV,pk,finImp);finLabel=b2bUV+' (both sheets)';}
       const pasteC=pastingCost(selPasting,fW,fH,totalUnits);
-      const sub=frontPapC+backPapC+frontPrC+backPrC+finC+pasteC;
+      let bC=0;
+      if(selBind!=='none'){const br=bindRates.find(r=>r.binding_name===selBind);if(br)bC=b2bUnitsPerCopy*br.per_binding_format*q;}
+      const sub=frontPapC+backPapC+frontPrC+backPrC+finC+pasteC+bC;
       const am=sub*(1+M/100);const ta=am*(T/100);
       setResult({finalPrice:am+ta,subtotal:sub,markupAmount:am-sub,taxAmount:ta,
         stats:[{label:'Per piece ('+pg+' pages)',value:sym+(((am+ta)/q).toFixed(2))},{label:'Working sheets (each side)',value:ws.toLocaleString('en-IN')},{label:'Pasted units total',value:totalUnits.toLocaleString('en-IN')},{label:'Plate: '+selPlate,value:u+' ups · '+pk}],
-        breakdown:[{label:'Front sheet paper',value:sym+frontPapC.toFixed(2)},{label:'Back sheet paper',value:sym+backPapC.toFixed(2)},{label:'Front printing ('+selColor+')',value:sym+frontPrC.toFixed(2)},{label:'Back printing ('+selBackColor+')',value:sym+backPrC.toFixed(2)},...(finC>0?[{label:finLabel,value:sym+finC.toFixed(2)}]:[]),...(pasteC>0?[{label:selPasting+' ('+totalUnits+' units)',value:sym+pasteC.toFixed(2)}]:[])]});
+        breakdown:[{label:'Front sheet paper',value:sym+frontPapC.toFixed(2)},{label:'Back sheet paper',value:sym+backPapC.toFixed(2)},{label:'Front printing ('+selColor+')',value:sym+frontPrC.toFixed(2)},{label:'Back printing ('+selBackColor+')',value:sym+backPrC.toFixed(2)},...(finC>0?[{label:finLabel,value:sym+finC.toFixed(2)}]:[]),...(pasteC>0?[{label:selPasting+' ('+totalUnits+' units)',value:sym+pasteC.toFixed(2)}]:[]),...(bC>0?[{label:selBind+' binding',value:sym+bC.toFixed(2)}]:[])]});
     }
   };
 
@@ -470,23 +472,26 @@ function FullJobTab({subData}:any){
             <div style={{height:1,background:'#F0F0F0',margin:'12px 0'}}/>
             <div><div style={LBL}>Back print color</div><select value={selBackColor} onChange={e=>setSelBackColor(e.target.value)} style={IS}>{colorsByPlate.map(c=><option key={c} value={c}>{c}</option>)}</select></div>
           </Sec>
-          <Sec title="✨ Finishing" optional accent="#276749">
+          <Sec title="✨ Finishing" accent="#276749">
+            <div style={{marginBottom:4,fontSize:11,color:'#888'}}>Applied to printed side of both sheets</div>
             <div style={{marginBottom:12}}>
               <div style={LBL}>Finish type</div>
               <div style={TW}>
-                <button style={TB(b2bFinishType==='none')} onClick={()=>setB2bFinishType('none')}>None</button>
                 <button style={TB(b2bFinishType==='lam')} onClick={()=>setB2bFinishType('lam')}>Lamination</button>
                 <button style={TB(b2bFinishType==='uv')} onClick={()=>setB2bFinishType('uv')}>Coating / UV</button>
               </div>
             </div>
-            {b2bFinishType==='lam'&&<div style={{marginBottom:12}}><div style={LBL}>Lamination</div><select value={b2bLam} onChange={e=>setB2bLam(e.target.value)} style={IS}><option value="none">Select lamination...</option>{lamRates.map(r=><option key={r.id} value={r.lam_name}>{r.lam_name}</option>)}</select></div>}
-            {b2bFinishType==='uv'&&<div style={{marginBottom:12}}><div style={LBL}>Coating / UV</div><select value={b2bUV} onChange={e=>setB2bUV(e.target.value)} style={IS}><option value="none">Select coating / UV...</option>{uvRates.map(r=><option key={r.id} value={r.uv_name}>{r.uv_name}</option>)}</select></div>}
-            {b2bFinishType!=='none'&&<div><div style={LBL}>Apply finishing to</div><div style={TW}><button style={TB(b2bFinishSides==='both')} onClick={()=>setB2bFinishSides('both')}>Both sheets</button><button style={TB(b2bFinishSides==='front')} onClick={()=>setB2bFinishSides('front')}>Front only</button><button style={TB(b2bFinishSides==='back')} onClick={()=>setB2bFinishSides('back')}>Back only</button></div></div>}
+            {b2bFinishType==='lam'&&<div><div style={LBL}>Lamination</div><select value={b2bLam} onChange={e=>setB2bLam(e.target.value)} style={IS}><option value="none">Select lamination...</option>{lamRates.map(r=><option key={r.id} value={r.lam_name}>{r.lam_name}</option>)}</select></div>}
+            {b2bFinishType==='uv'&&<div><div style={LBL}>Coating / UV</div><select value={b2bUV} onChange={e=>setB2bUV(e.target.value)} style={IS}><option value="none">Select coating / UV...</option>{uvRates.map(r=><option key={r.id} value={r.uv_name}>{r.uv_name}</option>)}</select></div>}
           </Sec>
           <Sec title="📌 Pasting">
             <p style={{marginBottom:8,fontSize:12,color:'#888'}}>Back-to-back pasting joins two sheets face-out</p>
             <select value={selPasting} onChange={e=>setSelPasting(e.target.value)} style={IS}><option value="none">Select pasting rate...</option>{pastingRates.map(r=><option key={r.id} value={r.pasting_name}>{r.pasting_name}</option>)}</select>
             {selPasting!=='none'&&(()=>{const pr=pastingRates.find(r=>r.pasting_name===selPasting);return pr?(<div style={{marginTop:8,padding:'8px 12px',background:'#F0FFF4',borderRadius:8,fontSize:11,color:'#276749'}}>Min ₹{pr.minimum_charge} · {pr.per_100_sqinch>0?`₹${pr.per_100_sqinch}/100 sq in`:''}{pr.per_100_sqinch>0&&pr.per_sheet>0?' · ':''}{pr.per_sheet>0?`₹${pr.per_sheet}/sheet`:''}</div>):null;})()}
+          </Sec>
+          <Sec title="📎 Binding" optional>
+            <div style={{marginBottom:10,fontSize:11,color:'#888'}}>Optional — for multi-unit brochures that need to be bound together</div>
+            <select value={selBind} onChange={e=>setSelBind(e.target.value)} style={IS}><option value="none">No Binding</option>{bindRates.map(r=><option key={r.id} value={r.binding_name}>{r.binding_name}</option>)}</select>
           </Sec>
         </>
       )}
