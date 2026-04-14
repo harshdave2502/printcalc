@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from './supabase';
 
 const FEATURES = [
-  { icon: '⚡', title: 'Instant Quotes', desc: 'Calculate paper, printing, lamination, UV and binding costs in seconds. No manual work.' },
+  { icon: '⚡', title: 'Lightning Fast Quotes', desc: 'Calculate paper, printing, lamination, UV and binding costs in seconds. No manual work.' },
   { icon: '🎨', title: 'White Label', desc: 'Put your business name and logo on the calculator. Your brand, your customers.' },
   { icon: '👥', title: 'Customer Portal', desc: 'Give each customer their own login. They get quotes 24/7 without calling you.' },
   { icon: '💰', title: 'Per-Customer Rates', desc: 'Set different rates for wholesale, retail and corporate clients. Full control.' },
