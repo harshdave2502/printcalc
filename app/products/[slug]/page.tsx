@@ -1,0 +1,1333 @@
+'use client';
+
+import { useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
+import { useParams, useRouter } from 'next/navigation';
+import { supabase } from '../../supabase';
+import { TEMPLATES, getTemplate, ProductTemplate, TemplateField } from '../../lib/templates';
+import { TOKENS } from '../../lib/design';
+import { formatPrice } from '../../lib/countries';
+
+// ─────────────────────────────────────────────────────────────────────────
+// Per-product calculator — renders only fields relevant to this product's
+// template. Each template (card, sheet, folded, booklet, etc.) has its own
+// optimized field list and calculation logic.
+// ─────────────────────────────────────────────────────────────────────────
+
+interface SubscriberProduct {
+  id: string;
+  template_id: string;
+  slug: string;
+  display_name: string;
+  description: string;
+  icon: string;
+  default_size_label: string | null;
+  default_size_w_inch: number | null;
+  default_size_h_inch: number | null;
+  default_paper_label: string | null;
+  default_color: string;
+  default_sides: string;
+}
+
+interface SubscriberInfo { business_name: string; email: string; }
+interface Customer { id: string; name: string; email: string; phone: string; company: string; }
+interface PaperStock { id: string; label: string; gsm: number; rate_per_kg: number; category: string; }
+interface PrintingRate { id: string; plate_name: string; color_option: string; fixed_charge: number; per_1000_impression: number; }
+interface FieldOverride { field_key: string; is_enabled: boolean; custom_label: string | null; custom_options: any; }
+interface CustomField { field_key: string; label: string; field_type: string; options: any; price_impact: string; price_value: number; help_text: string | null; }
+
+// ─── Plate dimensions (in usable inches after gripper margin) ───────────
+const PLATE_DIMS: Record<string, { w: number; h: number }> = {
+  '15×20"': { w: 14.5, h: 19.5 },
+  '18×23"': { w: 17.5, h: 22.5 },
+  '18×25"': { w: 17.5, h: 24.5 },
+  '20×28"': { w: 19.5, h: 27.5 },
+  '20×30"': { w: 19.5, h: 29.5 },
+  '25×36"': { w: 24.5, h: 35.5 },
+};
+const PARENT_SHEETS: Record<string, { parentW: number; parentH: number; cuts: number }> = {
+  '15×20"': { parentW: 20, parentH: 30, cuts: 2 },
+  '18×23"': { parentW: 23, parentH: 36, cuts: 2 },
+  '18×25"': { parentW: 25, parentH: 36, cuts: 2 },
+  '20×28"': { parentW: 20, parentH: 30, cuts: 1 },
+  '20×30"': { parentW: 20, parentH: 30, cuts: 1 },
+  '25×36"': { parentW: 25, parentH: 36, cuts: 1 },
+};
+
+function calcUps(w: number, h: number, plateKey: string): number {
+  const p = PLATE_DIMS[plateKey];
+  if (!p || !w || !h) return 1;
+  return Math.max(
+    Math.floor(p.w / w) * Math.floor(p.h / h),
+    Math.floor(p.w / h) * Math.floor(p.h / w),
+    1,
+  );
+}
+
+// Match existing /calculator: highest ups wins, smallest plate as tie-breaker.
+function autoSelectPlate(w: number, h: number): string {
+  const plates = Object.keys(PLATE_DIMS);
+  let bestPlate = '18×25"';
+  let bestUps = 0;
+  for (const pk of plates) {
+    const p = PLATE_DIMS[pk];
+    const ups = Math.max(
+      Math.floor(p.w / w) * Math.floor(p.h / h),
+      Math.floor(p.w / h) * Math.floor(p.h / w),
+      1,
+    );
+    if (ups > bestUps || (ups === bestUps && p.w * p.h < PLATE_DIMS[bestPlate].w * PLATE_DIMS[bestPlate].h)) {
+      bestUps = ups;
+      bestPlate = pk;
+    }
+  }
+  return bestPlate;
+}
+
+// Board paper categories — rough/smooth sides cannot do Work & Turn,
+// so both-sides on board paper requires 2 separate plate setups.
+const BOARD_PAPER_CATS = ['SBS', 'FBB', 'Duplex Grey Back', 'Duplex White Back'];
+
+// ─────────────────────────────────────────────────────────────────────────
+// Component
+// ─────────────────────────────────────────────────────────────────────────
+
+export default function ProductCalculator() {
+  const params = useParams();
+  const router = useRouter();
+  const slug = params?.slug as string;
+
+  // Auth + product
+  const [hasSession, setHasSession] = useState<boolean | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [product, setProduct] = useState<SubscriberProduct | null>(null);
+  const [template, setTemplate] = useState<ProductTemplate | null>(null);
+
+  // Reference data
+  const [paperStocks, setPaperStocks] = useState<PaperStock[]>([]);
+  const [printingRates, setPrintingRates] = useState<PrintingRate[]>([]);
+  const [fieldOverrides, setFieldOverrides] = useState<FieldOverride[]>([]);
+  const [customFields, setCustomFields] = useState<CustomField[]>([]);
+
+  // Subscriber settings
+  const [currency, setCurrency] = useState('$');
+  const [markupPercent, setMarkupPercent] = useState(25);
+  const [taxPercent, setTaxPercent] = useState(0);
+  const [subscriberInfo, setSubscriberInfo] = useState<SubscriberInfo>({ business_name: '', email: '' });
+  const [customers, setCustomers] = useState<Customer[]>([]);
+
+  // Save / Order modals
+  const [showSaveModal, setShowSaveModal] = useState(false);
+  const [showOrderModal, setShowOrderModal] = useState(false);
+  const [showPrintView, setShowPrintView] = useState(false);
+  const [savedFlash, setSavedFlash] = useState('');
+
+  // Form state — flexible record keyed by field_key
+  const [values, setValues] = useState<Record<string, any>>({});
+
+  // ─── Auth + load everything ────────────────────────────────────────────
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!mounted) return;
+      if (!session) {
+        setHasSession(false);
+        setLoading(false);
+        return;
+      }
+      setHasSession(true);
+      const userId = session.user.id;
+
+      // Load subscriber product, paper, rates, overrides, custom fields, subscriber settings, customers
+      const [prodRes, paperRes, rateRes, subRes, custRes] = await Promise.all([
+        supabase.from('subscriber_products').select('*').eq('subscriber_id', userId).eq('slug', slug).maybeSingle(),
+        supabase.from('paper_stocks').select('id, label, gsm, rate_per_kg, category').eq('subscriber_id', userId).order('sort_order'),
+        supabase.from('printing_rates').select('id, plate_name, color_option, fixed_charge, per_1000_impression').eq('subscriber_id', userId),
+        supabase.from('subscribers').select('currency_symbol, markup_percent, tax_percent, business_name, email').eq('id', userId).maybeSingle(),
+        supabase.from('customers').select('id, name, email, phone, company').eq('subscriber_id', userId).order('name'),
+      ]);
+
+      if (!mounted) return;
+      const prod = prodRes.data as SubscriberProduct | null;
+      if (!prod) {
+        setLoading(false);
+        return;
+      }
+      setProduct(prod);
+      setTemplate(getTemplate(prod.template_id) || null);
+      setPaperStocks(paperRes.data || []);
+      setPrintingRates(rateRes.data || []);
+      setCustomers(custRes.data || []);
+      if (subRes.data) {
+        setCurrency(subRes.data.currency_symbol || '$');
+        setMarkupPercent(Number(subRes.data.markup_percent) || 25);
+        setTaxPercent(Number(subRes.data.tax_percent) || 0);
+        setSubscriberInfo({ business_name: subRes.data.business_name || '', email: subRes.data.email || '' });
+      }
+
+      // Load field overrides + custom fields
+      const [overridesRes, customRes] = await Promise.all([
+        supabase.from('subscriber_product_fields').select('*').eq('subscriber_product_id', prod.id),
+        supabase.from('subscriber_product_custom_fields').select('*').eq('subscriber_product_id', prod.id).order('sort_order'),
+      ]);
+      if (!mounted) return;
+      setFieldOverrides(overridesRes.data || []);
+      setCustomFields(customRes.data || []);
+
+      // Initialize default values
+      const initVals: Record<string, any> = {
+        quantity: 500,
+        size: prod.default_size_w_inch
+          ? { w: Number(prod.default_size_w_inch), h: Number(prod.default_size_h_inch), label: prod.default_size_label }
+          : null,
+        sides: prod.default_sides || 'one',
+        color: prod.default_color || 'four_color',
+      };
+      setValues(initVals);
+      setLoading(false);
+    })();
+    return () => { mounted = false; };
+  }, [slug]);
+
+  // ─── Build active field list (template + overrides + custom) ───────────
+  const activeFields = useMemo(() => {
+    if (!template) return [] as TemplateField[];
+    const overrideMap: Record<string, FieldOverride> = {};
+    fieldOverrides.forEach((o) => { overrideMap[o.field_key] = o; });
+    return template.fields.filter((f) => {
+      const ov = overrideMap[f.key];
+      if (ov && ov.is_enabled === false) return false;
+      // Optional fields default to OFF unless explicitly enabled
+      if (f.optional) return ov?.is_enabled === true;
+      return true;
+    }).map((f) => {
+      const ov = overrideMap[f.key];
+      return {
+        ...f,
+        label: ov?.custom_label || f.label,
+        defaultOptions: ov?.custom_options || f.defaultOptions,
+      };
+    });
+  }, [template, fieldOverrides]);
+
+  // ─── Calculate price ───────────────────────────────────────────────────
+  const calc = useMemo(() => {
+    if (!product || !template) return null;
+    const qty = Number(values.quantity) || 0;
+    const size = values.size as { w: number; h: number } | null;
+    const paperId = values.paper as string | null;
+    const sides = values.sides as string;
+    const color = values.color as string;
+
+    const stock = paperStocks.find((p) => p.id === paperId);
+    if (!qty || !size || !size.w || !size.h || !stock) {
+      return { ready: false } as const;
+    }
+
+    // ─── Mirror the existing /calculator Full Job tab logic ────────────
+    // Plate auto-selected, working sheets at PLATE size, then:
+    //   • paper cost  = uses ws (plate sheets), divided by parent.cuts
+    //   • printing    = uses imp (impressions on plate)
+    //   • W&T:  non-board both-sides → 1 plate setup, imp = ws × 2
+    //   • Board:    board both-sides   → 2 plate setups, each plate sees ws impressions
+    //   • Single:                       → 1 plate setup, imp = ws
+    const plateKey = autoSelectPlate(size.w, size.h);
+    const ups = calcUps(size.w, size.h, plateKey);
+    const ws = Math.ceil(qty / ups);                    // plate-size working sheets
+    const isBoardPaper = BOARD_PAPER_CATS.includes(stock.category);
+    const useDoublePlate = isBoardPaper && sides === 'both';
+    const imp = useDoublePlate ? ws : (sides === 'both' ? ws * 2 : ws);
+    const numPlates = useDoublePlate ? 2 : 1;
+    const useWorkAndTurn = sides === 'both' && !isBoardPaper;
+
+    // ─── Paper cost (matches existing helper exactly) ───────────────────
+    const parent = PARENT_SHEETS[plateKey];
+    const f = (parent.parentW * parent.parentH * 0.2666) / 828;
+    const paperCost = ((f * stock.gsm * stock.rate_per_kg) / 500) * (ws / parent.cuts);
+
+    // ─── Printing cost (matches existing helper exactly) ────────────────
+    // fixed_charge × numPlates  +  (extras over 1000 free imp per plate) × per_1000
+    const colorMap: Record<string, string> = {
+      four_color: 'Four Color CMYK',
+      two_color: 'Two Color',
+      single_color: 'Single Color',
+      bw: 'Single Color',
+    };
+    const colorLabel = colorMap[color] || 'Single Color';
+    const matchingRate = printingRates.find((r) => r.color_option === colorLabel) || printingRates[0];
+
+    let printCost = 0;
+    let printBreakdown: Array<{ label: string; value: number }> = [];
+    if (matchingRate) {
+      const fixedCharge = Number(matchingRate.fixed_charge) || 0;
+      const per1000 = Number(matchingRate.per_1000_impression) || 0;
+      const pf = fixedCharge * numPlates;                 // total plate setup cost
+      const fi = 1000 * numPlates;                        // free impressions scale with setups
+      const ei = Math.max(0, imp - fi);
+      const er = Math.ceil(ei / 1000) * 1000;
+      printCost = pf + (er / 1000) * per1000;
+
+      if (useDoublePlate) {
+        printBreakdown = [
+          { label: `Front (${colorLabel})`, value: printCost / 2 },
+          { label: `Back (${colorLabel})`, value: printCost / 2 },
+        ];
+      } else if (useWorkAndTurn) {
+        printBreakdown = [{ label: `Printing — Work & Turn (${colorLabel})`, value: printCost }];
+      } else {
+        printBreakdown = [{ label: `Printing (${colorLabel})`, value: printCost }];
+      }
+    }
+
+    // Custom field price impact
+    let extraCost = 0;
+    customFields.forEach((cf) => {
+      const v = values[`custom_${cf.field_key}`];
+      if (!v) return;
+      if (cf.price_impact === 'flat') extraCost += Number(cf.price_value);
+      else if (cf.price_impact === 'per_unit') extraCost += Number(cf.price_value) * qty;
+      else if (cf.price_impact === 'percent') extraCost += (paperCost + printCost) * (Number(cf.price_value) / 100);
+    });
+
+    const subtotal = paperCost + printCost + extraCost;
+    const withMarkup = subtotal * (1 + markupPercent / 100);
+    const tax = withMarkup * (taxPercent / 100);
+    const total = withMarkup + tax;
+    const perUnit = total / qty;
+
+    return {
+      ready: true,
+      qty, ws, ups, imp, plateKey, useWorkAndTurn, useDoublePlate,
+      paperCost, printCost, extraCost,
+      printBreakdown,
+      subtotal, withMarkup, tax, total, perUnit,
+    } as const;
+  }, [product, template, values, paperStocks, printingRates, customFields, markupPercent, taxPercent]);
+
+  function setVal(key: string, v: any) {
+    setValues((prev) => ({ ...prev, [key]: v }));
+  }
+
+  // ─── Render ────────────────────────────────────────────────────────────
+
+  if (loading) {
+    return <FullPageLoading />;
+  }
+
+  if (hasSession === false) {
+    return <SignInRedirect onLogin={() => router.push('/login')} />;
+  }
+
+  if (!product || !template) {
+    return <NotFound slug={slug} />;
+  }
+
+  return (
+    <div style={{ minHeight: '100vh', background: TOKENS.colors.bgDeep, color: TOKENS.colors.text, fontFamily: TOKENS.fonts.body, position: 'relative', overflow: 'hidden' }}>
+      <PageStyles />
+      <AmbientBg accent={template.accent} />
+
+      <Header product={product} template={template} />
+
+      <main style={{ maxWidth: 1240, margin: '0 auto', padding: '110px 32px 60px', position: 'relative', zIndex: 1 }}>
+        <Hero product={product} template={template} />
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 380px', gap: 32, marginTop: 32, alignItems: 'start' }} className="pc-grid">
+          <FormPanel
+            template={template}
+            activeFields={activeFields}
+            customFields={customFields}
+            values={values}
+            setVal={setVal}
+            paperStocks={paperStocks}
+          />
+          <PricePanel
+            calc={calc}
+            currency={currency}
+            product={product}
+            template={template}
+            values={values}
+            onSaveQuote={() => calc?.ready && setShowSaveModal(true)}
+            onDownloadPdf={() => calc?.ready && setShowPrintView(true)}
+            onConvertToOrder={() => calc?.ready && setShowOrderModal(true)}
+          />
+        </div>
+
+        {savedFlash && <Toast text={savedFlash} />}
+      </main>
+
+      {showSaveModal && calc?.ready && (
+        <SaveQuoteModal
+          calc={calc}
+          values={values}
+          product={product}
+          template={template}
+          customers={customers}
+          paperStocks={paperStocks}
+          markupPercent={markupPercent}
+          taxPercent={taxPercent}
+          currency={currency}
+          onClose={() => setShowSaveModal(false)}
+          onSaved={(msg) => { setShowSaveModal(false); setSavedFlash(msg); setTimeout(() => setSavedFlash(''), 3500); }}
+        />
+      )}
+
+      {showOrderModal && calc?.ready && (
+        <ConvertToOrderModal
+          calc={calc}
+          values={values}
+          product={product}
+          template={template}
+          customers={customers}
+          paperStocks={paperStocks}
+          markupPercent={markupPercent}
+          taxPercent={taxPercent}
+          currency={currency}
+          onClose={() => setShowOrderModal(false)}
+          onSaved={(msg) => { setShowOrderModal(false); setSavedFlash(msg); setTimeout(() => setSavedFlash(''), 3500); }}
+        />
+      )}
+
+      {showPrintView && calc?.ready && (
+        <PrintView
+          calc={calc}
+          values={values}
+          product={product}
+          template={template}
+          subscriberInfo={subscriberInfo}
+          paperStocks={paperStocks}
+          markupPercent={markupPercent}
+          taxPercent={taxPercent}
+          currency={currency}
+          onClose={() => setShowPrintView(false)}
+        />
+      )}
+
+      <style>{`
+        @media (max-width: 980px) {
+          .pc-grid { grid-template-columns: 1fr !important; }
+        }
+        @media print {
+          body > *:not(.pc-print-root) { display: none !important; }
+          .pc-print-root { position: static !important; background: #fff !important; }
+        }
+      `}</style>
+    </div>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Header
+// ──────────────────────────────────────────────────────────────────────────
+
+function Header({ product, template }: { product: SubscriberProduct; template: ProductTemplate }) {
+  return (
+    <nav style={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 50, background: 'rgba(10, 8, 21, 0.85)', backdropFilter: 'blur(20px)', borderBottom: `1px solid ${TOKENS.colors.border}`, padding: '14px 0' }}>
+      <div style={{ maxWidth: 1240, margin: '0 auto', padding: '0 32px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+          <Link href="/products" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: TOKENS.colors.textMuted, textDecoration: 'none', fontSize: 14, fontWeight: 500 }}>
+            ← All Products
+          </Link>
+          <div style={{ width: 1, height: 20, background: TOKENS.colors.border }} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: 16 }}>{template.icon}</span>
+            <span style={{ fontSize: 14, color: TOKENS.colors.textDim }}>{template.label}</span>
+            <span style={{ color: TOKENS.colors.textDim }}>›</span>
+            <span style={{ fontSize: 14, color: '#fff', fontWeight: 600 }}>{product.display_name}</span>
+          </div>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
+          <Link href="/dashboard" style={{ fontSize: 14, color: TOKENS.colors.textMuted, textDecoration: 'none', fontWeight: 500 }}>Dashboard</Link>
+          <Link href={`/dashboard?tab=products&edit=${product.id}`} style={{ fontSize: 13, color: TOKENS.colors.accent, textDecoration: 'none', fontWeight: 500 }}>⚙️ Customize</Link>
+        </div>
+      </div>
+    </nav>
+  );
+}
+
+function AmbientBg({ accent }: { accent: string }) {
+  return (
+    <>
+      <div style={{ position: 'absolute', top: -150, left: '50%', transform: 'translateX(-50%)', width: 1100, height: 700, background: `radial-gradient(ellipse, ${accent}33 0%, transparent 65%)`, pointerEvents: 'none', zIndex: 0 }} />
+      <div style={{ position: 'absolute', inset: 0, backgroundImage: 'linear-gradient(rgba(124,58,237,0.04) 1px, transparent 1px), linear-gradient(90deg, rgba(124,58,237,0.04) 1px, transparent 1px)', backgroundSize: '64px 64px', pointerEvents: 'none', zIndex: 0 }} />
+    </>
+  );
+}
+
+function Hero({ product, template }: { product: SubscriberProduct; template: ProductTemplate }) {
+  return (
+    <div style={{ animation: 'pc-fade-up 0.5s ease both' }}>
+      <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: `${template.accent}1a`, border: `1px solid ${template.accent}55`, borderRadius: 100, padding: '6px 14px', fontSize: 12, color: template.accent, fontWeight: 600, marginBottom: 16, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+        {template.icon} {template.label} Calculator
+      </div>
+      <h1 style={{ fontFamily: TOKENS.fonts.display, fontSize: 'clamp(28px, 4vw, 42px)', fontWeight: 800, letterSpacing: '-0.025em', margin: 0, marginBottom: 8 }}>
+        {product.icon} {product.display_name}
+      </h1>
+      <p style={{ fontSize: 15, color: TOKENS.colors.textMuted, maxWidth: 600, margin: 0, lineHeight: 1.6 }}>
+        {product.description}
+      </p>
+    </div>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Form Panel — left column, dynamic fields
+// ──────────────────────────────────────────────────────────────────────────
+
+function FormPanel({
+  template, activeFields, customFields, values, setVal, paperStocks,
+}: {
+  template: ProductTemplate;
+  activeFields: TemplateField[];
+  customFields: CustomField[];
+  values: Record<string, any>;
+  setVal: (k: string, v: any) => void;
+  paperStocks: PaperStock[];
+}) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16, animation: 'pc-fade-up 0.5s 0.1s ease both' }}>
+      {activeFields.map((f, i) => (
+        <FieldCard key={f.key} field={f} value={values[f.key]} setValue={(v) => setVal(f.key, v)} paperStocks={paperStocks} accent={template.accent} delay={i * 0.05} />
+      ))}
+
+      {customFields.length > 0 && (
+        <>
+          <div style={{ fontSize: 11, fontWeight: 600, color: TOKENS.colors.textDim, letterSpacing: '0.1em', textTransform: 'uppercase', marginTop: 8 }}>Custom options</div>
+          {customFields.map((cf) => (
+            <FieldCard
+              key={cf.field_key}
+              field={{ key: `custom_${cf.field_key}`, label: cf.label, type: cf.field_type === 'dropdown' ? 'select' : (cf.field_type as any), required: false, helpText: cf.help_text || undefined, defaultOptions: cf.options }}
+              value={values[`custom_${cf.field_key}`]}
+              setValue={(v) => setVal(`custom_${cf.field_key}`, v)}
+              paperStocks={paperStocks}
+              accent={template.accent}
+              delay={0}
+            />
+          ))}
+        </>
+      )}
+    </div>
+  );
+}
+
+function FieldCard({
+  field, value, setValue, paperStocks, accent, delay,
+}: {
+  field: TemplateField;
+  value: any;
+  setValue: (v: any) => void;
+  paperStocks: PaperStock[];
+  accent: string;
+  delay: number;
+}) {
+  return (
+    <div
+      style={{
+        background: TOKENS.colors.bgCard,
+        border: `1px solid ${TOKENS.colors.border}`,
+        borderRadius: TOKENS.radius.xl,
+        padding: 18,
+        animation: `pc-fade-up 0.4s ${delay}s ease both`,
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 12, gap: 12 }}>
+        <label style={{ fontSize: 13, fontWeight: 600, color: '#fff', letterSpacing: '-0.01em' }}>
+          {field.label}
+          {field.required && <span style={{ color: accent, marginLeft: 4 }}>*</span>}
+        </label>
+        {field.helpText && (
+          <span style={{ fontSize: 11, color: TOKENS.colors.textDim }}>{field.helpText}</span>
+        )}
+      </div>
+      <FieldInput field={field} value={value} setValue={setValue} paperStocks={paperStocks} accent={accent} />
+    </div>
+  );
+}
+
+function FieldInput({
+  field, value, setValue, paperStocks, accent,
+}: {
+  field: TemplateField;
+  value: any;
+  setValue: (v: any) => void;
+  paperStocks: PaperStock[];
+  accent: string;
+}) {
+  // ─── Number ─────────────────────────────────────────────────────────
+  if (field.type === 'number' || field.type === 'page_count') {
+    return (
+      <input
+        type="number"
+        value={value || ''}
+        onChange={(e) => setValue(e.target.value ? Number(e.target.value) : '')}
+        placeholder="0"
+        style={inputStyle(accent)}
+      />
+    );
+  }
+
+  // ─── Sizes ──────────────────────────────────────────────────────────
+  if (field.type === 'sizes') {
+    const opts = field.defaultOptions || [];
+    const selectedKey = value && typeof value === 'object' && value.key ? value.key : '';
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <select
+          value={selectedKey}
+          onChange={(e) => {
+            const opt = opts.find((o) => o.value === e.target.value);
+            if (!opt) return;
+            const meta = (opt.meta || {}) as { w: number; h: number };
+            setValue({ key: opt.value, label: opt.label, w: meta.w, h: meta.h });
+          }}
+          style={selectStyle(accent)}
+        >
+          <option value="">Choose a size…</option>
+          {opts.map((o) => (
+            <option key={o.value} value={o.value}>{o.label}</option>
+          ))}
+        </select>
+        {selectedKey === 'custom' && (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            <input type="number" placeholder="Width (in)" value={value?.w || ''} onChange={(e) => setValue({ ...value, w: Number(e.target.value), key: 'custom' })} style={inputStyle(accent)} />
+            <input type="number" placeholder="Height (in)" value={value?.h || ''} onChange={(e) => setValue({ ...value, h: Number(e.target.value), key: 'custom' })} style={inputStyle(accent)} />
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ─── Paper ──────────────────────────────────────────────────────────
+  if (field.type === 'paper') {
+    return (
+      <select value={value || ''} onChange={(e) => setValue(e.target.value)} style={selectStyle(accent)}>
+        <option value="">Choose paper…</option>
+        {paperStocks.map((p) => (
+          <option key={p.id} value={p.id}>{p.label} · {p.gsm}gsm</option>
+        ))}
+      </select>
+    );
+  }
+
+  // ─── Segment (sides, color) ─────────────────────────────────────────
+  if (field.type === 'segment') {
+    const opts = field.defaultOptions || [];
+    return (
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+        {opts.map((o) => {
+          const active = value === o.value;
+          return (
+            <button
+              key={o.value}
+              onClick={() => setValue(o.value)}
+              style={{
+                flex: '1 1 auto',
+                minWidth: 100,
+                padding: '10px 14px',
+                borderRadius: TOKENS.radius.md,
+                border: `1px solid ${active ? accent : TOKENS.colors.border}`,
+                background: active ? `${accent}22` : 'rgba(0,0,0,0.2)',
+                color: active ? '#fff' : TOKENS.colors.textMuted,
+                fontSize: 13,
+                fontWeight: active ? 600 : 500,
+                cursor: 'pointer',
+                fontFamily: 'inherit',
+                transition: `all 0.18s ${TOKENS.ease.out}`,
+              }}
+            >
+              {o.label}
+            </button>
+          );
+        })}
+      </div>
+    );
+  }
+
+  // ─── Toggle ─────────────────────────────────────────────────────────
+  if (field.type === 'toggle') {
+    return (
+      <div style={{ display: 'flex', gap: 8 }}>
+        {['No', 'Yes'].map((label, i) => {
+          const v = i === 1;
+          const active = value === v;
+          return (
+            <button
+              key={label}
+              onClick={() => setValue(v)}
+              style={{
+                flex: 1,
+                padding: '10px',
+                borderRadius: TOKENS.radius.md,
+                border: `1px solid ${active ? accent : TOKENS.colors.border}`,
+                background: active ? `${accent}22` : 'rgba(0,0,0,0.2)',
+                color: active ? '#fff' : TOKENS.colors.textMuted,
+                fontSize: 13,
+                fontWeight: active ? 600 : 500,
+                cursor: 'pointer',
+                fontFamily: 'inherit',
+                transition: `all 0.18s ${TOKENS.ease.out}`,
+              }}
+            >
+              {label}
+            </button>
+          );
+        })}
+      </div>
+    );
+  }
+
+  // ─── Select / fold / binding ────────────────────────────────────────
+  const opts = (field.defaultOptions as any[] | undefined) || [];
+  return (
+    <select value={value || ''} onChange={(e) => setValue(e.target.value)} style={selectStyle(accent)}>
+      <option value="">— None —</option>
+      {opts.map((o, i) => (
+        <option key={o.value || i} value={o.value || o}>{o.label || o}</option>
+      ))}
+    </select>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Price Panel — right column, sticky
+// ──────────────────────────────────────────────────────────────────────────
+
+function PricePanel({
+  calc, currency, product, template, values, onSaveQuote, onDownloadPdf, onConvertToOrder,
+}: {
+  calc: any;
+  currency: string;
+  product: SubscriberProduct;
+  template: ProductTemplate;
+  values: Record<string, any>;
+  onSaveQuote: () => void;
+  onDownloadPdf: () => void;
+  onConvertToOrder: () => void;
+}) {
+  return (
+    <div style={{ position: 'sticky', top: 90, animation: 'pc-fade-up 0.5s 0.2s ease both' }}>
+      <div style={{ background: 'rgba(19, 15, 42, 0.85)', border: `1px solid ${template.accent}55`, borderRadius: TOKENS.radius['2xl'], padding: 24, backdropFilter: 'blur(20px)', boxShadow: `0 20px 60px ${template.accent}22`, overflow: 'hidden', position: 'relative' }}>
+        <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: `linear-gradient(90deg, ${template.accent}, ${TOKENS.colors.pink})` }} />
+
+        <div style={{ fontSize: 11, fontWeight: 600, color: TOKENS.colors.textDim, letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 8 }}>Estimate</div>
+
+        {!calc?.ready ? (
+          <div style={{ padding: '40px 0', textAlign: 'center' }}>
+            <div style={{ fontSize: 36, marginBottom: 12, opacity: 0.5 }}>🧮</div>
+            <p style={{ fontSize: 14, color: TOKENS.colors.textMuted, margin: 0 }}>Fill in the form to see your price</p>
+          </div>
+        ) : (
+          <>
+            <div style={{ marginBottom: 24 }}>
+              <div style={{ fontFamily: TOKENS.fonts.display, fontSize: 44, fontWeight: 800, letterSpacing: '-0.03em', lineHeight: 1, background: `linear-gradient(135deg, #fff 0%, ${template.accent} 100%)`, WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>
+                {currency}{calc.total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </div>
+              <div style={{ fontSize: 13, color: TOKENS.colors.textMuted, marginTop: 6 }}>
+                {currency}{calc.perUnit.toFixed(2)} each · {calc.qty.toLocaleString()} {product.display_name.toLowerCase()}
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, paddingTop: 16, borderTop: `1px solid ${TOKENS.colors.border}` }}>
+              <PriceRow
+                label="Sheets needed"
+                value={`${calc.ws.toLocaleString()} (${calc.ups}-up on ${calc.plateKey})`}
+              />
+              {calc.useWorkAndTurn && (
+                <PriceRow label="Method" value={`Work & Turn · ${calc.imp.toLocaleString()} impressions`} />
+              )}
+              {calc.useDoublePlate && (
+                <PriceRow label="Method" value={`2 plate setups · ${calc.imp.toLocaleString()} imp/plate`} />
+              )}
+              <PriceRow label="Paper" value={`${currency}${calc.paperCost.toFixed(2)}`} />
+              {calc.printBreakdown && calc.printBreakdown.length > 1 ? (
+                calc.printBreakdown.map((b: { label: string; value: number }, i: number) => (
+                  <PriceRow key={i} label={b.label} value={`${currency}${b.value.toFixed(2)}`} />
+                ))
+              ) : (
+                <PriceRow label="Printing" value={`${currency}${calc.printCost.toFixed(2)}`} />
+              )}
+              {calc.extraCost > 0 && <PriceRow label="Add-ons" value={`${currency}${calc.extraCost.toFixed(2)}`} />}
+              <PriceRow label="Subtotal" value={`${currency}${calc.subtotal.toFixed(2)}`} />
+              <PriceRow label="Markup" value={`${currency}${(calc.withMarkup - calc.subtotal).toFixed(2)}`} />
+              {calc.tax > 0 && <PriceRow label="Tax" value={`${currency}${calc.tax.toFixed(2)}`} />}
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 20 }}>
+              <button onClick={onSaveQuote} style={{ ...primaryButton(template.accent), width: '100%' }}>📋 Save Quote</button>
+              <button onClick={onDownloadPdf} style={{ ...ghostButton(), width: '100%' }}>📄 Download PDF</button>
+              <button onClick={onConvertToOrder} style={{ ...ghostButton(), width: '100%' }}>🛒 Convert to Order</button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function PriceRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 13 }}>
+      <span style={{ color: TOKENS.colors.textMuted }}>{label}</span>
+      <span style={{ color: '#fff', fontFamily: TOKENS.fonts.mono, fontSize: 12 }}>{value}</span>
+    </div>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Save Quote Modal
+// ──────────────────────────────────────────────────────────────────────────
+
+interface ModalCommonProps {
+  calc: any;
+  values: Record<string, any>;
+  product: SubscriberProduct;
+  template: ProductTemplate;
+  customers: Customer[];
+  paperStocks: PaperStock[];
+  markupPercent: number;
+  taxPercent: number;
+  currency: string;
+  onClose: () => void;
+  onSaved: (msg: string) => void;
+}
+
+function genQuoteNum() {
+  const d = new Date();
+  return `Q${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}-${Math.floor(Math.random() * 900 + 100)}`;
+}
+
+function buildJobSummary(calc: any, values: Record<string, any>, product: SubscriberProduct, paperStocks: PaperStock[]): {
+  job_size: string; paper_type: string; finishing: string;
+} {
+  const size = values.size as { label?: string; w?: number; h?: number } | undefined;
+  const stock = paperStocks.find((p) => p.id === values.paper);
+  const finishParts: string[] = [];
+  ['lamination', 'uv', 'foiling', 'embossing', 'rounded_corners', 'spot_uv'].forEach((k) => {
+    const v = values[k];
+    if (v && v !== 'No' && v !== false) finishParts.push(typeof v === 'string' ? v : k);
+  });
+  return {
+    job_size: size?.label || `${size?.w || ''}×${size?.h || ''}`,
+    paper_type: stock ? `${stock.label} ${stock.gsm}gsm` : '',
+    finishing: finishParts.join(', '),
+  };
+}
+
+function SaveQuoteModal(props: ModalCommonProps) {
+  const { calc, values, product, template, customers, paperStocks, markupPercent, taxPercent, currency, onClose, onSaved } = props;
+  const [pickedCustomer, setPickedCustomer] = useState<Customer | null>(null);
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
+  const [company, setCompany] = useState('');
+  const [jobTitle, setJobTitle] = useState('');
+  const [validUntil, setValidUntil] = useState(() => {
+    const d = new Date(); d.setDate(d.getDate() + 30); return d.toISOString().split('T')[0];
+  });
+  const [notes, setNotes] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  function pickCustomer(c: Customer | null) {
+    setPickedCustomer(c);
+    if (c) {
+      setName(c.name || '');
+      setEmail(c.email || '');
+      setPhone(c.phone || '');
+      setCompany(c.company || '');
+    }
+  }
+
+  async function save() {
+    setError('');
+    if (!name.trim()) { setError('Customer name is required'); return; }
+    setSaving(true);
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) { setSaving(false); setError('Session expired'); return; }
+    const { job_size, paper_type, finishing } = buildJobSummary(calc, values, product, paperStocks);
+    const colorMap: Record<string, string> = { four_color: 'Four Color CMYK', two_color: 'Two Color', single_color: 'Single Color', bw: 'Black & White' };
+    const payload = {
+      subscriber_id: session.user.id,
+      quote_number: genQuoteNum(),
+      customer_name: name,
+      customer_email: email,
+      customer_phone: phone,
+      customer_company: company,
+      job_title: jobTitle || product.display_name,
+      job_size,
+      paper_type,
+      quantity: Number(values.quantity) || 0,
+      sides: values.sides === 'both' ? 'Both Sides' : 'Single Side',
+      color_option: colorMap[values.color] || 'Full Color',
+      finishing,
+      lamination: values.lamination || '',
+      uv_coating: values.uv || '',
+      binding: values.binding || '',
+      subtotal: Number(calc.subtotal) || 0,
+      markup_amount: Number(calc.withMarkup - calc.subtotal) || 0,
+      markup_percent: markupPercent,
+      tax_amount: Number(calc.tax) || 0,
+      tax_percent: taxPercent,
+      total_amount: Number(calc.total) || 0,
+      currency_symbol: currency,
+      notes,
+      status: 'Draft',
+      valid_until: validUntil,
+      // New product-template fields
+      subscriber_product_id: product.id,
+      template_id: template.id,
+      product_data: { values, calc: { sheets: calc.ws, ups: calc.ups, plate: calc.plateKey, useWorkAndTurn: calc.useWorkAndTurn } },
+    };
+    const { error: insErr } = await supabase.from('quotes').insert(payload);
+    setSaving(false);
+    if (insErr) { setError('Save failed: ' + insErr.message); return; }
+    onSaved('✓ Quote saved! Visit /quotes to view all.');
+  }
+
+  return (
+    <ModalShell title="Save Quote" subtitle="Capture customer details and lock in this quote" onClose={onClose}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <ModalField label="Customer">
+          <select value={pickedCustomer?.id || ''} onChange={(e) => pickCustomer(customers.find((c) => c.id === e.target.value) || null)} style={modalInput()}>
+            <option value="">— Type new customer below —</option>
+            {customers.map((c) => (
+              <option key={c.id} value={c.id}>{c.name}{c.company ? ` (${c.company})` : ''}</option>
+            ))}
+          </select>
+        </ModalField>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }} className="pc-2col">
+          <ModalField label="Name *"><input value={name} onChange={(e) => setName(e.target.value)} style={modalInput()} placeholder="Customer name" /></ModalField>
+          <ModalField label="Company"><input value={company} onChange={(e) => setCompany(e.target.value)} style={modalInput()} /></ModalField>
+          <ModalField label="Email"><input value={email} onChange={(e) => setEmail(e.target.value)} type="email" style={modalInput()} /></ModalField>
+          <ModalField label="Phone"><input value={phone} onChange={(e) => setPhone(e.target.value)} style={modalInput()} /></ModalField>
+        </div>
+
+        <ModalField label="Job title"><input value={jobTitle} onChange={(e) => setJobTitle(e.target.value)} placeholder={product.display_name} style={modalInput()} /></ModalField>
+        <ModalField label="Valid until"><input type="date" value={validUntil} onChange={(e) => setValidUntil(e.target.value)} style={modalInput()} /></ModalField>
+        <ModalField label="Notes"><textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} style={{ ...modalInput(), fontFamily: 'inherit' }} placeholder="Internal notes…" /></ModalField>
+
+        <SummaryBlock calc={calc} values={values} currency={currency} product={product} />
+
+        {error && <div style={{ color: '#EF4444', fontSize: 13 }}>{error}</div>}
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 8 }}>
+          <button onClick={onClose} style={ghostButton()}>Cancel</button>
+          <button onClick={save} disabled={saving} style={{ ...primaryButton(template.accent), opacity: saving ? 0.6 : 1 }}>
+            {saving ? 'Saving…' : '💾 Save Quote'}
+          </button>
+        </div>
+      </div>
+    </ModalShell>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Convert to Order Modal
+// ──────────────────────────────────────────────────────────────────────────
+
+function ConvertToOrderModal(props: ModalCommonProps) {
+  const { calc, values, product, template, customers, paperStocks, markupPercent, taxPercent, currency, onClose, onSaved } = props;
+  const [pickedCustomer, setPickedCustomer] = useState<Customer | null>(null);
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
+  const [jobTitle, setJobTitle] = useState('');
+  const [advancePaid, setAdvancePaid] = useState(0);
+  const [notes, setNotes] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  function pickCustomer(c: Customer | null) {
+    setPickedCustomer(c);
+    if (c) { setName(c.name || ''); setEmail(c.email || ''); setPhone(c.phone || ''); }
+  }
+
+  async function save() {
+    setError('');
+    if (!name.trim()) { setError('Customer name is required'); return; }
+    setSaving(true);
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) { setSaving(false); return; }
+    const { job_size, paper_type, finishing } = buildJobSummary(calc, values, product, paperStocks);
+    const total = Number(calc.total) || 0;
+    const adv = Number(advancePaid) || 0;
+    const payload = {
+      subscriber_id: session.user.id,
+      customer_name: name,
+      customer_email: email,
+      customer_phone: phone,
+      job_title: jobTitle || product.display_name,
+      job_size,
+      paper_type,
+      quantity: Number(values.quantity) || 0,
+      finishing,
+      total_amount: total,
+      advance_paid: adv,
+      due_amount: Math.max(0, total - adv),
+      status: 'Pending',
+      notes,
+      subscriber_product_id: product.id,
+      template_id: template.id,
+      product_data: { values, calc: { sheets: calc.ws, ups: calc.ups, plate: calc.plateKey } },
+    };
+    const { error: insErr } = await supabase.from('orders').insert(payload);
+    setSaving(false);
+    if (insErr) { setError('Save failed: ' + insErr.message); return; }
+    onSaved('✓ Order created! Visit /orders to track it.');
+  }
+
+  return (
+    <ModalShell title="Convert to Order" subtitle="Move from quote to confirmed order" onClose={onClose}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <ModalField label="Customer">
+          <select value={pickedCustomer?.id || ''} onChange={(e) => pickCustomer(customers.find((c) => c.id === e.target.value) || null)} style={modalInput()}>
+            <option value="">— Type new customer below —</option>
+            {customers.map((c) => (<option key={c.id} value={c.id}>{c.name}{c.company ? ` (${c.company})` : ''}</option>))}
+          </select>
+        </ModalField>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }} className="pc-2col">
+          <ModalField label="Name *"><input value={name} onChange={(e) => setName(e.target.value)} style={modalInput()} /></ModalField>
+          <ModalField label="Phone"><input value={phone} onChange={(e) => setPhone(e.target.value)} style={modalInput()} /></ModalField>
+        </div>
+        <ModalField label="Email"><input value={email} onChange={(e) => setEmail(e.target.value)} type="email" style={modalInput()} /></ModalField>
+        <ModalField label="Job title"><input value={jobTitle} onChange={(e) => setJobTitle(e.target.value)} placeholder={product.display_name} style={modalInput()} /></ModalField>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }} className="pc-2col">
+          <ModalField label="Advance paid">
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ color: TOKENS.colors.textMuted, fontSize: 14 }}>{currency}</span>
+              <input type="number" value={advancePaid} onChange={(e) => setAdvancePaid(Number(e.target.value))} style={modalInput()} />
+            </div>
+          </ModalField>
+          <ModalField label="Due amount">
+            <div style={{ padding: '10px 14px', background: 'rgba(0,0,0,0.25)', border: `1px solid ${TOKENS.colors.border}`, borderRadius: TOKENS.radius.md, fontSize: 14, color: '#fff' }}>
+              {currency}{(Math.max(0, (Number(calc.total) || 0) - (Number(advancePaid) || 0))).toFixed(2)}
+            </div>
+          </ModalField>
+        </div>
+
+        <ModalField label="Notes"><textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} style={{ ...modalInput(), fontFamily: 'inherit' }} /></ModalField>
+
+        <SummaryBlock calc={calc} values={values} currency={currency} product={product} />
+
+        {error && <div style={{ color: '#EF4444', fontSize: 13 }}>{error}</div>}
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 8 }}>
+          <button onClick={onClose} style={ghostButton()}>Cancel</button>
+          <button onClick={save} disabled={saving} style={{ ...primaryButton(template.accent), opacity: saving ? 0.6 : 1 }}>
+            {saving ? 'Creating…' : '🛒 Create Order'}
+          </button>
+        </div>
+      </div>
+    </ModalShell>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Print View (PDF via browser print)
+// ──────────────────────────────────────────────────────────────────────────
+
+function PrintView({
+  calc, values, product, template, subscriberInfo, paperStocks, markupPercent, taxPercent, currency, onClose,
+}: {
+  calc: any;
+  values: Record<string, any>;
+  product: SubscriberProduct;
+  template: ProductTemplate;
+  subscriberInfo: SubscriberInfo;
+  paperStocks: PaperStock[];
+  markupPercent: number;
+  taxPercent: number;
+  currency: string;
+  onClose: () => void;
+}) {
+  const { job_size, paper_type, finishing } = buildJobSummary(calc, values, product, paperStocks);
+  const today = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+  const validUntil = (() => { const d = new Date(); d.setDate(d.getDate() + 30); return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }); })();
+  const fmt = (n: number) => `${currency}${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+  function doPrint() { setTimeout(() => window.print(), 100); }
+
+  useEffect(() => {
+    doPrint();
+  }, []);
+
+  return (
+    <div className="pc-print-root" style={{ position: 'fixed', inset: 0, zIndex: 200, background: '#fff', overflow: 'auto' }}>
+      <div style={{ position: 'sticky', top: 0, background: '#fff', borderBottom: '1px solid #e5e5e5', padding: '14px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }} className="pc-print-bar">
+        <span style={{ fontSize: 14, color: '#666' }}>Print preview · use browser print dialog to save as PDF</span>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button onClick={() => window.print()} style={{ padding: '8px 14px', background: '#1A1A1A', color: '#fff', border: 'none', borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>🖨️ Print / Save PDF</button>
+          <button onClick={onClose} style={{ padding: '8px 14px', background: '#fff', color: '#1A1A1A', border: '1px solid #d4d4d4', borderRadius: 6, fontSize: 13, cursor: 'pointer' }}>✕ Close</button>
+        </div>
+      </div>
+
+      <div style={{ fontFamily: "'DM Sans', sans-serif", maxWidth: 720, margin: '0 auto', padding: 40, color: '#1A1A1A' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 36, paddingBottom: 20, borderBottom: '2px solid #1A1A1A' }}>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+              <div style={{ width: 10, height: 10, background: template.accent, borderRadius: '50%' }} />
+              <span style={{ fontSize: 18, fontWeight: 700, letterSpacing: '-0.02em' }}>{subscriberInfo.business_name || 'Your Business'}</span>
+            </div>
+            <p style={{ fontSize: 12, color: '#888', margin: 0 }}>{subscriberInfo.email}</p>
+          </div>
+          <div style={{ textAlign: 'right' }}>
+            <div style={{ fontSize: 11, color: '#888', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Quote</div>
+            <div style={{ fontSize: 18, fontWeight: 700, fontFamily: "'Plus Jakarta Sans', sans-serif" }}>{genQuoteNum()}</div>
+            <div style={{ fontSize: 12, color: '#666', marginTop: 4 }}>{today}</div>
+            <div style={{ fontSize: 11, color: '#888', marginTop: 2 }}>Valid until {validUntil}</div>
+          </div>
+        </div>
+
+        <div style={{ marginBottom: 28 }}>
+          <div style={{ fontSize: 10, fontWeight: 600, color: '#888', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 6 }}>Job</div>
+          <div style={{ fontSize: 17, fontWeight: 700, marginBottom: 14 }}>{product.display_name}</div>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <tbody>
+              {[
+                ['Quantity', String(values.quantity || '—')],
+                ['Size', job_size],
+                ['Paper', paper_type],
+                ['Sides', values.sides === 'both' ? 'Both Sides' : 'Single Side'],
+                ['Color', { four_color: 'Full Color (CMYK)', two_color: '2 Colors', single_color: '1 Color', bw: 'Black & White' }[values.color as string] || ''],
+                ...(finishing ? [['Finishing', finishing]] : []),
+                ['Method', calc.useWorkAndTurn ? 'Work & Turn (1 plate setup)' : (calc.useDoublePlate ? '2 plate setups' : 'Single side')],
+              ].map(([label, value], i) => (
+                <tr key={i} style={{ borderBottom: '1px solid #eee' }}>
+                  <td style={{ padding: '8px 0', color: '#888', width: 140 }}>{label}</td>
+                  <td style={{ padding: '8px 0', fontWeight: 500 }}>{value}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <div style={{ marginTop: 28, padding: 20, background: '#FAFAFA', borderRadius: 8 }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <tbody>
+              <tr><td style={{ padding: '6px 0', color: '#666' }}>Subtotal</td><td style={{ padding: '6px 0', textAlign: 'right' }}>{fmt(calc.subtotal)}</td></tr>
+              <tr><td style={{ padding: '6px 0', color: '#666' }}>Markup ({markupPercent}%)</td><td style={{ padding: '6px 0', textAlign: 'right' }}>{fmt(calc.withMarkup - calc.subtotal)}</td></tr>
+              {calc.tax > 0 && <tr><td style={{ padding: '6px 0', color: '#666' }}>Tax ({taxPercent}%)</td><td style={{ padding: '6px 0', textAlign: 'right' }}>{fmt(calc.tax)}</td></tr>}
+              <tr style={{ borderTop: '2px solid #1A1A1A' }}>
+                <td style={{ padding: '12px 0 4px', fontWeight: 700, fontSize: 15 }}>Total</td>
+                <td style={{ padding: '12px 0 4px', textAlign: 'right', fontWeight: 700, fontSize: 18, fontFamily: "'Plus Jakarta Sans', sans-serif" }}>{fmt(calc.total)}</td>
+              </tr>
+              <tr><td colSpan={2} style={{ paddingTop: 4, fontSize: 11, color: '#888', textAlign: 'right' }}>{fmt(calc.perUnit)} per piece</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div style={{ marginTop: 36, paddingTop: 16, borderTop: '1px solid #eee', fontSize: 11, color: '#888', textAlign: 'center' }}>
+          Thank you for your business. This quote is valid for 30 days from the date issued.
+        </div>
+      </div>
+
+      <style>{`
+        @media print {
+          .pc-print-bar { display: none !important; }
+          @page { margin: 1in; }
+        }
+      `}</style>
+    </div>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Modal shell + reusable bits
+// ──────────────────────────────────────────────────────────────────────────
+
+function ModalShell({ title, subtitle, children, onClose }: { title: string; subtitle?: string; children: React.ReactNode; onClose: () => void }) {
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(8px)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, animation: 'pc-fade-in 0.2s ease' }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: TOKENS.colors.bgPanel, border: `1px solid ${TOKENS.colors.borderStrong}`, borderRadius: TOKENS.radius['2xl'], padding: 28, maxWidth: 580, width: '100%', maxHeight: '90vh', overflow: 'auto', boxShadow: TOKENS.shadow.lg }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 22 }}>
+          <div>
+            <h2 style={{ fontFamily: TOKENS.fonts.display, fontSize: 22, fontWeight: 700, margin: 0 }}>{title}</h2>
+            {subtitle && <p style={{ fontSize: 13, color: TOKENS.colors.textMuted, margin: 0, marginTop: 4 }}>{subtitle}</p>}
+          </div>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', color: TOKENS.colors.textMuted, fontSize: 24, cursor: 'pointer', padding: 4 }}>✕</button>
+        </div>
+        {children}
+      </div>
+      <style>{`@media (max-width: 600px) { .pc-2col { grid-template-columns: 1fr !important; } }`}</style>
+    </div>
+  );
+}
+
+function ModalField({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#fff', marginBottom: 6 }}>{label}</label>
+      {children}
+    </div>
+  );
+}
+
+function modalInput(): React.CSSProperties {
+  return {
+    width: '100%',
+    background: 'rgba(0,0,0,0.25)',
+    color: '#fff',
+    border: `1px solid ${TOKENS.colors.border}`,
+    borderRadius: TOKENS.radius.md,
+    padding: '10px 14px',
+    fontSize: 14,
+    outline: 'none',
+  };
+}
+
+function SummaryBlock({ calc, values, currency, product }: { calc: any; values: Record<string, any>; currency: string; product: SubscriberProduct }) {
+  return (
+    <div style={{ background: 'rgba(124,58,237,0.08)', border: `1px solid ${TOKENS.colors.border}`, borderRadius: TOKENS.radius.md, padding: 14 }}>
+      <div style={{ fontSize: 11, fontWeight: 600, color: TOKENS.colors.textDim, letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 8 }}>Quote Summary</div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 4 }}>
+        <span style={{ color: TOKENS.colors.textMuted }}>{product.display_name} × {values.quantity || 0}</span>
+        <span style={{ color: '#fff', fontFamily: TOKENS.fonts.mono }}>{currency}{(Number(calc.total) || 0).toFixed(2)}</span>
+      </div>
+      <div style={{ fontSize: 11, color: TOKENS.colors.textDim, marginTop: 4 }}>{currency}{(Number(calc.perUnit) || 0).toFixed(2)} each</div>
+    </div>
+  );
+}
+
+function Toast({ text }: { text: string }) {
+  return (
+    <div style={{ position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)', background: 'rgba(16,185,129,0.95)', color: '#fff', padding: '12px 20px', borderRadius: 12, fontSize: 14, fontWeight: 500, boxShadow: '0 8px 24px rgba(16,185,129,0.4)', zIndex: 110, animation: 'pc-fade-up 0.3s ease both' }}>
+      {text}
+    </div>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Empty / loading / not-found states
+// ──────────────────────────────────────────────────────────────────────────
+
+function FullPageLoading() {
+  return (
+    <div style={{ minHeight: '100vh', background: TOKENS.colors.bgDeep, display: 'flex', alignItems: 'center', justifyContent: 'center', color: TOKENS.colors.textMuted, fontFamily: TOKENS.fonts.body }}>
+      <PageStyles />
+      <div style={{ textAlign: 'center' }}>
+        <div style={{ width: 40, height: 40, borderRadius: '50%', border: `3px solid ${TOKENS.colors.border}`, borderTopColor: TOKENS.colors.primary, animation: 'pc-spin 0.8s linear infinite', margin: '0 auto 16px' }} />
+        <div style={{ fontSize: 14 }}>Loading product…</div>
+      </div>
+    </div>
+  );
+}
+
+function SignInRedirect({ onLogin }: { onLogin: () => void }) {
+  return (
+    <div style={{ minHeight: '100vh', background: TOKENS.colors.bgDeep, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: TOKENS.fonts.body }}>
+      <PageStyles />
+      <div style={{ background: TOKENS.colors.bgCard, border: `1px solid ${TOKENS.colors.border}`, borderRadius: TOKENS.radius.xl, padding: 40, textAlign: 'center', maxWidth: 380 }}>
+        <div style={{ fontSize: 40, marginBottom: 12 }}>🔐</div>
+        <h2 style={{ fontFamily: TOKENS.fonts.display, fontSize: 22, fontWeight: 700, color: '#fff', margin: 0, marginBottom: 8 }}>Please sign in</h2>
+        <p style={{ color: TOKENS.colors.textMuted, fontSize: 14, marginBottom: 20 }}>You need to be signed in to use the calculator.</p>
+        <button onClick={onLogin} style={primaryButton(TOKENS.colors.primary)}>Sign In →</button>
+      </div>
+    </div>
+  );
+}
+
+function NotFound({ slug }: { slug: string }) {
+  return (
+    <div style={{ minHeight: '100vh', background: TOKENS.colors.bgDeep, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: TOKENS.fonts.body, color: TOKENS.colors.text }}>
+      <PageStyles />
+      <div style={{ background: TOKENS.colors.bgCard, border: `1px solid ${TOKENS.colors.border}`, borderRadius: TOKENS.radius.xl, padding: 40, textAlign: 'center', maxWidth: 460 }}>
+        <div style={{ fontSize: 48, marginBottom: 16 }}>🔍</div>
+        <h2 style={{ fontFamily: TOKENS.fonts.display, fontSize: 24, fontWeight: 700, margin: 0, marginBottom: 8 }}>Product not found</h2>
+        <p style={{ color: TOKENS.colors.textMuted, fontSize: 14, marginBottom: 24 }}>
+          We couldn&apos;t find <code style={{ background: 'rgba(255,255,255,0.06)', padding: '2px 6px', borderRadius: 4, fontFamily: TOKENS.fonts.mono }}>{slug}</code> in your catalog. It may have been removed, or you might need to add it.
+        </p>
+        <Link href="/products" style={primaryButton(TOKENS.colors.primary)}>← Back to Products</Link>
+      </div>
+    </div>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Style helpers
+// ──────────────────────────────────────────────────────────────────────────
+
+function inputStyle(accent: string): React.CSSProperties {
+  return {
+    width: '100%',
+    background: 'rgba(0,0,0,0.25)',
+    color: '#fff',
+    border: `1px solid ${TOKENS.colors.border}`,
+    borderRadius: TOKENS.radius.md,
+    padding: '11px 14px',
+    fontSize: 14,
+    fontFamily: 'inherit',
+    outline: 'none',
+    transition: `border-color 0.18s ${TOKENS.ease.out}`,
+  };
+}
+
+function selectStyle(accent: string): React.CSSProperties {
+  return {
+    ...inputStyle(accent),
+    appearance: 'none',
+    WebkitAppearance: 'none',
+    backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%23A78BFA' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E")`,
+    backgroundRepeat: 'no-repeat',
+    backgroundPosition: 'right 14px center',
+    paddingRight: 36,
+  };
+}
+
+function primaryButton(accent: string): React.CSSProperties {
+  return {
+    padding: '12px 20px',
+    background: `linear-gradient(135deg, ${accent} 0%, ${TOKENS.colors.pink} 100%)`,
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: 600,
+    fontFamily: TOKENS.fonts.display,
+    borderRadius: TOKENS.radius.md,
+    border: 'none',
+    cursor: 'pointer',
+    textDecoration: 'none',
+    boxShadow: `0 6px 20px ${accent}44`,
+    transition: `all 0.2s ${TOKENS.ease.out}`,
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  };
+}
+
+function ghostButton(): React.CSSProperties {
+  return {
+    padding: '11px 18px',
+    background: 'rgba(255,255,255,0.04)',
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: 500,
+    fontFamily: TOKENS.fonts.body,
+    borderRadius: TOKENS.radius.md,
+    border: `1px solid ${TOKENS.colors.border}`,
+    cursor: 'pointer',
+    textAlign: 'center',
+    transition: `all 0.2s ${TOKENS.ease.out}`,
+  };
+}
+
+function PageStyles() {
+  return (
+    <style>{`
+      @keyframes pc-fade-up { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+      @keyframes pc-fade-in { from { opacity: 0; } to { opacity: 1; } }
+      @keyframes pc-spin { to { transform: rotate(360deg); } }
+      @keyframes pc-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+      input::placeholder, textarea::placeholder { color: rgba(255,255,255,0.3); }
+      input:focus, select:focus, textarea:focus { border-color: rgba(148,97,251,0.6) !important; box-shadow: 0 0 0 3px rgba(124,58,237,0.15); }
+      *::-webkit-scrollbar { width: 8px; }
+      *::-webkit-scrollbar-track { background: rgba(0,0,0,0.2); }
+      *::-webkit-scrollbar-thumb { background: rgba(124,58,237,0.3); border-radius: 4px; }
+      button:hover { filter: brightness(1.05); transform: translateY(-1px); }
+      button:active { transform: translateY(0); }
+    `}</style>
+  );
+}
