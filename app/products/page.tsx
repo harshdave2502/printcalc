@@ -222,7 +222,7 @@ function AmbientBackground() {
 
 function HeroSection() {
   return (
-    <div style={{ textAlign: 'center', marginBottom: 56, animation: 'pc-fade-up 0.6s ease both' }}>
+    <div style={{ textAlign: 'center', marginBottom: 40, animation: 'pc-fade-up 0.6s ease both' }}>
       <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: 'rgba(124,58,237,0.12)', border: `1px solid ${TOKENS.colors.borderStrong}`, borderRadius: 100, padding: '6px 18px', fontSize: 13, color: TOKENS.colors.accent, fontWeight: 500, marginBottom: 24 }}>
         <span style={{ width: 6, height: 6, borderRadius: '50%', background: TOKENS.colors.pink, boxShadow: `0 0 8px ${TOKENS.colors.pink}`, animation: 'pc-blink 2s infinite' }} />
         Product Catalog
@@ -231,8 +231,17 @@ function HeroSection() {
         Pick what you want to <span style={{ background: TOKENS.colors.gradient, WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>price</span>
       </h1>
       <p style={{ fontSize: 17, color: TOKENS.colors.textMuted, maxWidth: 560, margin: '0 auto', lineHeight: 1.6 }}>
-        Each product has only the fields it needs. No clutter, no confusion — just answer 5–7 questions and get your price.
+        Each product has only the fields it needs. Pick a card to open the calculator.
       </p>
+
+      <div style={{ display: 'inline-flex', gap: 6, marginTop: 24, padding: 4, background: 'rgba(255,255,255,0.04)', border: `1px solid ${TOKENS.colors.border}`, borderRadius: 100 }}>
+        <span style={{ padding: '8px 18px', borderRadius: 100, background: TOKENS.colors.gradient, color: '#fff', fontSize: 13, fontWeight: 600, fontFamily: TOKENS.fonts.display, boxShadow: TOKENS.shadow.glow }}>
+          🔧 Subscriber View
+        </span>
+        <span style={{ padding: '8px 18px', fontSize: 13, color: TOKENS.colors.textMuted, fontWeight: 500 }}>
+          🚀 Quick Quote (click any product → toggle in header)
+        </span>
+      </div>
     </div>
   );
 }

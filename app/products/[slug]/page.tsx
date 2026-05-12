@@ -437,9 +437,10 @@ function Header({ product, template }: { product: SubscriberProduct; template: P
             <span style={{ fontSize: 14, color: '#fff', fontWeight: 600 }}>{product.display_name}</span>
           </div>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+          <Link href={`/quote/${product.slug}`} style={{ fontSize: 13, color: TOKENS.colors.accent, textDecoration: 'none', fontWeight: 500, padding: '6px 12px', border: `1px solid ${TOKENS.colors.borderStrong}`, borderRadius: 8 }}>🚀 Quick Quote View</Link>
           <Link href="/dashboard" style={{ fontSize: 14, color: TOKENS.colors.textMuted, textDecoration: 'none', fontWeight: 500 }}>Dashboard</Link>
-          <Link href={`/dashboard?tab=products&edit=${product.id}`} style={{ fontSize: 13, color: TOKENS.colors.accent, textDecoration: 'none', fontWeight: 500 }}>⚙️ Customize</Link>
+          <Link href={`/dashboard/products/${product.id}`} style={{ fontSize: 13, color: TOKENS.colors.accent, textDecoration: 'none', fontWeight: 500 }}>⚙️ Customize</Link>
         </div>
       </div>
     </nav>
