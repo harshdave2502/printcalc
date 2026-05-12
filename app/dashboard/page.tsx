@@ -487,7 +487,7 @@ export default function DashboardPage() {
   const stockCats=[...new Set(paperStocks.map((p:any)=>p.category))];
   const platenames=[...new Set(printRates.map(r=>r.plate_name))];
   const SBadge=({s}:any)=><span style={{padding:'3px 10px',borderRadius:4,fontSize:11,fontWeight:600,background:SBG[s]||'#F5F5F5',color:SC[s]||'#888'}}>{s}</span>;
-  const tabs=[{id:'overview',l:'Overview'},{id:'print_rates',l:'Printing Rates'},{id:'customers',l:'Customers'},{id:'quotes',l:'Quotes'},{id:'orders',l:'Orders'},{id:'rates',l:'Paper Rates'},{id:'stocks',l:'Stock Management'},{id:'embed',l:'🔗 Embed & API'},{id:'settings',l:'Settings'}];
+  const tabs=[{id:'overview',l:'Overview'},{id:'products',l:'📦 Products',href:'/dashboard/products'},{id:'print_rates',l:'Printing Rates'},{id:'customers',l:'Customers'},{id:'quotes',l:'Quotes'},{id:'orders',l:'Orders'},{id:'rates',l:'Paper Rates'},{id:'stocks',l:'Stock Management'},{id:'embed',l:'🔗 Embed & API'},{id:'settings',l:'Settings'}] as Array<{id:string;l:string;href?:string}>;
 
   // Shared input style
   const IS:any={padding:'8px 10px',border:'1.5px solid #E8E8E8',borderRadius:8,fontSize:13,fontFamily:'DM Sans,sans-serif',color:'#1A1A1A',background:'#FAFAFA',outline:'none'};
@@ -568,7 +568,10 @@ export default function DashboardPage() {
       </nav>
 
       <div className="tabs-wrap">
-        {tabs.map(t=><button key={t.id} className={`tab ${tab===t.id?'active':''}`} onClick={()=>{setTab(t.id);setSelCust(null);}}>{t.l}</button>)}
+        {tabs.map(t=>t.href
+          ? <a key={t.id} href={t.href} className="tab" style={{textDecoration:'none'}}>{t.l}</a>
+          : <button key={t.id} className={`tab ${tab===t.id?'active':''}`} onClick={()=>{setTab(t.id);setSelCust(null);}}>{t.l}</button>
+        )}
       </div>
 
       <div className="content">
