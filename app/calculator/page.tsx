@@ -582,11 +582,14 @@ export default function Home(){
           {subData&&<span style={{fontSize:11,color:'#888',marginLeft:4}}>· {subData.business_name}</span>}
         </div>
         <div style={{display:'flex',alignItems:'center',gap:12}}>
-          {user?(<><a href="/quotes" className="nav-link">Quotes</a><a href="/orders" className="nav-link">Orders</a><a href="/dashboard" className="nav-link">Dashboard</a><button className="nav-btn" onClick={logout}>Logout</button></>):(<><a href="/login" className="nav-link">Login</a><a href="/signup" style={{fontSize:13,fontWeight:500,color:'#fff',background:'#C84B31',border:'none',padding:'7px 16px',borderRadius:6,cursor:'pointer',fontFamily:'inherit',textDecoration:'none'}}>Sign up free</a></>)}
+          {user?(<><a href="/products" className="nav-link">📦 Products</a><a href="/projects" className="nav-link">🎁 Projects</a><a href="/quotes" className="nav-link">Quotes</a><a href="/orders" className="nav-link">Orders</a><a href="/dashboard" className="nav-link">Dashboard</a><button className="nav-btn" onClick={logout}>Logout</button></>):(<><a href="/login" className="nav-link">Login</a><a href="/signup" style={{fontSize:13,fontWeight:500,color:'#fff',background:'#C84B31',border:'none',padding:'7px 16px',borderRadius:6,cursor:'pointer',fontFamily:'inherit',textDecoration:'none'}}>Sign up free</a></>)}
         </div>
       </div>
       <div className="calc-tabs">
         {[{id:'paper',l:'📄 Paper'},{id:'printing',l:'🖨️ Printing'},{id:'fulljob',l:'✅ Full Job'}].map(t=>(<button key={t.id} className={`calc-tab ${tab===t.id?'active':''}`} onClick={()=>setTab(t.id as any)}>{t.l}</button>))}
+        <div style={{flex:1}}/>
+        <a href="/products" style={{padding:'10px 16px',fontSize:13,fontWeight:500,color:'#7C3AED',textDecoration:'none',borderLeft:'1px solid #eee',display:'inline-flex',alignItems:'center',gap:6,whiteSpace:'nowrap'}}>📦 Products</a>
+        <a href="/projects" style={{padding:'10px 16px',fontSize:13,fontWeight:500,color:'#D946EF',textDecoration:'none',display:'inline-flex',alignItems:'center',gap:6,whiteSpace:'nowrap'}}>🎁 Project Builder</a>
       </div>
       <main className="page">
         <div className="container">
