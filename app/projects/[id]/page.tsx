@@ -142,6 +142,10 @@ export default function ProjectEditorPage() {
   const [saving, setSaving] = useState(false);
   const [savedFlash, setSavedFlash] = useState('');
   const [showAddItem, setShowAddItem] = useState(false);
+  const [showPrintView, setShowPrintView] = useState(false);
+  const [converting, setConverting] = useState<'' | 'quote' | 'order'>('');
+  const [businessName, setBusinessName] = useState('');
+  const [businessEmail, setBusinessEmail] = useState('');
 
   useEffect(() => {
     let mounted = true;
@@ -158,7 +162,7 @@ export default function ProjectEditorPage() {
         supabase.from('subscriber_products').select('*').eq('subscriber_id', userId).eq('is_enabled', true).order('sort_order'),
         supabase.from('paper_stocks').select('id, label, gsm, rate_per_kg, category').eq('subscriber_id', userId).order('gsm'),
         supabase.from('printing_rates').select('id, plate_name, color_option, fixed_charge, per_1000_impression').eq('subscriber_id', userId),
-        supabase.from('subscribers').select('currency_symbol, markup_percent, tax_percent').eq('id', userId).maybeSingle(),
+        supabase.from('subscribers').select('currency_symbol, markup_percent, tax_percent, business_name, email').eq('id', userId).maybeSingle(),
       ]);
 
       if (!mounted) return;
@@ -173,6 +177,8 @@ export default function ProjectEditorPage() {
         setCurrency(subRes.data.currency_symbol || '$');
         setDefaultMarkup(Number(subRes.data.markup_percent) || 25);
         setDefaultTax(Number(subRes.data.tax_percent) || 0);
+        setBusinessName(subRes.data.business_name || '');
+        setBusinessEmail(subRes.data.email || '');
       }
       setLoading(false);
     })();
@@ -246,6 +252,116 @@ export default function ProjectEditorPage() {
     if (!confirm('Delete this entire project? This cannot be undone.')) return;
     await supabase.from('projects').delete().eq('id', project.id);
     router.push('/projects');
+  }
+
+  async function saveAsQuote() {
+    if (!project || items.length === 0) {
+      alert('Add at least one item before saving as a quote.');
+      return;
+    }
+    setConverting('quote');
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) { setConverting(''); return; }
+    const d = new Date(); d.setDate(d.getDate() + 30);
+    // Combined description of all items
+    const finishingSummary = items.map(i => `${i.quantity}× ${i.display_name}`).join(' + ');
+    const payload = {
+      subscriber_id: session.user.id,
+      quote_number: `Q${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}-${Math.floor(Math.random() * 900 + 100)}`,
+      customer_name: project.customer_name || 'Customer',
+      customer_email: project.customer_email,
+      customer_phone: project.customer_phone,
+      customer_company: project.customer_company,
+      job_title: project.name,
+      job_size: 'Multi-item project',
+      paper_type: 'Mixed (see breakdown)',
+      quantity: items.reduce((s, i) => s + (Number(i.quantity) || 0), 0),
+      sides: 'Mixed',
+      finishing: finishingSummary,
+      subtotal: totals.subtotal,
+      markup_amount: totals.marginAmt,
+      markup_percent: Number(project.margin_percent) || 0,
+      tax_amount: totals.taxAmt,
+      tax_percent: Number(project.tax_percent) || 0,
+      total_amount: totals.total,
+      currency_symbol: currency,
+      notes: (project.notes ? project.notes + '\n\n' : '') + `From project ${project.project_number}`,
+      status: 'Sent',
+      valid_until: d.toISOString().split('T')[0],
+      template_id: 'project',
+      product_data: {
+        source: 'project',
+        project_id: project.id,
+        project_number: project.project_number,
+        items: items.map(i => ({
+          name: i.display_name,
+          icon: i.icon,
+          template_id: i.template_id,
+          quantity: i.quantity,
+          unit_price: i.unit_price,
+          line_total: i.line_total,
+          config: i.item_data,
+        })),
+      },
+    };
+    const { error } = await supabase.from('quotes').insert(payload);
+    setConverting('');
+    if (error) { alert('Save failed: ' + error.message); return; }
+    // Mark project as Sent
+    await supabase.from('projects').update({ status: 'Sent' }).eq('id', project.id);
+    setProj('status', 'Sent');
+    setSavedFlash('✓ Saved as quote · view in /quotes');
+    setTimeout(() => setSavedFlash(''), 4000);
+  }
+
+  async function convertToOrder() {
+    if (!project || items.length === 0) {
+      alert('Add at least one item before converting to an order.');
+      return;
+    }
+    if (!confirm(`Create an order for "${project.name}" totaling ${currency}${totals.total.toFixed(2)}?`)) return;
+    setConverting('order');
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) { setConverting(''); return; }
+    const finishingSummary = items.map(i => `${i.quantity}× ${i.display_name}`).join(' + ');
+    const payload = {
+      subscriber_id: session.user.id,
+      customer_name: project.customer_name || 'Customer',
+      customer_email: project.customer_email,
+      customer_phone: project.customer_phone,
+      job_title: project.name,
+      job_size: 'Multi-item project',
+      paper_type: 'Mixed (see breakdown)',
+      quantity: items.reduce((s, i) => s + (Number(i.quantity) || 0), 0),
+      finishing: finishingSummary,
+      total_amount: totals.total,
+      advance_paid: 0,
+      due_amount: totals.total,
+      status: 'Pending',
+      notes: (project.notes ? project.notes + '\n\n' : '') + `From project ${project.project_number}`,
+      template_id: 'project',
+      product_data: {
+        source: 'project',
+        project_id: project.id,
+        project_number: project.project_number,
+        items: items.map(i => ({
+          name: i.display_name,
+          icon: i.icon,
+          template_id: i.template_id,
+          quantity: i.quantity,
+          unit_price: i.unit_price,
+          line_total: i.line_total,
+          config: i.item_data,
+        })),
+      },
+    };
+    const { error } = await supabase.from('orders').insert(payload);
+    setConverting('');
+    if (error) { alert('Order create failed: ' + error.message); return; }
+    await supabase.from('projects').update({ status: 'Converted' }).eq('id', project.id);
+    setProj('status', 'Converted');
+    setSavedFlash('✓ Order created · view in /orders');
+    setTimeout(() => setSavedFlash(''), 4000);
   }
 
   if (loading) return <LoadingScreen />;
@@ -336,9 +452,26 @@ export default function ProjectEditorPage() {
             project={project}
             setProj={setProj}
             fmt={fmt}
+            itemCount={items.length}
+            converting={converting}
+            onPdf={() => setShowPrintView(true)}
+            onSaveQuote={saveAsQuote}
+            onConvertOrder={convertToOrder}
           />
         </div>
       </main>
+
+      {showPrintView && project && (
+        <PrintProjectView
+          project={project}
+          items={items}
+          totals={totals}
+          currency={currency}
+          businessName={businessName}
+          businessEmail={businessEmail}
+          onClose={() => setShowPrintView(false)}
+        />
+      )}
 
       {showAddItem && (
         <AddItemModal
@@ -451,7 +584,7 @@ function ItemRow({ item, fmt, onRemove, idx }: { item: ProjectItem; fmt: (n: num
   );
 }
 
-function TotalsPanel({ totals, currency, project, setProj, fmt }: { totals: { subtotal: number; marginAmt: number; afterMargin: number; taxAmt: number; total: number }; currency: string; project: Project; setProj: any; fmt: (n: number) => string }) {
+function TotalsPanel({ totals, currency, project, setProj, fmt, itemCount, converting, onPdf, onSaveQuote, onConvertOrder }: { totals: { subtotal: number; marginAmt: number; afterMargin: number; taxAmt: number; total: number }; currency: string; project: Project; setProj: any; fmt: (n: number) => string; itemCount: number; converting: '' | 'quote' | 'order'; onPdf: () => void; onSaveQuote: () => void; onConvertOrder: () => void }) {
   return (
     <div style={{ position: 'sticky', top: 80, animation: 'pc-fade-up 0.5s 0.15s ease both' }}>
       <div style={{ background: 'rgba(19, 15, 42, 0.85)', border: `1px solid rgba(217,70,239,0.4)`, borderRadius: TOKENS.radius['2xl'], padding: 22, backdropFilter: 'blur(20px)', overflow: 'hidden', position: 'relative' }}>
@@ -503,6 +636,34 @@ function TotalsPanel({ totals, currency, project, setProj, fmt }: { totals: { su
               <option value="Expired">Expired</option>
             </select>
           </Field>
+        </div>
+
+        {/* Action buttons */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 18, paddingTop: 16, borderTop: `1px solid ${TOKENS.colors.border}` }}>
+          <button
+            onClick={onPdf}
+            disabled={itemCount === 0}
+            style={{ ...primaryButton(), width: '100%', justifyContent: 'center', opacity: itemCount === 0 ? 0.4 : 1 }}
+          >
+            📄 Download PDF
+          </button>
+          <button
+            onClick={onSaveQuote}
+            disabled={itemCount === 0 || !!converting}
+            style={{ ...ghostButton(), width: '100%', justifyContent: 'center', opacity: (itemCount === 0 || converting) ? 0.4 : 1 }}
+          >
+            {converting === 'quote' ? 'Saving…' : '📋 Save as Quote'}
+          </button>
+          <button
+            onClick={onConvertOrder}
+            disabled={itemCount === 0 || !!converting}
+            style={{ ...ghostButton(), width: '100%', justifyContent: 'center', opacity: (itemCount === 0 || converting) ? 0.4 : 1 }}
+          >
+            {converting === 'order' ? 'Creating…' : '🛒 Convert to Order'}
+          </button>
+          {itemCount === 0 && (
+            <p style={{ fontSize: 11, color: TOKENS.colors.textDim, margin: 0, marginTop: 4, textAlign: 'center' }}>Add line items to enable actions</p>
+          )}
         </div>
       </div>
     </div>
@@ -704,6 +865,147 @@ function AddItemModal({
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Print Project View — professional PDF-ready layout
+// ──────────────────────────────────────────────────────────────────────
+
+function PrintProjectView({
+  project, items, totals, currency, businessName, businessEmail, onClose,
+}: {
+  project: Project;
+  items: ProjectItem[];
+  totals: { subtotal: number; marginAmt: number; afterMargin: number; taxAmt: number; total: number };
+  currency: string;
+  businessName: string;
+  businessEmail: string;
+  onClose: () => void;
+}) {
+  const today = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+  const validUntil = project.valid_until
+    ? new Date(project.valid_until).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+    : (() => { const d = new Date(); d.setDate(d.getDate() + 30); return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }); })();
+  const fmt = (n: number) => `${currency}${(Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+  useEffect(() => {
+    const t = setTimeout(() => window.print(), 300);
+    return () => clearTimeout(t);
+  }, []);
+
+  return (
+    <div className="pc-print-root" style={{ position: 'fixed', inset: 0, zIndex: 200, background: '#fff', overflow: 'auto' }}>
+      <div className="pc-print-bar" style={{ position: 'sticky', top: 0, background: '#fff', borderBottom: '1px solid #e5e5e5', padding: '14px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <span style={{ fontSize: 14, color: '#666' }}>Print preview · use browser print dialog to save as PDF</span>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button onClick={() => window.print()} style={{ padding: '8px 14px', background: '#1A1A1A', color: '#fff', border: 'none', borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>🖨️ Print / Save PDF</button>
+          <button onClick={onClose} style={{ padding: '8px 14px', background: '#fff', color: '#1A1A1A', border: '1px solid #d4d4d4', borderRadius: 6, fontSize: 13, cursor: 'pointer' }}>✕ Close</button>
+        </div>
+      </div>
+
+      <div style={{ fontFamily: "'DM Sans', sans-serif", maxWidth: 760, margin: '0 auto', padding: 40, color: '#1A1A1A' }}>
+
+        {/* Header */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 36, paddingBottom: 20, borderBottom: '2px solid #1A1A1A' }}>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+              <div style={{ width: 10, height: 10, background: '#D946EF', borderRadius: '50%' }} />
+              <span style={{ fontSize: 18, fontWeight: 700, letterSpacing: '-0.02em' }}>{businessName || 'Your Business'}</span>
+            </div>
+            <p style={{ fontSize: 12, color: '#888', margin: 0 }}>{businessEmail}</p>
+          </div>
+          <div style={{ textAlign: 'right' }}>
+            <div style={{ fontSize: 11, color: '#888', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Project Quote</div>
+            <div style={{ fontSize: 18, fontWeight: 700, fontFamily: "'Plus Jakarta Sans', sans-serif" }}>{project.project_number}</div>
+            <div style={{ fontSize: 12, color: '#666', marginTop: 4 }}>{today}</div>
+            <div style={{ fontSize: 11, color: '#888', marginTop: 2 }}>Valid until {validUntil}</div>
+          </div>
+        </div>
+
+        {/* Customer + Project name */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, marginBottom: 28 }}>
+          <div>
+            <div style={{ fontSize: 10, fontWeight: 600, color: '#888', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 6 }}>For</div>
+            <div style={{ fontSize: 15, fontWeight: 700 }}>{project.customer_name || 'Customer'}</div>
+            {project.customer_company && <div style={{ fontSize: 13, color: '#555' }}>{project.customer_company}</div>}
+            {project.customer_email && <div style={{ fontSize: 12, color: '#888' }}>{project.customer_email}</div>}
+            {project.customer_phone && <div style={{ fontSize: 12, color: '#888' }}>{project.customer_phone}</div>}
+          </div>
+          <div>
+            <div style={{ fontSize: 10, fontWeight: 600, color: '#888', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 6 }}>Project</div>
+            <div style={{ fontSize: 17, fontWeight: 700, fontFamily: "'Plus Jakarta Sans', sans-serif" }}>{project.name}</div>
+            <div style={{ fontSize: 12, color: '#888', marginTop: 2 }}>{items.length} item{items.length !== 1 ? 's' : ''}</div>
+          </div>
+        </div>
+
+        {/* Line items */}
+        <div style={{ marginBottom: 24 }}>
+          <div style={{ fontSize: 10, fontWeight: 600, color: '#888', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 10 }}>Items</div>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <thead>
+              <tr style={{ borderBottom: '1.5px solid #1A1A1A' }}>
+                <th style={{ textAlign: 'left', padding: '8px 6px', fontSize: 11, color: '#666', fontWeight: 600 }}>#</th>
+                <th style={{ textAlign: 'left', padding: '8px 6px', fontSize: 11, color: '#666', fontWeight: 600 }}>Product</th>
+                <th style={{ textAlign: 'right', padding: '8px 6px', fontSize: 11, color: '#666', fontWeight: 600 }}>Qty</th>
+                <th style={{ textAlign: 'right', padding: '8px 6px', fontSize: 11, color: '#666', fontWeight: 600 }}>Unit Price</th>
+                <th style={{ textAlign: 'right', padding: '8px 6px', fontSize: 11, color: '#666', fontWeight: 600 }}>Line Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((it, idx) => (
+                <tr key={it.id} style={{ borderBottom: '1px solid #eee' }}>
+                  <td style={{ padding: '12px 6px', color: '#888', verticalAlign: 'top' }}>{idx + 1}</td>
+                  <td style={{ padding: '12px 6px', verticalAlign: 'top' }}>
+                    <div style={{ fontWeight: 600 }}>{it.icon} {it.display_name}</div>
+                    {it.item_data?.paper_label && <div style={{ fontSize: 11, color: '#888', marginTop: 2 }}>{it.item_data.paper_label}</div>}
+                  </td>
+                  <td style={{ padding: '12px 6px', textAlign: 'right', verticalAlign: 'top', fontFamily: "monospace" }}>{Number(it.quantity).toLocaleString()}</td>
+                  <td style={{ padding: '12px 6px', textAlign: 'right', verticalAlign: 'top', fontFamily: "monospace" }}>{fmt(it.unit_price)}</td>
+                  <td style={{ padding: '12px 6px', textAlign: 'right', verticalAlign: 'top', fontFamily: "monospace", fontWeight: 600 }}>{fmt(it.line_total)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Totals */}
+        <div style={{ marginLeft: 'auto', width: '60%', padding: 20, background: '#FAFAFA', borderRadius: 8 }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <tbody>
+              <tr><td style={{ padding: '6px 0', color: '#666' }}>Subtotal</td><td style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace' }}>{fmt(totals.subtotal)}</td></tr>
+              {totals.marginAmt > 0 && <tr><td style={{ padding: '6px 0', color: '#666' }}>Margin ({project.margin_percent}%)</td><td style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace' }}>{fmt(totals.marginAmt)}</td></tr>}
+              {totals.taxAmt > 0 && <tr><td style={{ padding: '6px 0', color: '#666' }}>Tax ({project.tax_percent}%)</td><td style={{ padding: '6px 0', textAlign: 'right', fontFamily: 'monospace' }}>{fmt(totals.taxAmt)}</td></tr>}
+              <tr style={{ borderTop: '2px solid #1A1A1A' }}>
+                <td style={{ padding: '12px 0 4px', fontWeight: 700, fontSize: 15 }}>Total</td>
+                <td style={{ padding: '12px 0 4px', textAlign: 'right', fontWeight: 700, fontSize: 18, fontFamily: "'Plus Jakarta Sans', sans-serif" }}>{fmt(totals.total)}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        {/* Notes */}
+        {project.notes && (
+          <div style={{ marginTop: 28, padding: 14, background: '#FFF8DC', borderLeft: '3px solid #F59E0B', borderRadius: 4 }}>
+            <div style={{ fontSize: 10, fontWeight: 600, color: '#92400E', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4 }}>Notes</div>
+            <div style={{ fontSize: 13, color: '#1A1A1A', whiteSpace: 'pre-wrap' }}>{project.notes}</div>
+          </div>
+        )}
+
+        {/* Footer */}
+        <div style={{ marginTop: 36, paddingTop: 16, borderTop: '1px solid #eee', fontSize: 11, color: '#888', textAlign: 'center' }}>
+          Thank you for your business. This project quote is valid until {validUntil}.
+        </div>
+      </div>
+
+      <style>{`
+        @media print {
+          .pc-print-bar { display: none !important; }
+          @page { margin: 0.6in; }
+          body > *:not(.pc-print-root) { display: none !important; }
+        }
+      `}</style>
     </div>
   );
 }
