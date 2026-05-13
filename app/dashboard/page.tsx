@@ -480,7 +480,7 @@ export default function DashboardPage() {
     const {data}=await supabase.from('color_options').insert({subscriber_id:user!.id,color_name:newColor.color_name,sort_order:colorOpts.length+1}).select().single();
     if(data){setColorOpts(p=>[...p,data]);setNewColor({color_name:''});setAddColor(false);saved('Added!');}
   };
-  const saveSettings=async()=>{if(!sub)return;setSaving(true);await supabase.from('subscribers').update({business_name:sub.business_name,markup_percent:sub.markup_percent,tax_percent:sub.tax_percent}).eq('id',sub.id);saved('Settings saved!');setSaving(false);};
+  const saveSettings=async()=>{if(!sub)return;setSaving(true);await supabase.from('subscribers').update({business_name:sub.business_name,markup_percent:sub.markup_percent,tax_percent:sub.tax_percent,country_code:sub.country_code||'US',currency_symbol:sub.currency_symbol,currency:sub.currency}).eq('id',sub.id);saved('Settings saved!');setSaving(false);};
 
   if(loading) return <main style={{minHeight:'100vh',background:'#F7F6F3',display:'flex',alignItems:'center',justifyContent:'center',fontFamily:'sans-serif'}}><p style={{color:'#888'}}>Loading...</p></main>;
 
@@ -581,12 +581,28 @@ export default function DashboardPage() {
         {tab==='overview'&&(()=>{
           const sym=sub?.currency_symbol||'₹';
           const fmt=(n:number)=>sym+(n||0).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2});
+          const fmtShort=(n:number)=>{if(n>=1e7)return sym+(n/1e7).toFixed(1)+'Cr';if(n>=1e5)return sym+(n/1e5).toFixed(1)+'L';if(n>=1e3)return sym+(n/1e3).toFixed(1)+'k';return sym+(n||0).toFixed(0);};
           const activeOrders=liveOrders.filter(o=>!['Delivered','Cancelled'].includes(o.status));
-          const totalRevenue=liveOrders.filter(o=>o.status!=='Cancelled').reduce((s:number,o:any)=>s+(o.total_amount||0),0);
-          const totalDue=liveOrders.filter(o=>o.status!=='Cancelled').reduce((s:number,o:any)=>s+(o.due_amount||0),0);
+          const completedOrders=liveOrders.filter(o=>!['Cancelled'].includes(o.status));
+          const totalRevenue=completedOrders.reduce((s:number,o:any)=>s+(o.total_amount||0),0);
+          const totalDue=completedOrders.reduce((s:number,o:any)=>s+(o.due_amount||0),0);
+          const totalCollected=totalRevenue-totalDue;
+          const avgOrderValue=completedOrders.length>0?totalRevenue/completedOrders.length:0;
+          const conversionRate=liveQuotes.length>0?(liveOrders.length/liveQuotes.length)*100:0;
           const thisMonth=new Date(); thisMonth.setDate(1); thisMonth.setHours(0,0,0,0);
+          const lastMonth=new Date(thisMonth); lastMonth.setMonth(lastMonth.getMonth()-1);
           const ordersThisMonth=liveOrders.filter(o=>new Date(o.created_at)>=thisMonth).length;
+          const ordersLastMonth=liveOrders.filter(o=>{const d=new Date(o.created_at);return d>=lastMonth&&d<thisMonth;}).length;
+          const ordersDelta=ordersLastMonth>0?Math.round(((ordersThisMonth-ordersLastMonth)/ordersLastMonth)*100):(ordersThisMonth>0?100:0);
+          const revenueThisMonth=liveOrders.filter((o:any)=>new Date(o.created_at)>=thisMonth&&o.status!=='Cancelled').reduce((s:number,o:any)=>s+(o.total_amount||0),0);
+          const revenueLastMonth=liveOrders.filter((o:any)=>{const d=new Date(o.created_at);return d>=lastMonth&&d<thisMonth&&o.status!=='Cancelled';}).reduce((s:number,o:any)=>s+(o.total_amount||0),0);
+          const revenueDelta=revenueLastMonth>0?Math.round(((revenueThisMonth-revenueLastMonth)/revenueLastMonth)*100):(revenueThisMonth>0?100:0);
           const quotesThisMonth=liveQuotes.filter(q=>new Date(q.created_at)>=thisMonth).length;
+          // Top product by frequency from orders' job_title
+          const productCounts:Record<string,number>={};
+          completedOrders.forEach((o:any)=>{const k=o.job_title||'Other';productCounts[k]=(productCounts[k]||0)+1;});
+          const topProduct=Object.entries(productCounts).sort((a,b)=>b[1]-a[1])[0];
+          const Delta=({pct}:{pct:number})=>(<span style={{fontSize:11,fontWeight:600,color:pct>=0?'#16A34A':'#DC2626',background:pct>=0?'rgba(22,163,74,0.1)':'rgba(220,38,38,0.1)',padding:'2px 6px',borderRadius:4,marginLeft:6}}>{pct>=0?'↗':'↘'} {Math.abs(pct)}%</span>);
           return(
           <div>
             {/* GREETING CARD */}
@@ -622,19 +638,43 @@ export default function DashboardPage() {
                 <p className="stat-sub">{quotesThisMonth} this month</p>
               </div>
               <div className="stat-card">
-                <p className="stat-label">Orders</p>
+                <p className="stat-label">Orders <Delta pct={ordersDelta}/></p>
                 <p className="stat-value">{liveOrders.length}</p>
                 <p className="stat-sub">{ordersThisMonth} this month · {activeOrders.length} active</p>
               </div>
               <div className="stat-card">
-                <p className="stat-label">Total Revenue</p>
-                <p className="stat-value" style={{fontSize:18,fontFamily:'DM Mono,monospace'}}>{fmt(totalRevenue)}</p>
-                <p className="stat-sub">all orders</p>
+                <p className="stat-label">Total Revenue <Delta pct={revenueDelta}/></p>
+                <p className="stat-value" style={{fontSize:18,fontFamily:'DM Mono,monospace'}}>{fmtShort(totalRevenue)}</p>
+                <p className="stat-sub">{fmt(revenueThisMonth)} this month</p>
               </div>
               <div className="stat-card">
                 <p className="stat-label">Balance Due</p>
-                <p className="stat-value" style={{fontSize:18,fontFamily:'DM Mono,monospace',color:totalDue>0?'#E53E3E':'#38A169'}}>{fmt(totalDue)}</p>
-                <p className="stat-sub">pending collection</p>
+                <p className="stat-value" style={{fontSize:18,fontFamily:'DM Mono,monospace',color:totalDue>0?'#E53E3E':'#38A169'}}>{fmtShort(totalDue)}</p>
+                <p className="stat-sub">{fmt(totalCollected)} collected</p>
+              </div>
+            </div>
+
+            {/* Insight stats row (NEW) */}
+            <div className="stat-grid-4">
+              <div className="stat-card" style={{borderTop:'3px solid #7C3AED'}}>
+                <p className="stat-label">Avg Order Value</p>
+                <p className="stat-value" style={{fontSize:18,fontFamily:'DM Mono,monospace'}}>{fmt(avgOrderValue)}</p>
+                <p className="stat-sub">across {completedOrders.length} orders</p>
+              </div>
+              <div className="stat-card" style={{borderTop:'3px solid #D946EF'}}>
+                <p className="stat-label">Conversion Rate</p>
+                <p className="stat-value" style={{color:conversionRate>30?'#16A34A':conversionRate>15?'#F59E0B':'#888'}}>{conversionRate.toFixed(0)}%</p>
+                <p className="stat-sub">quotes → orders</p>
+              </div>
+              <div className="stat-card" style={{borderTop:'3px solid #06B6D4'}}>
+                <p className="stat-label">Top Product</p>
+                <p className="stat-value" style={{fontSize:16}}>{topProduct?topProduct[0]:'—'}</p>
+                <p className="stat-sub">{topProduct?`${topProduct[1]} orders`:'no data yet'}</p>
+              </div>
+              <div className="stat-card" style={{borderTop:'3px solid #10B981'}}>
+                <p className="stat-label">This Month</p>
+                <p className="stat-value" style={{fontSize:18}}>{quotesThisMonth} Q · {ordersThisMonth} O</p>
+                <p className="stat-sub">quotes · orders</p>
               </div>
             </div>
             {/* Quick links */}
@@ -1024,7 +1064,20 @@ export default function DashboardPage() {
         )}
 
         {/* SETTINGS */}
-        {tab==='settings'&&sub&&(
+        {tab==='settings'&&sub&&(()=>{
+          // Country / locale data — inline so we don't depend on lib import paths in this file
+          const COUNTRIES_LIST = [
+            {code:'US',label:'United States',flag:'🇺🇸',currency:'USD',symbol:'$',terms:{flyer:'Flyer',business_card:'Business Card',letterhead:'Letterhead',catalog:'Catalog'}},
+            {code:'UK',label:'United Kingdom',flag:'🇬🇧',currency:'GBP',symbol:'£',terms:{flyer:'Leaflet',business_card:'Business Card',letterhead:'Letterhead',catalog:'Catalogue'}},
+            {code:'IN',label:'India',flag:'🇮🇳',currency:'INR',symbol:'₹',terms:{flyer:'Pamphlet',business_card:'Visiting Card',letterhead:'Letter Pad',catalog:'Catalogue'}},
+            {code:'AU',label:'Australia / NZ',flag:'🇦🇺',currency:'AUD',symbol:'A$',terms:{flyer:'Flyer',business_card:'Business Card',letterhead:'Letterhead',catalog:'Catalogue'}},
+            {code:'CA',label:'Canada',flag:'🇨🇦',currency:'CAD',symbol:'C$',terms:{flyer:'Flyer',business_card:'Business Card',letterhead:'Letterhead',catalog:'Catalogue'}},
+            {code:'AE',label:'United Arab Emirates',flag:'🇦🇪',currency:'AED',symbol:'د.إ',terms:{flyer:'Flyer',business_card:'Business Card',letterhead:'Letterhead',catalog:'Catalogue'}},
+            {code:'SG',label:'Singapore',flag:'🇸🇬',currency:'SGD',symbol:'S$',terms:{flyer:'Flyer',business_card:'Name Card',letterhead:'Letterhead',catalog:'Catalogue'}},
+            {code:'ZA',label:'South Africa',flag:'🇿🇦',currency:'ZAR',symbol:'R',terms:{flyer:'Flyer',business_card:'Business Card',letterhead:'Letterhead',catalog:'Catalogue'}},
+          ];
+          const currentCountry = COUNTRIES_LIST.find(c=>c.code===(sub.country_code||'US')) || COUNTRIES_LIST[0];
+          return (
           <div>
             <div className="card">
               <p style={{fontSize:15,fontWeight:600,marginBottom:4}}>Business settings</p>
@@ -1039,13 +1092,51 @@ export default function DashboardPage() {
                 {saveMsg&&<span className="save-msg">✓ {saveMsg}</span>}
               </div>
             </div>
+
+            {/* COUNTRY / LOCALE PICKER */}
+            <div className="card">
+              <p style={{fontSize:15,fontWeight:600,marginBottom:4}}>🌍 Country & Locale</p>
+              <p style={{fontSize:12,color:'#AAA',marginBottom:16}}>
+                Sets your default currency and how product names appear to customers (e.g. &quot;Flyer&quot; vs &quot;Leaflet&quot; vs &quot;Visiting Card&quot;).
+              </p>
+              <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(180px,1fr))',gap:8,marginBottom:14}}>
+                {COUNTRIES_LIST.map(c=>{
+                  const active=(sub.country_code||'US')===c.code;
+                  return (
+                    <button key={c.code} onClick={()=>setSub({...sub,country_code:c.code,currency_symbol:c.symbol,currency:c.currency})} style={{textAlign:'left',padding:'12px 14px',border:`1.5px solid ${active?'#7C3AED':'#E5E7EB'}`,background:active?'rgba(124,58,237,0.08)':'#fff',borderRadius:10,cursor:'pointer',fontFamily:'inherit'}}>
+                      <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:4}}>
+                        <span style={{fontSize:20}}>{c.flag}</span>
+                        <span style={{fontSize:13,fontWeight:600,color:active?'#7C3AED':'#1A1A1A'}}>{c.label}</span>
+                      </div>
+                      <div style={{fontSize:11,color:'#888',fontFamily:'DM Mono,monospace'}}>{c.symbol} {c.currency}</div>
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div style={{padding:14,background:'#FAFAFA',border:'1px solid #EEE',borderRadius:10,marginBottom:12}}>
+                <p style={{fontSize:11,fontWeight:600,color:'#888',textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:8}}>📝 Preview · how customers see terms</p>
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,fontSize:13}}>
+                  <div><span style={{color:'#888'}}>Flyer:</span> <strong>{currentCountry.terms.flyer}</strong></div>
+                  <div><span style={{color:'#888'}}>Business Card:</span> <strong>{currentCountry.terms.business_card}</strong></div>
+                  <div><span style={{color:'#888'}}>Letterhead:</span> <strong>{currentCountry.terms.letterhead}</strong></div>
+                  <div><span style={{color:'#888'}}>Catalog:</span> <strong>{currentCountry.terms.catalog}</strong></div>
+                </div>
+              </div>
+
+              <div style={{display:'flex',alignItems:'center',gap:12}}>
+                <button className="btn-primary" onClick={saveSettings} disabled={saving}>{saving?'Saving...':'Save country & locale'}</button>
+                <span style={{fontSize:12,color:'#888'}}>Active: {currentCountry.flag} {currentCountry.label} · {currentCountry.symbol}</span>
+              </div>
+            </div>
             <div className="card">
               <p style={{fontSize:15,fontWeight:600,marginBottom:12}}>Account</p>
               <p style={{fontSize:13,color:'#888',marginBottom:16}}>Logged in as <strong style={{color:'#1A1A1A'}}>{sub.email}</strong></p>
               <button className="btn-danger" onClick={logout}>Logout</button>
             </div>
           </div>
-        )}
+          );
+        })()}
       </div>
     </>
   );
