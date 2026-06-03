@@ -213,7 +213,7 @@ export default function QuickQuotePage() {
       <Ambient accent={template.accent} />
 
       {/* Top bar — subscriber's brand */}
-      <header style={{ position: 'sticky', top: 0, zIndex: 50, background: 'rgba(10, 8, 21, 0.92)', backdropFilter: 'blur(20px)', borderBottom: `1px solid ${TOKENS.colors.border}`, padding: '14px 0' }}>
+      <header style={{ position: 'sticky', top: 0, zIndex: 50, background: 'rgba(255, 255, 255, 0.95)', backdropFilter: 'blur(20px)', borderBottom: `1px solid ${TOKENS.colors.border}`, padding: '14px 0' }}>
         <div style={{ maxWidth: 720, margin: '0 auto', padding: '0 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <div style={{ width: 36, height: 36, borderRadius: 10, background: TOKENS.colors.gradient, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, fontWeight: 800, color: '#fff' }}>
@@ -324,7 +324,7 @@ export default function QuickQuotePage() {
 
         {/* Reassurance */}
         <div style={{ marginTop: 30, padding: '16px 18px', background: 'rgba(124,58,237,0.06)', border: `1px dashed ${TOKENS.colors.borderStrong}`, borderRadius: 14, fontSize: 13, color: TOKENS.colors.textMuted, textAlign: 'center', lineHeight: 1.6 }}>
-          💬 Not sure about something? <strong style={{ color: '#fff' }}>Request a quote</strong> and we&apos;ll get back with the best option for you.
+          💬 Not sure about something? <strong style={{ color: TOKENS.colors.text }}>Request a quote</strong> and we&apos;ll get back with the best option for you.
         </div>
       </main>
 
@@ -374,7 +374,7 @@ function Step({ number, title, accent, optional, children }: { number: number; t
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
         <div style={{ width: 28, height: 28, borderRadius: '50%', background: `${accent}22`, border: `1px solid ${accent}55`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700, color: accent, fontFamily: TOKENS.fonts.display }}>{number}</div>
         <h2 style={{ fontFamily: TOKENS.fonts.display, fontSize: 17, fontWeight: 700, margin: 0, letterSpacing: '-0.01em', flex: 1 }}>{title}</h2>
-        {optional && <span style={{ fontSize: 10, color: TOKENS.colors.textDim, background: 'rgba(255,255,255,0.05)', padding: '2px 8px', borderRadius: 4, letterSpacing: '0.06em', textTransform: 'uppercase' }}>Optional</span>}
+        {optional && <span style={{ fontSize: 10, color: TOKENS.colors.textDim, background: TOKENS.colors.bgPanel2, padding: '2px 8px', borderRadius: 4, letterSpacing: '0.06em', textTransform: 'uppercase' }}>Optional</span>}
       </div>
       {children}
     </section>
@@ -387,8 +387,8 @@ function QtyButton({ active, onClick, children, accent, style }: { active: boole
       padding: '14px 10px',
       borderRadius: 12,
       border: `1.5px solid ${active ? accent : TOKENS.colors.border}`,
-      background: active ? `${accent}22` : 'rgba(0,0,0,0.2)',
-      color: '#fff',
+      background: active ? `${accent}22` : '#F4F2F9',
+      color: active ? accent : TOKENS.colors.text,
       fontSize: 15,
       fontWeight: active ? 700 : 500,
       cursor: 'pointer',
@@ -405,8 +405,8 @@ function PaperButton({ active, onClick, accent, stock }: { active: boolean; onCl
       padding: '12px 10px',
       borderRadius: 10,
       border: `1.5px solid ${active ? accent : TOKENS.colors.border}`,
-      background: active ? `${accent}22` : 'rgba(0,0,0,0.2)',
-      color: '#fff',
+      background: active ? `${accent}22` : '#F4F2F9',
+      color: active ? accent : TOKENS.colors.text,
       fontSize: 13,
       cursor: 'pointer',
       fontFamily: 'inherit',
@@ -425,8 +425,8 @@ function BigChoice({ active, onClick, accent, icon, title, sub }: { active: bool
       padding: '14px 12px',
       borderRadius: 12,
       border: `1.5px solid ${active ? accent : TOKENS.colors.border}`,
-      background: active ? `${accent}22` : 'rgba(0,0,0,0.2)',
-      color: '#fff',
+      background: active ? `${accent}22` : '#F4F2F9',
+      color: active ? accent : TOKENS.colors.text,
       cursor: 'pointer',
       fontFamily: 'inherit',
       textAlign: 'center',
@@ -446,8 +446,8 @@ function FinishingOption({ active, onClick, accent, icon, title, sub }: { active
       padding: '14px 16px',
       borderRadius: 12,
       border: `1.5px solid ${active ? accent : TOKENS.colors.border}`,
-      background: active ? `${accent}22` : 'rgba(0,0,0,0.2)',
-      color: '#fff',
+      background: active ? `${accent}22` : '#F4F2F9',
+      color: active ? accent : TOKENS.colors.text,
       cursor: 'pointer',
       fontFamily: 'inherit',
       textAlign: 'left',
@@ -465,12 +465,12 @@ function FinishingOption({ active, onClick, accent, icon, title, sub }: { active
 
 function StickyPriceBar({ calc, currency, product, accent, onRequest, fmt }: { calc: any; currency: string; product: SubscriberProduct; accent: string; onRequest: () => void; fmt: (n: number) => string }) {
   return (
-    <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, background: 'rgba(10,8,21,0.95)', backdropFilter: 'blur(24px)', borderTop: `1px solid ${accent}55`, padding: '14px 20px', zIndex: 40, boxShadow: '0 -10px 40px rgba(0,0,0,0.4)' }}>
+    <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, background: 'rgba(255, 255, 255, 0.95)', backdropFilter: 'blur(24px)', borderTop: `1px solid ${accent}55`, padding: '14px 20px', zIndex: 40, boxShadow: '0 -10px 40px rgba(20,14,50,0.08)' }}>
       <div style={{ maxWidth: 720, margin: '0 auto', display: 'flex', alignItems: 'center', gap: 14 }}>
         <div style={{ flex: 1, minWidth: 0 }}>
           {calc ? (
             <>
-              <div style={{ fontFamily: TOKENS.fonts.display, fontSize: 24, fontWeight: 800, letterSpacing: '-0.025em', background: `linear-gradient(135deg, #fff 0%, ${accent} 100%)`, WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text', lineHeight: 1 }}>
+              <div style={{ fontFamily: TOKENS.fonts.display, fontSize: 24, fontWeight: 800, letterSpacing: '-0.025em', background: `linear-gradient(135deg, #1A1330 0%, ${accent} 100%)`, WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text', lineHeight: 1 }}>
                 {fmt(calc.total)}
               </div>
               <div style={{ fontSize: 12, color: TOKENS.colors.textMuted, marginTop: 4 }}>
@@ -486,8 +486,8 @@ function StickyPriceBar({ calc, currency, product, accent, onRequest, fmt }: { c
           disabled={!calc}
           style={{
             padding: '14px 22px',
-            background: calc ? `linear-gradient(135deg, ${accent}, ${TOKENS.colors.pink})` : 'rgba(255,255,255,0.1)',
-            color: '#fff',
+            background: calc ? `linear-gradient(135deg, ${accent}, ${TOKENS.colors.pink})` : TOKENS.colors.bgPanel2,
+            color: calc ? '#fff' : TOKENS.colors.textDim,
             fontSize: 14,
             fontWeight: 700,
             fontFamily: TOKENS.fonts.display,
@@ -569,7 +569,7 @@ function RequestQuoteModal({
   }
 
   return (
-    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(8px)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, animation: 'pc-fade-in 0.2s ease' }}>
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(20, 14, 50, 0.50)', backdropFilter: 'blur(8px)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, animation: 'pc-fade-in 0.2s ease' }}>
       <div onClick={(e) => e.stopPropagation()} style={{ background: TOKENS.colors.bgPanel, border: `1px solid ${accent}55`, borderRadius: 18, padding: 24, maxWidth: 460, width: '100%', maxHeight: '92vh', overflow: 'auto' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 18 }}>
           <div>
@@ -583,7 +583,7 @@ function RequestQuoteModal({
         <div style={{ background: `${accent}11`, border: `1px solid ${accent}44`, borderRadius: 10, padding: 12, marginBottom: 16 }}>
           <div style={{ fontSize: 11, color: TOKENS.colors.textDim, marginBottom: 4 }}>YOUR ORDER</div>
           <div style={{ fontSize: 14, fontWeight: 600 }}>{qty.toLocaleString()} × {product.display_name}</div>
-          <div style={{ fontFamily: TOKENS.fonts.display, fontSize: 24, fontWeight: 800, marginTop: 6, background: `linear-gradient(135deg, #fff 0%, ${accent} 100%)`, WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>
+          <div style={{ fontFamily: TOKENS.fonts.display, fontSize: 24, fontWeight: 800, marginTop: 6, background: `linear-gradient(135deg, #1A1330 0%, ${accent} 100%)`, WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>
             {currency}{Number(calc.total).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
           </div>
         </div>
@@ -631,7 +631,7 @@ function RequestQuoteModal({
 function ModalField({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
-      <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#fff', marginBottom: 6 }}>{label}</label>
+      <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: TOKENS.colors.text, marginBottom: 6 }}>{label}</label>
       {children}
     </div>
   );
@@ -648,8 +648,8 @@ function Toast({ text }: { text: string }) {
 function Ambient({ accent }: { accent: string }) {
   return (
     <>
-      <div style={{ position: 'fixed', top: -200, left: '50%', transform: 'translateX(-50%)', width: 1000, height: 600, background: `radial-gradient(ellipse, ${accent}25 0%, transparent 65%)`, pointerEvents: 'none', zIndex: 0 }} />
-      <div style={{ position: 'fixed', inset: 0, backgroundImage: 'linear-gradient(rgba(124,58,237,0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(124,58,237,0.03) 1px, transparent 1px)', backgroundSize: '64px 64px', pointerEvents: 'none', zIndex: 0 }} />
+      <div style={{ position: 'fixed', top: -200, left: '50%', transform: 'translateX(-50%)', width: 1000, height: 600, background: `radial-gradient(ellipse, ${accent}10 0%, transparent 65%)`, pointerEvents: 'none', zIndex: 0 }} />
+      <div style={{ position: 'fixed', inset: 0, backgroundImage: 'linear-gradient(rgba(124,58,237,0.02) 1px, transparent 1px), linear-gradient(90deg, rgba(124,58,237,0.02) 1px, transparent 1px)', backgroundSize: '64px 64px', pointerEvents: 'none', zIndex: 0 }} />
     </>
   );
 }
@@ -691,7 +691,7 @@ function NotFound({ slug }: { slug: string }) {
         <div style={{ fontSize: 48, marginBottom: 14 }}>🔍</div>
         <h2 style={{ fontFamily: TOKENS.fonts.display, fontSize: 22, fontWeight: 700, margin: 0, marginBottom: 8 }}>Product not found</h2>
         <p style={{ color: TOKENS.colors.textMuted, fontSize: 14, marginBottom: 20 }}>
-          We couldn&apos;t find <code style={{ background: 'rgba(255,255,255,0.06)', padding: '2px 6px', borderRadius: 4 }}>{slug}</code> in your catalog.
+          We couldn&apos;t find <code style={{ background: TOKENS.colors.bgPanel2, padding: '2px 6px', borderRadius: 4, color: TOKENS.colors.text }}>{slug}</code> in your catalog.
         </p>
         <Link href="/products" style={{ padding: '11px 22px', background: TOKENS.colors.gradient, color: '#fff', borderRadius: 10, fontWeight: 600, textDecoration: 'none', display: 'inline-block', fontFamily: TOKENS.fonts.display }}>
           ← Browse Products
@@ -704,8 +704,8 @@ function NotFound({ slug }: { slug: string }) {
 function inputStyle(): React.CSSProperties {
   return {
     width: '100%',
-    background: 'rgba(0,0,0,0.25)',
-    color: '#fff',
+    background: '#FAFAFB',
+    color: TOKENS.colors.text,
     border: `1px solid ${TOKENS.colors.border}`,
     borderRadius: 10,
     padding: '11px 14px',
@@ -721,11 +721,11 @@ function PageStyles() {
       @keyframes pc-fade-up { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
       @keyframes pc-fade-in { from { opacity: 0; } to { opacity: 1; } }
       @keyframes pc-spin { to { transform: rotate(360deg); } }
-      input::placeholder, textarea::placeholder { color: rgba(255,255,255,0.3); }
-      input:focus, textarea:focus { border-color: rgba(148,97,251,0.6) !important; box-shadow: 0 0 0 3px rgba(124,58,237,0.15); }
+      input::placeholder, textarea::placeholder { color: ${TOKENS.colors.textDim}; }
+      input:focus, textarea:focus { border-color: ${TOKENS.colors.borderStrong} !important; box-shadow: 0 0 0 3px rgba(124,58,237,0.15); }
       *::-webkit-scrollbar { width: 6px; }
-      *::-webkit-scrollbar-track { background: rgba(0,0,0,0.2); }
-      *::-webkit-scrollbar-thumb { background: rgba(124,58,237,0.3); border-radius: 3px; }
+      *::-webkit-scrollbar-track { background: ${TOKENS.colors.bgPanel2}; }
+      *::-webkit-scrollbar-thumb { background: ${TOKENS.colors.border}; border-radius: 3px; }
       button:hover:not(:disabled) { filter: brightness(1.08); }
       button:active:not(:disabled) { transform: scale(0.98); }
     `}</style>

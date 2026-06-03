@@ -423,7 +423,7 @@ export default function ProductCalculator() {
 
 function Header({ product, template }: { product: SubscriberProduct; template: ProductTemplate }) {
   return (
-    <nav style={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 50, background: 'rgba(10, 8, 21, 0.85)', backdropFilter: 'blur(20px)', borderBottom: `1px solid ${TOKENS.colors.border}`, padding: '14px 0' }}>
+    <nav style={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 50, background: 'rgba(255, 255, 255, 0.92)', backdropFilter: 'blur(20px)', borderBottom: `1px solid ${TOKENS.colors.border}`, padding: '14px 0' }}>
       <div style={{ maxWidth: 1240, margin: '0 auto', padding: '0 32px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
           <Link href="/products" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: TOKENS.colors.textMuted, textDecoration: 'none', fontSize: 14, fontWeight: 500 }}>
@@ -434,7 +434,7 @@ function Header({ product, template }: { product: SubscriberProduct; template: P
             <span style={{ fontSize: 16 }}>{template.icon}</span>
             <span style={{ fontSize: 14, color: TOKENS.colors.textDim }}>{template.label}</span>
             <span style={{ color: TOKENS.colors.textDim }}>›</span>
-            <span style={{ fontSize: 14, color: '#fff', fontWeight: 600 }}>{product.display_name}</span>
+            <span style={{ fontSize: 14, color: '#1A1330', fontWeight: 600 }}>{product.display_name}</span>
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
@@ -450,8 +450,8 @@ function Header({ product, template }: { product: SubscriberProduct; template: P
 function AmbientBg({ accent }: { accent: string }) {
   return (
     <>
-      <div style={{ position: 'absolute', top: -150, left: '50%', transform: 'translateX(-50%)', width: 1100, height: 700, background: `radial-gradient(ellipse, ${accent}33 0%, transparent 65%)`, pointerEvents: 'none', zIndex: 0 }} />
-      <div style={{ position: 'absolute', inset: 0, backgroundImage: 'linear-gradient(rgba(124,58,237,0.04) 1px, transparent 1px), linear-gradient(90deg, rgba(124,58,237,0.04) 1px, transparent 1px)', backgroundSize: '64px 64px', pointerEvents: 'none', zIndex: 0 }} />
+      <div style={{ position: 'absolute', top: -150, left: '50%', transform: 'translateX(-50%)', width: 1100, height: 700, background: `radial-gradient(ellipse, ${accent}14 0%, transparent 65%)`, pointerEvents: 'none', zIndex: 0 }} />
+      <div style={{ position: 'absolute', inset: 0, backgroundImage: 'linear-gradient(rgba(124,58,237,0.025) 1px, transparent 1px), linear-gradient(90deg, rgba(124,58,237,0.025) 1px, transparent 1px)', backgroundSize: '64px 64px', pointerEvents: 'none', zIndex: 0 }} />
     </>
   );
 }
@@ -533,7 +533,7 @@ function FieldCard({
       }}
     >
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 12, gap: 12 }}>
-        <label style={{ fontSize: 13, fontWeight: 600, color: '#fff', letterSpacing: '-0.01em' }}>
+        <label style={{ fontSize: 13, fontWeight: 600, color: TOKENS.colors.text, letterSpacing: '-0.01em' }}>
           {field.label}
           {field.required && <span style={{ color: accent, marginLeft: 4 }}>*</span>}
         </label>
@@ -628,8 +628,8 @@ function FieldInput({
                 padding: '10px 14px',
                 borderRadius: TOKENS.radius.md,
                 border: `1px solid ${active ? accent : TOKENS.colors.border}`,
-                background: active ? `${accent}22` : 'rgba(0,0,0,0.2)',
-                color: active ? '#fff' : TOKENS.colors.textMuted,
+                background: active ? `${accent}22` : '#F4F2F9',
+                color: active ? accent : TOKENS.colors.textMuted,
                 fontSize: 13,
                 fontWeight: active ? 600 : 500,
                 cursor: 'pointer',
@@ -661,8 +661,8 @@ function FieldInput({
                 padding: '10px',
                 borderRadius: TOKENS.radius.md,
                 border: `1px solid ${active ? accent : TOKENS.colors.border}`,
-                background: active ? `${accent}22` : 'rgba(0,0,0,0.2)',
-                color: active ? '#fff' : TOKENS.colors.textMuted,
+                background: active ? `${accent}22` : '#F4F2F9',
+                color: active ? accent : TOKENS.colors.textMuted,
                 fontSize: 13,
                 fontWeight: active ? 600 : 500,
                 cursor: 'pointer',
@@ -708,7 +708,7 @@ function PricePanel({
 }) {
   return (
     <div style={{ position: 'sticky', top: 90, animation: 'pc-fade-up 0.5s 0.2s ease both' }}>
-      <div style={{ background: 'rgba(19, 15, 42, 0.85)', border: `1px solid ${template.accent}55`, borderRadius: TOKENS.radius['2xl'], padding: 24, backdropFilter: 'blur(20px)', boxShadow: `0 20px 60px ${template.accent}22`, overflow: 'hidden', position: 'relative' }}>
+      <div style={{ background: 'rgba(255, 255, 255, 0.95)', border: `1px solid ${template.accent}55`, borderRadius: TOKENS.radius['2xl'], padding: 24, backdropFilter: 'blur(20px)', boxShadow: `0 20px 60px ${template.accent}22`, overflow: 'hidden', position: 'relative' }}>
         <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: `linear-gradient(90deg, ${template.accent}, ${TOKENS.colors.pink})` }} />
 
         <div style={{ fontSize: 11, fontWeight: 600, color: TOKENS.colors.textDim, letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 8 }}>Estimate</div>
@@ -721,7 +721,7 @@ function PricePanel({
         ) : (
           <>
             <div style={{ marginBottom: 24 }}>
-              <div style={{ fontFamily: TOKENS.fonts.display, fontSize: 44, fontWeight: 800, letterSpacing: '-0.03em', lineHeight: 1, background: `linear-gradient(135deg, #fff 0%, ${template.accent} 100%)`, WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>
+              <div style={{ fontFamily: TOKENS.fonts.display, fontSize: 44, fontWeight: 800, letterSpacing: '-0.03em', lineHeight: 1, background: `linear-gradient(135deg, #1A1330 0%, ${template.accent} 100%)`, WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>
                 {currency}{calc.total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </div>
               <div style={{ fontSize: 13, color: TOKENS.colors.textMuted, marginTop: 6 }}>
@@ -770,7 +770,7 @@ function PriceRow({ label, value }: { label: string; value: string }) {
   return (
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 13 }}>
       <span style={{ color: TOKENS.colors.textMuted }}>{label}</span>
-      <span style={{ color: '#fff', fontFamily: TOKENS.fonts.mono, fontSize: 12 }}>{value}</span>
+      <span style={{ color: TOKENS.colors.text, fontFamily: TOKENS.fonts.mono, fontSize: 12 }}>{value}</span>
     </div>
   );
 }
@@ -1004,7 +1004,7 @@ function ConvertToOrderModal(props: ModalCommonProps) {
             </div>
           </ModalField>
           <ModalField label="Due amount">
-            <div style={{ padding: '10px 14px', background: 'rgba(0,0,0,0.25)', border: `1px solid ${TOKENS.colors.border}`, borderRadius: TOKENS.radius.md, fontSize: 14, color: '#fff' }}>
+            <div style={{ padding: '10px 14px', background: '#FAFAFB', border: `1px solid ${TOKENS.colors.border}`, borderRadius: TOKENS.radius.md, fontSize: 14, color: TOKENS.colors.text }}>
               {currency}{(Math.max(0, (Number(calc.total) || 0) - (Number(advancePaid) || 0))).toFixed(2)}
             </div>
           </ModalField>
@@ -1142,7 +1142,7 @@ function PrintView({
 
 function ModalShell({ title, subtitle, children, onClose }: { title: string; subtitle?: string; children: React.ReactNode; onClose: () => void }) {
   return (
-    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(8px)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, animation: 'pc-fade-in 0.2s ease' }}>
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(20, 14, 50, 0.45)', backdropFilter: 'blur(8px)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, animation: 'pc-fade-in 0.2s ease' }}>
       <div onClick={(e) => e.stopPropagation()} style={{ background: TOKENS.colors.bgPanel, border: `1px solid ${TOKENS.colors.borderStrong}`, borderRadius: TOKENS.radius['2xl'], padding: 28, maxWidth: 580, width: '100%', maxHeight: '90vh', overflow: 'auto', boxShadow: TOKENS.shadow.lg }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 22 }}>
           <div>
@@ -1161,7 +1161,7 @@ function ModalShell({ title, subtitle, children, onClose }: { title: string; sub
 function ModalField({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
-      <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#fff', marginBottom: 6 }}>{label}</label>
+      <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: TOKENS.colors.text, marginBottom: 6 }}>{label}</label>
       {children}
     </div>
   );
@@ -1170,8 +1170,8 @@ function ModalField({ label, children }: { label: string; children: React.ReactN
 function modalInput(): React.CSSProperties {
   return {
     width: '100%',
-    background: 'rgba(0,0,0,0.25)',
-    color: '#fff',
+    background: '#FAFAFB',
+    color: TOKENS.colors.text,
     border: `1px solid ${TOKENS.colors.border}`,
     borderRadius: TOKENS.radius.md,
     padding: '10px 14px',
@@ -1186,7 +1186,7 @@ function SummaryBlock({ calc, values, currency, product }: { calc: any; values: 
       <div style={{ fontSize: 11, fontWeight: 600, color: TOKENS.colors.textDim, letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 8 }}>Quote Summary</div>
       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 4 }}>
         <span style={{ color: TOKENS.colors.textMuted }}>{product.display_name} × {values.quantity || 0}</span>
-        <span style={{ color: '#fff', fontFamily: TOKENS.fonts.mono }}>{currency}{(Number(calc.total) || 0).toFixed(2)}</span>
+        <span style={{ color: TOKENS.colors.text, fontFamily: TOKENS.fonts.mono }}>{currency}{(Number(calc.total) || 0).toFixed(2)}</span>
       </div>
       <div style={{ fontSize: 11, color: TOKENS.colors.textDim, marginTop: 4 }}>{currency}{(Number(calc.perUnit) || 0).toFixed(2)} each</div>
     </div>
@@ -1223,7 +1223,7 @@ function SignInRedirect({ onLogin }: { onLogin: () => void }) {
       <PageStyles />
       <div style={{ background: TOKENS.colors.bgCard, border: `1px solid ${TOKENS.colors.border}`, borderRadius: TOKENS.radius.xl, padding: 40, textAlign: 'center', maxWidth: 380 }}>
         <div style={{ fontSize: 40, marginBottom: 12 }}>🔐</div>
-        <h2 style={{ fontFamily: TOKENS.fonts.display, fontSize: 22, fontWeight: 700, color: '#fff', margin: 0, marginBottom: 8 }}>Please sign in</h2>
+        <h2 style={{ fontFamily: TOKENS.fonts.display, fontSize: 22, fontWeight: 700, color: TOKENS.colors.text, margin: 0, marginBottom: 8 }}>Please sign in</h2>
         <p style={{ color: TOKENS.colors.textMuted, fontSize: 14, marginBottom: 20 }}>You need to be signed in to use the calculator.</p>
         <button onClick={onLogin} style={primaryButton(TOKENS.colors.primary)}>Sign In →</button>
       </div>
@@ -1239,7 +1239,7 @@ function NotFound({ slug }: { slug: string }) {
         <div style={{ fontSize: 48, marginBottom: 16 }}>🔍</div>
         <h2 style={{ fontFamily: TOKENS.fonts.display, fontSize: 24, fontWeight: 700, margin: 0, marginBottom: 8 }}>Product not found</h2>
         <p style={{ color: TOKENS.colors.textMuted, fontSize: 14, marginBottom: 24 }}>
-          We couldn&apos;t find <code style={{ background: 'rgba(255,255,255,0.06)', padding: '2px 6px', borderRadius: 4, fontFamily: TOKENS.fonts.mono }}>{slug}</code> in your catalog. It may have been removed, or you might need to add it.
+          We couldn&apos;t find <code style={{ background: TOKENS.colors.bgPanel2, padding: '2px 6px', borderRadius: 4, fontFamily: TOKENS.fonts.mono, color: TOKENS.colors.text }}>{slug}</code> in your catalog. It may have been removed, or you might need to add it.
         </p>
         <Link href="/products" style={primaryButton(TOKENS.colors.primary)}>← Back to Products</Link>
       </div>
@@ -1254,8 +1254,8 @@ function NotFound({ slug }: { slug: string }) {
 function inputStyle(accent: string): React.CSSProperties {
   return {
     width: '100%',
-    background: 'rgba(0,0,0,0.25)',
-    color: '#fff',
+    background: '#FAFAFB',
+    color: TOKENS.colors.text,
     border: `1px solid ${TOKENS.colors.border}`,
     borderRadius: TOKENS.radius.md,
     padding: '11px 14px',
@@ -1302,8 +1302,8 @@ function primaryButton(accent: string): React.CSSProperties {
 function ghostButton(): React.CSSProperties {
   return {
     padding: '11px 18px',
-    background: 'rgba(255,255,255,0.04)',
-    color: '#fff',
+    background: 'transparent',
+    color: TOKENS.colors.text,
     fontSize: 13,
     fontWeight: 500,
     fontFamily: TOKENS.fonts.body,
@@ -1322,11 +1322,11 @@ function PageStyles() {
       @keyframes pc-fade-in { from { opacity: 0; } to { opacity: 1; } }
       @keyframes pc-spin { to { transform: rotate(360deg); } }
       @keyframes pc-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
-      input::placeholder, textarea::placeholder { color: rgba(255,255,255,0.3); }
-      input:focus, select:focus, textarea:focus { border-color: rgba(148,97,251,0.6) !important; box-shadow: 0 0 0 3px rgba(124,58,237,0.15); }
+      input::placeholder, textarea::placeholder { color: ${TOKENS.colors.textDim}; }
+      input:focus, select:focus, textarea:focus { border-color: ${TOKENS.colors.borderStrong} !important; box-shadow: 0 0 0 3px rgba(124,58,237,0.15); }
       *::-webkit-scrollbar { width: 8px; }
-      *::-webkit-scrollbar-track { background: rgba(0,0,0,0.2); }
-      *::-webkit-scrollbar-thumb { background: rgba(124,58,237,0.3); border-radius: 4px; }
+      *::-webkit-scrollbar-track { background: ${TOKENS.colors.bgPanel2}; }
+      *::-webkit-scrollbar-thumb { background: ${TOKENS.colors.border}; border-radius: 4px; }
       button:hover { filter: brightness(1.05); transform: translateY(-1px); }
       button:active { transform: translateY(0); }
     `}</style>

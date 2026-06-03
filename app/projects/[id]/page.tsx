@@ -384,7 +384,7 @@ export default function ProjectEditorPage() {
           <input
             value={project.name}
             onChange={(e) => setProj('name', e.target.value)}
-            style={{ width: '100%', background: 'transparent', border: 'none', color: '#fff', fontFamily: TOKENS.fonts.display, fontSize: 'clamp(28px, 3.8vw, 38px)', fontWeight: 800, letterSpacing: '-0.025em', outline: 'none', padding: '4px 0' }}
+            style={{ width: '100%', background: 'transparent', border: 'none', color: TOKENS.colors.text, fontFamily: TOKENS.fonts.display, fontSize: 'clamp(28px, 3.8vw, 38px)', fontWeight: 800, letterSpacing: '-0.025em', outline: 'none', padding: '4px 0' }}
             placeholder="Project name…"
           />
         </section>
@@ -503,12 +503,12 @@ export default function ProjectEditorPage() {
 
 function Header({ project, saving, savedFlash, onSave, onDelete }: { project: Project; saving: boolean; savedFlash: string; onSave: () => void; onDelete: () => void }) {
   return (
-    <nav style={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 50, background: 'rgba(10, 8, 21, 0.85)', backdropFilter: 'blur(20px)', borderBottom: `1px solid ${TOKENS.colors.border}`, padding: '12px 0' }}>
+    <nav style={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 50, background: 'rgba(255, 255, 255, 0.92)', backdropFilter: 'blur(20px)', borderBottom: `1px solid ${TOKENS.colors.border}`, padding: '12px 0' }}>
       <div style={{ maxWidth: 1240, margin: '0 auto', padding: '0 32px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
           <Link href="/projects" style={{ color: TOKENS.colors.textMuted, textDecoration: 'none', fontSize: 14 }}>← Projects</Link>
           <div style={{ width: 1, height: 20, background: TOKENS.colors.border }} />
-          <span style={{ fontSize: 14, color: '#fff', fontWeight: 600 }}>{project.name}</span>
+          <span style={{ fontSize: 14, color: '#1A1330', fontWeight: 600 }}>{project.name}</span>
           <StatusBadge status={project.status} />
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -538,8 +538,8 @@ function StatusBadge({ status }: { status: string }) {
 function Ambient() {
   return (
     <>
-      <div style={{ position: 'absolute', top: -150, left: '50%', transform: 'translateX(-50%)', width: 1100, height: 700, background: 'radial-gradient(ellipse, rgba(217,70,239,0.18) 0%, transparent 65%)', pointerEvents: 'none', zIndex: 0 }} />
-      <div style={{ position: 'absolute', inset: 0, backgroundImage: 'linear-gradient(rgba(124,58,237,0.04) 1px, transparent 1px), linear-gradient(90deg, rgba(124,58,237,0.04) 1px, transparent 1px)', backgroundSize: '64px 64px', pointerEvents: 'none', zIndex: 0 }} />
+      <div style={{ position: 'absolute', top: -150, left: '50%', transform: 'translateX(-50%)', width: 1100, height: 700, background: 'radial-gradient(ellipse, rgba(217,70,239,0.06) 0%, transparent 65%)', pointerEvents: 'none', zIndex: 0 }} />
+      <div style={{ position: 'absolute', inset: 0, backgroundImage: 'linear-gradient(rgba(124,58,237,0.025) 1px, transparent 1px), linear-gradient(90deg, rgba(124,58,237,0.025) 1px, transparent 1px)', backgroundSize: '64px 64px', pointerEvents: 'none', zIndex: 0 }} />
     </>
   );
 }
@@ -562,7 +562,7 @@ function SectionCard({ title, subtitle, action, children }: { title: string; sub
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
-      <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: '#fff', marginBottom: 6, letterSpacing: '0.04em' }}>{label}</label>
+      <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: TOKENS.colors.text, marginBottom: 6, letterSpacing: '0.04em' }}>{label}</label>
       {children}
     </div>
   );
@@ -570,15 +570,15 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 
 function ItemRow({ item, fmt, onRemove, idx }: { item: ProjectItem; fmt: (n: number) => string; onRemove: () => void; idx: number }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', background: 'rgba(255,255,255,0.03)', border: `1px solid ${TOKENS.colors.border}`, borderRadius: TOKENS.radius.md, animation: 'pc-fade-up 0.3s ease both' }}>
-      <div style={{ width: 32, height: 32, background: 'rgba(124,58,237,0.15)', border: `1px solid ${TOKENS.colors.border}`, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14 }}>{item.icon || '📦'}</div>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', background: TOKENS.colors.bgPanel2, border: `1px solid ${TOKENS.colors.border}`, borderRadius: TOKENS.radius.md, animation: 'pc-fade-up 0.3s ease both' }}>
+      <div style={{ width: 32, height: 32, background: 'rgba(124,58,237,0.08)', border: `1px solid ${TOKENS.colors.border}`, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14 }}>{item.icon || '📦'}</div>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 14, fontWeight: 600, color: '#fff' }}>{item.display_name}</div>
+        <div style={{ fontSize: 14, fontWeight: 600, color: TOKENS.colors.text }}>{item.display_name}</div>
         <div style={{ fontSize: 12, color: TOKENS.colors.textMuted, marginTop: 2 }}>
           {item.quantity.toLocaleString()} × {fmt(item.unit_price)}{item.item_data?.paper_label ? ` · ${item.item_data.paper_label}` : ''}
         </div>
       </div>
-      <div style={{ fontFamily: TOKENS.fonts.mono, fontSize: 14, fontWeight: 700, color: '#fff', textAlign: 'right' }}>{fmt(item.line_total)}</div>
+      <div style={{ fontFamily: TOKENS.fonts.mono, fontSize: 14, fontWeight: 700, color: TOKENS.colors.text, textAlign: 'right' }}>{fmt(item.line_total)}</div>
       <button onClick={onRemove} style={{ ...ghostButton('#EF4444'), padding: '6px 10px', fontSize: 12 }}>✕</button>
     </div>
   );
@@ -587,13 +587,13 @@ function ItemRow({ item, fmt, onRemove, idx }: { item: ProjectItem; fmt: (n: num
 function TotalsPanel({ totals, currency, project, setProj, fmt, itemCount, converting, onPdf, onSaveQuote, onConvertOrder }: { totals: { subtotal: number; marginAmt: number; afterMargin: number; taxAmt: number; total: number }; currency: string; project: Project; setProj: any; fmt: (n: number) => string; itemCount: number; converting: '' | 'quote' | 'order'; onPdf: () => void; onSaveQuote: () => void; onConvertOrder: () => void }) {
   return (
     <div style={{ position: 'sticky', top: 80, animation: 'pc-fade-up 0.5s 0.15s ease both' }}>
-      <div style={{ background: 'rgba(19, 15, 42, 0.85)', border: `1px solid rgba(217,70,239,0.4)`, borderRadius: TOKENS.radius['2xl'], padding: 22, backdropFilter: 'blur(20px)', overflow: 'hidden', position: 'relative' }}>
+      <div style={{ background: 'rgba(255, 255, 255, 0.95)', border: `1px solid rgba(217,70,239,0.4)`, borderRadius: TOKENS.radius['2xl'], padding: 22, backdropFilter: 'blur(20px)', overflow: 'hidden', position: 'relative' }}>
         <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: 'linear-gradient(90deg, #A78BFA, #D946EF)' }} />
 
         <div style={{ fontSize: 11, fontWeight: 600, color: TOKENS.colors.textDim, letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 10 }}>Project Total</div>
 
         <div style={{ marginBottom: 22 }}>
-          <div style={{ fontFamily: TOKENS.fonts.display, fontSize: 38, fontWeight: 800, letterSpacing: '-0.025em', lineHeight: 1, background: 'linear-gradient(135deg, #fff 0%, #D946EF 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>
+          <div style={{ fontFamily: TOKENS.fonts.display, fontSize: 38, fontWeight: 800, letterSpacing: '-0.025em', lineHeight: 1, background: 'linear-gradient(135deg, #1A1330 0%, #D946EF 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>
             {fmt(totals.total)}
           </div>
         </div>
@@ -674,7 +674,7 @@ function Row({ label, value }: { label: string; value: string }) {
   return (
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 13 }}>
       <span style={{ color: TOKENS.colors.textMuted }}>{label}</span>
-      <span style={{ color: '#fff', fontFamily: TOKENS.fonts.mono, fontWeight: 500 }}>{value}</span>
+      <span style={{ color: TOKENS.colors.text, fontFamily: TOKENS.fonts.mono, fontWeight: 500 }}>{value}</span>
     </div>
   );
 }
@@ -759,7 +759,7 @@ function AddItemModal({
   const fmt = (n: number) => `${currency}${(Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
   return (
-    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(8px)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, animation: 'pc-fade-in 0.2s ease' }}>
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(20, 14, 50, 0.50)', backdropFilter: 'blur(8px)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, animation: 'pc-fade-in 0.2s ease' }}>
       <div onClick={(e) => e.stopPropagation()} style={{ background: TOKENS.colors.bgPanel, border: `1px solid ${TOKENS.colors.borderStrong}`, borderRadius: 18, maxWidth: 720, width: '100%', maxHeight: '92vh', overflow: 'auto', boxShadow: TOKENS.shadow.lg }}>
 
         <div style={{ position: 'sticky', top: 0, background: TOKENS.colors.bgPanel, padding: '20px 24px', borderBottom: `1px solid ${TOKENS.colors.border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', zIndex: 1 }}>
@@ -789,7 +789,7 @@ function AddItemModal({
                     <div key={tpl.id}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
                         <div style={{ width: 24, height: 24, background: `${tpl.accent}22`, border: `1px solid ${tpl.accent}55`, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13 }}>{tpl.icon}</div>
-                        <span style={{ fontSize: 13, fontWeight: 600, color: '#fff' }}>{tpl.label}</span>
+                        <span style={{ fontSize: 13, fontWeight: 600, color: TOKENS.colors.text }}>{tpl.label}</span>
                       </div>
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 8 }}>
                         {grouped[tpl.id].map((p) => (
@@ -799,7 +799,7 @@ function AddItemModal({
                             background: TOKENS.colors.bgCard,
                             border: `1px solid ${TOKENS.colors.border}`,
                             borderRadius: TOKENS.radius.md,
-                            color: '#fff',
+                            color: TOKENS.colors.text,
                             cursor: 'pointer',
                             fontFamily: 'inherit',
                             transition: 'all 0.18s ease',
@@ -833,14 +833,14 @@ function AddItemModal({
               <Field label="Sides">
                 <div style={{ display: 'flex', gap: 8 }}>
                   {[{ v: 'one', l: 'Front only' }, { v: 'both', l: 'Front + Back' }].map((o) => (
-                    <button key={o.v} onClick={() => setSides(o.v as any)} style={{ flex: 1, padding: '10px 14px', borderRadius: 8, border: `1.5px solid ${sides === o.v ? TOKENS.colors.primary : TOKENS.colors.border}`, background: sides === o.v ? `${TOKENS.colors.primary}22` : 'rgba(0,0,0,0.2)', color: '#fff', fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }}>{o.l}</button>
+                    <button key={o.v} onClick={() => setSides(o.v as any)} style={{ flex: 1, padding: '10px 14px', borderRadius: 8, border: `1.5px solid ${sides === o.v ? TOKENS.colors.primary : TOKENS.colors.border}`, background: sides === o.v ? `${TOKENS.colors.primary}22` : '#F4F2F9', color: sides === o.v ? TOKENS.colors.primary : TOKENS.colors.text, fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }}>{o.l}</button>
                   ))}
                 </div>
               </Field>
               <Field label="Color">
                 <div style={{ display: 'flex', gap: 8 }}>
                   {[{ v: 'four_color', l: 'Full Color' }, { v: 'single_color', l: '1 Color' }, { v: 'bw', l: 'B & W' }].map((o) => (
-                    <button key={o.v} onClick={() => setColor(o.v as any)} style={{ flex: 1, padding: '10px 14px', borderRadius: 8, border: `1.5px solid ${color === o.v ? TOKENS.colors.primary : TOKENS.colors.border}`, background: color === o.v ? `${TOKENS.colors.primary}22` : 'rgba(0,0,0,0.2)', color: '#fff', fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }}>{o.l}</button>
+                    <button key={o.v} onClick={() => setColor(o.v as any)} style={{ flex: 1, padding: '10px 14px', borderRadius: 8, border: `1.5px solid ${color === o.v ? TOKENS.colors.primary : TOKENS.colors.border}`, background: color === o.v ? `${TOKENS.colors.primary}22` : '#F4F2F9', color: color === o.v ? TOKENS.colors.primary : TOKENS.colors.text, fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }}>{o.l}</button>
                   ))}
                 </div>
               </Field>
@@ -1029,7 +1029,7 @@ function LoadingScreen() {
 function NeedSignIn() {
   const router = useRouter();
   return (
-    <div style={{ minHeight: '100vh', background: TOKENS.colors.bgDeep, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontFamily: TOKENS.fonts.body }}>
+    <div style={{ minHeight: '100vh', background: TOKENS.colors.bgDeep, display: 'flex', alignItems: 'center', justifyContent: 'center', color: TOKENS.colors.text, fontFamily: TOKENS.fonts.body }}>
       <PageStyles />
       <div style={{ background: TOKENS.colors.bgCard, border: `1px solid ${TOKENS.colors.border}`, borderRadius: 18, padding: 36, textAlign: 'center', maxWidth: 360 }}>
         <div style={{ fontSize: 40, marginBottom: 12 }}>🔐</div>
@@ -1042,7 +1042,7 @@ function NeedSignIn() {
 
 function NotFound() {
   return (
-    <div style={{ minHeight: '100vh', background: TOKENS.colors.bgDeep, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontFamily: TOKENS.fonts.body }}>
+    <div style={{ minHeight: '100vh', background: TOKENS.colors.bgDeep, display: 'flex', alignItems: 'center', justifyContent: 'center', color: TOKENS.colors.text, fontFamily: TOKENS.fonts.body }}>
       <PageStyles />
       <div style={{ background: TOKENS.colors.bgCard, border: `1px solid ${TOKENS.colors.border}`, borderRadius: 18, padding: 36, textAlign: 'center', maxWidth: 440 }}>
         <div style={{ fontSize: 48, marginBottom: 14 }}>🔍</div>
@@ -1061,8 +1061,8 @@ function NotFound() {
 function inputStyle(): React.CSSProperties {
   return {
     width: '100%',
-    background: 'rgba(0,0,0,0.25)',
-    color: '#fff',
+    background: '#FAFAFB',
+    color: TOKENS.colors.text,
     border: `1px solid ${TOKENS.colors.border}`,
     borderRadius: TOKENS.radius.md,
     padding: '10px 14px',
@@ -1095,8 +1095,8 @@ function primaryButton(): React.CSSProperties {
 function ghostButton(color?: string): React.CSSProperties {
   return {
     padding: '8px 14px',
-    background: color ? `${color}1a` : 'rgba(255,255,255,0.04)',
-    color: color || '#fff',
+    background: color ? `${color}1a` : 'transparent',
+    color: color || TOKENS.colors.text,
     fontSize: 13,
     fontWeight: 500,
     fontFamily: TOKENS.fonts.body,
@@ -1117,11 +1117,11 @@ function PageStyles() {
       @keyframes pc-fade-up { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
       @keyframes pc-fade-in { from { opacity: 0; } to { opacity: 1; } }
       @keyframes pc-spin { to { transform: rotate(360deg); } }
-      input::placeholder, textarea::placeholder { color: rgba(255,255,255,0.3); }
-      input:focus, select:focus, textarea:focus { border-color: rgba(148,97,251,0.6) !important; box-shadow: 0 0 0 3px rgba(124,58,237,0.15); }
+      input::placeholder, textarea::placeholder { color: ${TOKENS.colors.textDim}; }
+      input:focus, select:focus, textarea:focus { border-color: ${TOKENS.colors.borderStrong} !important; box-shadow: 0 0 0 3px rgba(124,58,237,0.15); }
       *::-webkit-scrollbar { width: 8px; }
-      *::-webkit-scrollbar-track { background: rgba(0,0,0,0.2); }
-      *::-webkit-scrollbar-thumb { background: rgba(124,58,237,0.3); border-radius: 4px; }
+      *::-webkit-scrollbar-track { background: ${TOKENS.colors.bgPanel2}; }
+      *::-webkit-scrollbar-thumb { background: ${TOKENS.colors.border}; border-radius: 4px; }
       button:hover:not(:disabled) { filter: brightness(1.05); }
       button:active:not(:disabled) { transform: scale(0.98); }
     `}</style>

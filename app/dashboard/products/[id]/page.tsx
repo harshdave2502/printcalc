@@ -314,7 +314,7 @@ export default function ProductEditorPage() {
           </SectionCard>
 
           {/* ── Save bar ────────────────────────────────────────────────── */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '20px 0', position: 'sticky', bottom: 0, background: 'linear-gradient(to top, rgba(10,8,21,0.95) 70%, transparent)', backdropFilter: 'blur(8px)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '20px 0', position: 'sticky', bottom: 0, background: 'linear-gradient(to top, rgba(255, 255, 255, 0.95) 70%, transparent)', backdropFilter: 'blur(8px)' }}>
             <Link href="/dashboard/products" style={ghostButton()}>← Back to Products</Link>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               {savedFlash && <span style={{ fontSize: 13, color: TOKENS.colors.success, fontWeight: 600 }}>✓ Saved</span>}
@@ -337,7 +337,7 @@ export default function ProductEditorPage() {
 
 function Header({ product, template, saving, savedFlash, onSave, onPreview }: { product: SubscriberProduct; template: ProductTemplate; saving: boolean; savedFlash: boolean; onSave: () => void; onPreview: () => void }) {
   return (
-    <nav style={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 50, background: 'rgba(10, 8, 21, 0.85)', backdropFilter: 'blur(20px)', borderBottom: `1px solid ${TOKENS.colors.border}`, padding: '12px 0' }}>
+    <nav style={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 50, background: 'rgba(255, 255, 255, 0.92)', backdropFilter: 'blur(20px)', borderBottom: `1px solid ${TOKENS.colors.border}`, padding: '12px 0' }}>
       <div style={{ maxWidth: 1240, margin: '0 auto', padding: '0 32px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
           <Link href="/dashboard/products" style={{ color: TOKENS.colors.textMuted, textDecoration: 'none', fontSize: 14, fontWeight: 500 }}>← Products</Link>
@@ -346,7 +346,7 @@ function Header({ product, template, saving, savedFlash, onSave, onPreview }: { 
             <span style={{ fontSize: 16 }}>{template.icon}</span>
             <span style={{ fontSize: 13, color: TOKENS.colors.textDim }}>{template.label}</span>
             <span style={{ color: TOKENS.colors.textDim }}>›</span>
-            <span style={{ fontSize: 14, color: '#fff', fontWeight: 600 }}>{product.display_name}</span>
+            <span style={{ fontSize: 14, color: '#1A1330', fontWeight: 600 }}>{product.display_name}</span>
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -364,8 +364,8 @@ function Header({ product, template, saving, savedFlash, onSave, onPreview }: { 
 function Ambient({ accent }: { accent: string }) {
   return (
     <>
-      <div style={{ position: 'absolute', top: -150, left: '50%', transform: 'translateX(-50%)', width: 1100, height: 700, background: `radial-gradient(ellipse, ${accent}25 0%, transparent 65%)`, pointerEvents: 'none', zIndex: 0 }} />
-      <div style={{ position: 'absolute', inset: 0, backgroundImage: 'linear-gradient(rgba(124,58,237,0.04) 1px, transparent 1px), linear-gradient(90deg, rgba(124,58,237,0.04) 1px, transparent 1px)', backgroundSize: '64px 64px', pointerEvents: 'none', zIndex: 0 }} />
+      <div style={{ position: 'absolute', top: -150, left: '50%', transform: 'translateX(-50%)', width: 1100, height: 700, background: `radial-gradient(ellipse, ${accent}14 0%, transparent 65%)`, pointerEvents: 'none', zIndex: 0 }} />
+      <div style={{ position: 'absolute', inset: 0, backgroundImage: 'linear-gradient(rgba(124,58,237,0.025) 1px, transparent 1px), linear-gradient(90deg, rgba(124,58,237,0.025) 1px, transparent 1px)', backgroundSize: '64px 64px', pointerEvents: 'none', zIndex: 0 }} />
     </>
   );
 }
@@ -389,7 +389,7 @@ function SectionCard({ title, subtitle, accent, children, action }: { title: str
       <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 2, background: `linear-gradient(90deg, ${accent}, ${accent}00)` }} />
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 18 }}>
         <div>
-          <h3 style={{ fontFamily: TOKENS.fonts.display, fontSize: 16, fontWeight: 700, margin: 0, color: '#fff' }}>{title}</h3>
+          <h3 style={{ fontFamily: TOKENS.fonts.display, fontSize: 16, fontWeight: 700, margin: 0, color: TOKENS.colors.text }}>{title}</h3>
           {subtitle && <p style={{ fontSize: 13, color: TOKENS.colors.textMuted, margin: 0, marginTop: 4 }}>{subtitle}</p>}
         </div>
         {action}
@@ -402,7 +402,7 @@ function SectionCard({ title, subtitle, accent, children, action }: { title: str
 function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
     <div>
-      <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#fff', marginBottom: 6 }}>
+      <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: TOKENS.colors.text, marginBottom: 6 }}>
         {label}
         {hint && <span style={{ marginLeft: 8, color: TOKENS.colors.textDim, fontWeight: 400, fontSize: 11 }}>· {hint}</span>}
       </label>
@@ -417,7 +417,7 @@ function ToggleSwitch({ checked, onChange, accent }: { checked: boolean; onChang
       onClick={() => onChange(!checked)}
       style={{
         width: 48, height: 26, borderRadius: 13,
-        background: checked ? accent : 'rgba(255,255,255,0.1)',
+        background: checked ? accent : TOKENS.colors.bgPanel2,
         border: `1px solid ${checked ? accent : TOKENS.colors.border}`,
         position: 'relative',
         cursor: 'pointer',
@@ -432,7 +432,7 @@ function ToggleSwitch({ checked, onChange, accent }: { checked: boolean; onChang
         width: 20, height: 20, borderRadius: '50%',
         background: '#fff',
         transition: 'left 0.2s cubic-bezier(0.34, 1.56, 0.64, 1)',
-        boxShadow: '0 2px 6px rgba(0,0,0,0.3)',
+        boxShadow: '0 2px 6px rgba(20,14,50,0.15)',
       }} />
     </button>
   );
@@ -440,10 +440,10 @@ function ToggleSwitch({ checked, onChange, accent }: { checked: boolean; onChang
 
 function RequiredFieldRow({ field }: { field: TemplateField }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: 'rgba(255,255,255,0.03)', border: `1px solid ${TOKENS.colors.border}`, borderRadius: TOKENS.radius.md }}>
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: TOKENS.colors.bgPanel2, border: `1px solid ${TOKENS.colors.border}`, borderRadius: TOKENS.radius.md }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
         <span style={{ fontSize: 11, fontWeight: 600, color: TOKENS.colors.success, background: 'rgba(16,185,129,0.12)', padding: '2px 8px', borderRadius: 4 }}>REQUIRED</span>
-        <span style={{ fontSize: 14, fontWeight: 500, color: '#fff' }}>{field.label}</span>
+        <span style={{ fontSize: 14, fontWeight: 500, color: TOKENS.colors.text }}>{field.label}</span>
         {field.helpText && <span style={{ fontSize: 12, color: TOKENS.colors.textDim }}>· {field.helpText}</span>}
       </div>
       <span style={{ fontSize: 11, color: TOKENS.colors.textDim, fontFamily: TOKENS.fonts.mono }}>{field.type}</span>
@@ -455,7 +455,7 @@ function OptionalFieldRow({ field, override, onToggle, onLabelChange, accent }: 
   const enabled = override?.is_enabled === true;
   const [editLabel, setEditLabel] = useState(false);
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', padding: '12px 14px', background: 'rgba(255,255,255,0.03)', border: `1px solid ${TOKENS.colors.border}`, borderRadius: TOKENS.radius.md, opacity: enabled ? 1 : 0.7 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', padding: '12px 14px', background: TOKENS.colors.bgPanel2, border: `1px solid ${TOKENS.colors.border}`, borderRadius: TOKENS.radius.md, opacity: enabled ? 1 : 0.7 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1, minWidth: 0 }}>
           {editLabel ? (
@@ -467,7 +467,7 @@ function OptionalFieldRow({ field, override, onToggle, onLabelChange, accent }: 
               style={{ ...inputStyle(), padding: '4px 8px', fontSize: 14, width: 200 }}
             />
           ) : (
-            <span style={{ fontSize: 14, fontWeight: 500, color: '#fff' }}>
+            <span style={{ fontSize: 14, fontWeight: 500, color: TOKENS.colors.text }}>
               {override?.custom_label || field.label}
               {override?.custom_label && <span style={{ fontSize: 11, color: TOKENS.colors.textDim, marginLeft: 6 }}>(was: {field.label})</span>}
             </span>
@@ -536,7 +536,7 @@ function CustomFieldEditor({ field, onChange, onRemove, accent }: { field: Custo
         </Field>
       )}
 
-      <div style={{ marginTop: 12, padding: 14, background: 'rgba(0,0,0,0.25)', borderRadius: TOKENS.radius.md, border: `1px solid ${TOKENS.colors.border}` }}>
+      <div style={{ marginTop: 12, padding: 14, background: '#FAFAFB', borderRadius: TOKENS.radius.md, border: `1px solid ${TOKENS.colors.border}` }}>
         <div style={{ fontSize: 11, fontWeight: 600, color: TOKENS.colors.textMuted, letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 10 }}>Price impact</div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           <PriceImpactChip active={field.price_impact === 'none'} onClick={() => onChange({ price_impact: 'none', price_value: 0 })} label="No price effect" />
@@ -572,7 +572,7 @@ function PriceImpactChip({ active, onClick, label }: { active: boolean; onClick:
       borderRadius: TOKENS.radius.full,
       border: `1px solid ${active ? TOKENS.colors.primary : TOKENS.colors.border}`,
       background: active ? `${TOKENS.colors.primary}22` : 'transparent',
-      color: active ? '#fff' : TOKENS.colors.textMuted,
+      color: active ? TOKENS.colors.primary : TOKENS.colors.textMuted,
       fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit',
       transition: 'all 0.18s ease',
     }}>{label}</button>
@@ -626,8 +626,8 @@ function NotFound() {
 function inputStyle(): React.CSSProperties {
   return {
     width: '100%',
-    background: 'rgba(0,0,0,0.25)',
-    color: '#fff',
+    background: '#FAFAFB',
+    color: TOKENS.colors.text,
     border: `1px solid ${TOKENS.colors.border}`,
     borderRadius: TOKENS.radius.md,
     padding: '10px 14px',
@@ -661,8 +661,8 @@ function primaryButton(accent: string): React.CSSProperties {
 function ghostButton(): React.CSSProperties {
   return {
     padding: '8px 14px',
-    background: 'rgba(255,255,255,0.04)',
-    color: '#fff',
+    background: 'transparent',
+    color: TOKENS.colors.text,
     fontSize: 13,
     fontWeight: 500,
     fontFamily: TOKENS.fonts.body,
@@ -696,11 +696,11 @@ function PageStyles() {
       @keyframes pc-fade-up { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
       @keyframes pc-fade-in { from { opacity: 0; } to { opacity: 1; } }
       @keyframes pc-spin { to { transform: rotate(360deg); } }
-      input::placeholder, textarea::placeholder { color: rgba(255,255,255,0.3); }
-      input:focus, select:focus, textarea:focus { border-color: rgba(148,97,251,0.6) !important; box-shadow: 0 0 0 3px rgba(124,58,237,0.15); }
+      input::placeholder, textarea::placeholder { color: ${TOKENS.colors.textDim}; }
+      input:focus, select:focus, textarea:focus { border-color: ${TOKENS.colors.borderStrong} !important; box-shadow: 0 0 0 3px rgba(124,58,237,0.15); }
       *::-webkit-scrollbar { width: 8px; }
-      *::-webkit-scrollbar-track { background: rgba(0,0,0,0.2); }
-      *::-webkit-scrollbar-thumb { background: rgba(124,58,237,0.3); border-radius: 4px; }
+      *::-webkit-scrollbar-track { background: ${TOKENS.colors.bgPanel2}; }
+      *::-webkit-scrollbar-thumb { background: ${TOKENS.colors.border}; border-radius: 4px; }
       button:hover:not(:disabled) { filter: brightness(1.05); }
       button:active:not(:disabled) { transform: translateY(0.5px); }
     `}</style>

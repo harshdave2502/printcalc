@@ -161,15 +161,15 @@ function fmtAmount(n: number, currency: string) {
 
 function Header() {
   return (
-    <nav style={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 50, background: 'rgba(10, 8, 21, 0.85)', backdropFilter: 'blur(20px)', borderBottom: `1px solid ${TOKENS.colors.border}`, padding: '14px 0' }}>
+    <nav style={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 50, background: 'rgba(255, 255, 255, 0.92)', backdropFilter: 'blur(20px)', borderBottom: `1px solid ${TOKENS.colors.border}`, padding: '14px 0' }}>
       <div style={{ maxWidth: 1240, margin: '0 auto', padding: '0 32px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
           <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: 10, textDecoration: 'none' }}>
             <div style={{ width: 36, height: 36, background: TOKENS.colors.gradient, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, boxShadow: TOKENS.shadow.glow }}>📦</div>
-            <span style={{ fontFamily: TOKENS.fonts.display, fontSize: 19, fontWeight: 800, color: '#fff', letterSpacing: '-0.02em' }}>PrintCalc</span>
+            <span style={{ fontFamily: TOKENS.fonts.display, fontSize: 19, fontWeight: 800, color: TOKENS.colors.text, letterSpacing: '-0.02em' }}>PrintCalc</span>
           </Link>
           <div style={{ width: 1, height: 20, background: TOKENS.colors.border }} />
-          <span style={{ fontSize: 14, color: '#fff', fontWeight: 600 }}>Project Builder</span>
+          <span style={{ fontSize: 14, color: '#1A1330', fontWeight: 600 }}>Project Builder</span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 24 }}>
           <Link href="/dashboard" style={navLinkStyle()}>Dashboard</Link>
@@ -184,8 +184,8 @@ function Header() {
 function Ambient() {
   return (
     <>
-      <div style={{ position: 'absolute', top: -150, left: '50%', transform: 'translateX(-50%)', width: 1100, height: 700, background: 'radial-gradient(ellipse, rgba(217,70,239,0.2) 0%, transparent 65%)', pointerEvents: 'none', zIndex: 0 }} />
-      <div style={{ position: 'absolute', inset: 0, backgroundImage: 'linear-gradient(rgba(124,58,237,0.04) 1px, transparent 1px), linear-gradient(90deg, rgba(124,58,237,0.04) 1px, transparent 1px)', backgroundSize: '64px 64px', pointerEvents: 'none', zIndex: 0 }} />
+      <div style={{ position: 'absolute', top: -150, left: '50%', transform: 'translateX(-50%)', width: 1100, height: 700, background: 'radial-gradient(ellipse, rgba(217,70,239,0.06) 0%, transparent 65%)', pointerEvents: 'none', zIndex: 0 }} />
+      <div style={{ position: 'absolute', inset: 0, backgroundImage: 'linear-gradient(rgba(124,58,237,0.025) 1px, transparent 1px), linear-gradient(90deg, rgba(124,58,237,0.025) 1px, transparent 1px)', backgroundSize: '64px 64px', pointerEvents: 'none', zIndex: 0 }} />
     </>
   );
 }
@@ -237,7 +237,7 @@ function Filters({ search, setSearch, filter, setFilter, count }: { search: stri
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 16, animation: 'pc-fade-up 0.5s 0.15s ease both' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, background: TOKENS.colors.bgCard, border: `1px solid ${TOKENS.colors.border}`, borderRadius: TOKENS.radius.lg, padding: '11px 15px' }}>
         <span style={{ fontSize: 16, color: TOKENS.colors.textMuted }}>🔍</span>
-        <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search by project name, customer, or number…" style={{ flex: 1, background: 'transparent', border: 'none', outline: 'none', color: '#fff', fontSize: 14, fontFamily: 'inherit' }} />
+        <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search by project name, customer, or number…" style={{ flex: 1, background: 'transparent', border: 'none', outline: 'none', color: TOKENS.colors.text, fontSize: 14, fontFamily: 'inherit' }} />
         <span style={{ fontSize: 12, color: TOKENS.colors.textDim, fontFamily: TOKENS.fonts.mono }}>{count} project{count !== 1 ? 's' : ''}</span>
       </div>
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
@@ -256,7 +256,7 @@ function Chip({ active, onClick, children }: { active: boolean; onClick: () => v
       borderRadius: TOKENS.radius.full,
       border: `1px solid ${active ? TOKENS.colors.primary : TOKENS.colors.border}`,
       background: active ? `${TOKENS.colors.primary}22` : 'transparent',
-      color: active ? '#fff' : TOKENS.colors.textMuted,
+      color: active ? TOKENS.colors.primary : TOKENS.colors.textMuted,
       fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit',
       transition: 'all 0.18s ease',
     }}>{children}</button>
@@ -319,7 +319,7 @@ function EmptyState({ onCreate, creating }: { onCreate: () => void; creating: bo
         <div style={{ fontSize: 56, marginBottom: 18 }}>📦</div>
         <h2 style={{ fontFamily: TOKENS.fonts.display, fontSize: 26, fontWeight: 700, marginBottom: 12 }}>Your first project</h2>
         <p style={{ color: TOKENS.colors.textMuted, fontSize: 15, maxWidth: 520, margin: '0 auto 28px', lineHeight: 1.6 }}>
-          A <strong style={{ color: '#fff' }}>project</strong> bundles multiple printed products into one quote — for example, a brand-launch kit with visiting cards + letterheads + envelopes. Add your reseller margin on top.
+          A <strong style={{ color: TOKENS.colors.text }}>project</strong> bundles multiple printed products into one quote — for example, a brand-launch kit with visiting cards + letterheads + envelopes. Add your reseller margin on top.
         </p>
         <button onClick={onCreate} disabled={creating} style={primary()}>
           {creating ? 'Creating…' : '+ Create First Project'}
@@ -336,7 +336,7 @@ function LoadingSkeleton() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 16 }}>
       {Array.from({ length: 5 }).map((_, i) => (
-        <div key={i} style={{ height: 60, background: 'linear-gradient(110deg, rgba(30,22,64,0.4) 0%, rgba(40,30,80,0.5) 50%, rgba(30,22,64,0.4) 100%)', backgroundSize: '200% 100%', animation: 'pc-shimmer 1.5s linear infinite', borderRadius: TOKENS.radius.lg }} />
+        <div key={i} style={{ height: 60, background: 'linear-gradient(110deg, rgba(243,242,247,0.6) 0%, rgba(232,228,242,0.6) 50%, rgba(243,242,247,0.6) 100%)', backgroundSize: '200% 100%', animation: 'pc-shimmer 1.5s linear infinite', borderRadius: TOKENS.radius.lg }} />
       ))}
     </div>
   );
@@ -385,11 +385,11 @@ function PageStyles() {
       @keyframes pc-fade-up { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
       @keyframes pc-fade-in { from { opacity: 0; } to { opacity: 1; } }
       @keyframes pc-shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
-      input::placeholder { color: rgba(255,255,255,0.3); }
-      input:focus { border-color: rgba(148,97,251,0.6) !important; }
+      input::placeholder { color: ${TOKENS.colors.textDim}; }
+      input:focus { border-color: ${TOKENS.colors.borderStrong} !important; }
       *::-webkit-scrollbar { width: 8px; }
-      *::-webkit-scrollbar-track { background: rgba(0,0,0,0.2); }
-      *::-webkit-scrollbar-thumb { background: rgba(124,58,237,0.3); border-radius: 4px; }
+      *::-webkit-scrollbar-track { background: ${TOKENS.colors.bgPanel2}; }
+      *::-webkit-scrollbar-thumb { background: ${TOKENS.colors.border}; border-radius: 4px; }
       button:hover:not(:disabled) { filter: brightness(1.05); transform: translateY(-1px); }
       button:active:not(:disabled) { transform: translateY(0); }
     `}</style>

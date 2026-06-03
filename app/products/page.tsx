@@ -194,11 +194,11 @@ export default function ProductsPage() {
 
 function Header() {
   return (
-    <nav style={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 50, background: 'rgba(10, 8, 21, 0.85)', backdropFilter: 'blur(20px)', borderBottom: `1px solid ${TOKENS.colors.border}`, padding: '14px 0' }}>
+    <nav style={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 50, background: 'rgba(255, 255, 255, 0.92)', backdropFilter: 'blur(20px)', borderBottom: `1px solid ${TOKENS.colors.border}`, padding: '14px 0' }}>
       <div style={{ maxWidth: 1240, margin: '0 auto', padding: '0 32px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: 10, textDecoration: 'none' }}>
           <div style={{ width: 36, height: 36, background: TOKENS.colors.gradient, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, boxShadow: TOKENS.shadow.glow }}>📐</div>
-          <span style={{ fontFamily: TOKENS.fonts.display, fontSize: 19, fontWeight: 800, color: '#fff', letterSpacing: '-0.02em' }}>PrintCalc</span>
+          <span style={{ fontFamily: TOKENS.fonts.display, fontSize: 19, fontWeight: 800, color: TOKENS.colors.text, letterSpacing: '-0.02em' }}>PrintCalc</span>
         </Link>
         <div style={{ display: 'flex', alignItems: 'center', gap: 24 }}>
           <Link href="/dashboard" style={{ fontSize: 14, color: TOKENS.colors.textMuted, textDecoration: 'none', fontWeight: 500 }}>Dashboard</Link>
@@ -213,9 +213,9 @@ function Header() {
 function AmbientBackground() {
   return (
     <>
-      <div style={{ position: 'absolute', top: -150, left: '50%', transform: 'translateX(-50%)', width: 1100, height: 800, background: 'radial-gradient(ellipse, rgba(124,58,237,0.25) 0%, transparent 65%)', pointerEvents: 'none', zIndex: 0 }} />
-      <div style={{ position: 'absolute', bottom: 100, right: -200, width: 600, height: 600, background: 'radial-gradient(ellipse, rgba(217,70,239,0.12) 0%, transparent 65%)', pointerEvents: 'none', zIndex: 0 }} />
-      <div style={{ position: 'absolute', inset: 0, backgroundImage: 'linear-gradient(rgba(124,58,237,0.04) 1px, transparent 1px), linear-gradient(90deg, rgba(124,58,237,0.04) 1px, transparent 1px)', backgroundSize: '64px 64px', pointerEvents: 'none', zIndex: 0 }} />
+      <div style={{ position: 'absolute', top: -150, left: '50%', transform: 'translateX(-50%)', width: 1100, height: 800, background: 'radial-gradient(ellipse, rgba(124,58,237,0.08) 0%, transparent 65%)', pointerEvents: 'none', zIndex: 0 }} />
+      <div style={{ position: 'absolute', bottom: 100, right: -200, width: 600, height: 600, background: 'radial-gradient(ellipse, rgba(217,70,239,0.05) 0%, transparent 65%)', pointerEvents: 'none', zIndex: 0 }} />
+      <div style={{ position: 'absolute', inset: 0, backgroundImage: 'linear-gradient(rgba(124,58,237,0.025) 1px, transparent 1px), linear-gradient(90deg, rgba(124,58,237,0.025) 1px, transparent 1px)', backgroundSize: '64px 64px', pointerEvents: 'none', zIndex: 0 }} />
     </>
   );
 }
@@ -234,7 +234,7 @@ function HeroSection() {
         Each product has only the fields it needs. Pick a card to open the calculator.
       </p>
 
-      <div style={{ display: 'inline-flex', gap: 6, marginTop: 24, padding: 4, background: 'rgba(255,255,255,0.04)', border: `1px solid ${TOKENS.colors.border}`, borderRadius: 100 }}>
+      <div style={{ display: 'inline-flex', gap: 6, marginTop: 24, padding: 4, background: TOKENS.colors.bgPanel2, border: `1px solid ${TOKENS.colors.border}`, borderRadius: 100 }}>
         <span style={{ padding: '8px 18px', borderRadius: 100, background: TOKENS.colors.gradient, color: '#fff', fontSize: 13, fontWeight: 600, fontFamily: TOKENS.fonts.display, boxShadow: TOKENS.shadow.glow }}>
           🔧 Subscriber View
         </span>
@@ -261,7 +261,7 @@ function LoadingState() {
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 16, marginTop: 48 }}>
       {Array.from({ length: 6 }).map((_, i) => (
-        <div key={i} style={{ height: 180, background: 'linear-gradient(110deg, rgba(30,22,64,0.4) 0%, rgba(40,30,80,0.5) 50%, rgba(30,22,64,0.4) 100%)', backgroundSize: '200% 100%', animation: 'pc-shimmer 1.5s linear infinite', borderRadius: TOKENS.radius.xl, border: `1px solid ${TOKENS.colors.border}` }} />
+        <div key={i} style={{ height: 180, background: 'linear-gradient(110deg, rgba(243,242,247,0.6) 0%, rgba(232,228,242,0.6) 50%, rgba(243,242,247,0.6) 100%)', backgroundSize: '200% 100%', animation: 'pc-shimmer 1.5s linear infinite', borderRadius: TOKENS.radius.xl, border: `1px solid ${TOKENS.colors.border}` }} />
       ))}
     </div>
   );
@@ -339,7 +339,7 @@ function FilterChip({ active, onClick, children, icon, accent }: { active: boole
         borderRadius: TOKENS.radius.full,
         border: `1px solid ${active ? (accent || TOKENS.colors.primary) : TOKENS.colors.border}`,
         background: active ? `${accent || TOKENS.colors.primary}22` : 'transparent',
-        color: active ? '#fff' : TOKENS.colors.textMuted,
+        color: active ? (accent || TOKENS.colors.primary) : TOKENS.colors.textMuted,
         fontSize: 13,
         fontWeight: 500,
         cursor: 'pointer',
@@ -482,9 +482,9 @@ function PageStyles() {
       @keyframes pc-shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
       @keyframes pc-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
       *::-webkit-scrollbar { width: 8px; }
-      *::-webkit-scrollbar-track { background: rgba(0,0,0,0.2); }
-      *::-webkit-scrollbar-thumb { background: rgba(124,58,237,0.3); border-radius: 4px; }
-      *::-webkit-scrollbar-thumb:hover { background: rgba(124,58,237,0.5); }
+      *::-webkit-scrollbar-track { background: ${TOKENS.colors.bgPanel2}; }
+      *::-webkit-scrollbar-thumb { background: ${TOKENS.colors.border}; border-radius: 4px; }
+      *::-webkit-scrollbar-thumb:hover { background: ${TOKENS.colors.borderStrong}; }
     `}</style>
   );
 }
