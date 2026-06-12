@@ -42,11 +42,31 @@ export const TOKENS = {
     gradientSubtle: 'linear-gradient(135deg, rgba(124,58,237,0.06) 0%, rgba(217,70,239,0.04) 100%)',
   },
 
-  // Typography
+  // Typography — Helvetica family for clean, professional, readable look
   fonts: {
-    display: "'Plus Jakarta Sans', -apple-system, system-ui, sans-serif",
-    body: "'DM Sans', -apple-system, system-ui, sans-serif",
-    mono: "'Geist Mono', ui-monospace, monospace",
+    display: "'Helvetica Neue', Helvetica, 'Inter', Arial, sans-serif",
+    body: "'Helvetica Neue', Helvetica, 'Inter', Arial, sans-serif",
+    mono: "ui-monospace, 'SF Mono', Consolas, 'Geist Mono', monospace",
+  },
+  // Standardized font sizes — larger than before for readability
+  text: {
+    xs: 12,
+    sm: 13,
+    base: 15,            // body text — bumped from 14
+    md: 16,
+    lg: 18,
+    xl: 22,
+    '2xl': 28,
+    '3xl': 36,
+    '4xl': 48,
+  },
+  // Standardized weights — heavier defaults so text feels substantial
+  weight: {
+    regular: 500,        // body — was 400, now 500 for more presence
+    medium: 600,
+    semibold: 700,
+    bold: 800,
+    black: 900,
   },
 
   // Spacing scale (pixels)
