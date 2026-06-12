@@ -5,47 +5,31 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { supabase } from '../supabase';
 import { TOKENS } from '../lib/design';
+import Header from '../components/Header';
 
 // ─────────────────────────────────────────────────────────────────────────
 // /products — customer-facing product catalog
-// Reads from master_products (admin catalog)
-// Joins with subscriber_product_settings (subscriber's overrides + enable flag)
+// Reads from subscriber_products (this subscriber's own catalog).
+// Plate + ups are auto from size in SIZE_PLATE_MAP — not stored here.
 // ─────────────────────────────────────────────────────────────────────────
 
-interface MasterProduct {
+interface SubProduct {
   id: string;
   slug: string;
-  name: string;
-  description: string;
-  icon: string;
-  category: string;
-  group_label: string | null;
-  size_w_inch: number;
-  size_h_inch: number;
-  plate: string;
-  total_ups: number;
+  display_name: string;
+  description: string | null;
+  icon: string | null;
+  template_id: string;            // doubles as category
+  default_size_w_inch: number | null;
+  default_size_h_inch: number | null;
   default_sides: string;
   default_color: string;
-  default_paper_category: string | null;
-  is_active: boolean;
+  is_enabled: boolean;
   sort_order: number;
 }
 
-interface SubSetting {
-  master_product_id: string;
-  is_enabled: boolean;
-  custom_display_name: string | null;
-  custom_description: string | null;
-  custom_icon: string | null;
-  custom_category: string | null;
-}
-
-interface ResolvedProduct extends MasterProduct {
-  display_name: string;
-  display_description: string;
-  display_icon: string;
+interface ResolvedProduct extends SubProduct {
   display_category: string;
-  is_enabled: boolean;
 }
 
 const CATEGORY_LABELS: Record<string, string> = {
@@ -79,28 +63,20 @@ export default function ProductsPage() {
       setHasSession(true);
 
       const userId = session.user.id;
-      const [masterRes, settingsRes] = await Promise.all([
-        supabase.from('master_products').select('*').eq('is_active', true).order('sort_order').order('name'),
-        supabase.from('subscriber_product_settings').select('*').eq('subscriber_id', userId),
-      ]);
+      const { data: rows } = await supabase
+        .from('subscriber_products')
+        .select('*')
+        .eq('subscriber_id', userId)
+        .eq('is_enabled', true)
+        .order('sort_order')
+        .order('display_name');
 
       if (!mounted) return;
 
-      const settings: Record<string, SubSetting> = {};
-      (settingsRes.data || []).forEach((s: any) => { settings[s.master_product_id] = s; });
-
-      const resolved: ResolvedProduct[] = (masterRes.data || []).map((m: MasterProduct) => {
-        const s = settings[m.id];
-        return {
-          ...m,
-          display_name: s?.custom_display_name || m.name,
-          display_description: s?.custom_description || m.description,
-          display_icon: s?.custom_icon || m.icon,
-          display_category: s?.custom_category || m.category,
-          // Default to enabled if no setting row exists
-          is_enabled: s ? s.is_enabled : true,
-        };
-      }).filter(p => p.is_enabled);
+      const resolved: ResolvedProduct[] = (rows || []).map((p: SubProduct) => ({
+        ...p,
+        display_category: p.template_id,
+      }));
 
       setProducts(resolved);
       setLoading(false);
@@ -115,7 +91,6 @@ export default function ProductsPage() {
       const q = search.toLowerCase();
       list = list.filter(p =>
         p.display_name.toLowerCase().includes(q) ||
-        (p.group_label || '').toLowerCase().includes(q) ||
         p.slug.includes(q),
       );
     }
@@ -140,9 +115,9 @@ export default function ProductsPage() {
   return (
     <div style={{ minHeight: '100vh', background: TOKENS.colors.bgDeep, color: TOKENS.colors.text, fontFamily: FONT_BODY, fontSize: 15, fontWeight: 500 }}>
       <PageStyles />
-      <Header />
+      <Header subtitle="Catalog" />
 
-      <main style={{ maxWidth: 1240, margin: '0 auto', padding: '100px 32px 80px' }}>
+      <main style={{ maxWidth: 1240, margin: '0 auto', padding: '32px 32px 80px' }}>
         <Hero />
 
         {hasSession === false && (
@@ -188,25 +163,6 @@ export default function ProductsPage() {
 }
 
 // ──────────────────────────────────────────────────────────────────────
-
-function Header() {
-  return (
-    <nav style={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 50, background: 'rgba(255,255,255,0.95)', backdropFilter: 'blur(20px)', borderBottom: `1px solid ${TOKENS.colors.border}`, padding: '14px 0' }}>
-      <div style={{ maxWidth: 1240, margin: '0 auto', padding: '0 32px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: 10, textDecoration: 'none' }}>
-          <div style={{ width: 36, height: 36, background: TOKENS.colors.gradient, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, color: '#fff' }}>📐</div>
-          <span style={{ fontFamily: FONT_DISPLAY, fontSize: 19, fontWeight: 800, color: TOKENS.colors.text, letterSpacing: '-0.02em' }}>PrintCalc</span>
-        </Link>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 22 }}>
-          <Link href="/dashboard" style={navLinkStyle()}>Dashboard</Link>
-          <Link href="/projects" style={navLinkStyle()}>Projects</Link>
-          <Link href="/quotes" style={navLinkStyle()}>Quotes</Link>
-          <Link href="/orders" style={navLinkStyle()}>Orders</Link>
-        </div>
-      </div>
-    </nav>
-  );
-}
 
 function Hero() {
   return (
@@ -294,13 +250,15 @@ function ProductCard({ p }: { p: ResolvedProduct }) {
     >
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 14 }}>
         <div style={{ width: 48, height: 48, background: `${TOKENS.colors.primary}10`, border: `1px solid ${TOKENS.colors.borderStrong}33`, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 26 }}>
-          {p.display_icon || '📦'}
+          {p.icon || '📦'}
         </div>
-        <code style={{ fontSize: 10, color: TOKENS.colors.textDim, fontFamily: TOKENS.fonts.mono, background: TOKENS.colors.bgPanel2, padding: '3px 7px', borderRadius: 5, fontWeight: 700 }}>{p.size_w_inch} × {p.size_h_inch}"</code>
+        {p.default_size_w_inch && p.default_size_h_inch && (
+          <code style={{ fontSize: 10, color: TOKENS.colors.textDim, fontFamily: TOKENS.fonts.mono, background: TOKENS.colors.bgPanel2, padding: '3px 7px', borderRadius: 5, fontWeight: 700 }}>{p.default_size_w_inch} × {p.default_size_h_inch}"</code>
+        )}
       </div>
       <h3 style={{ fontFamily: FONT_DISPLAY, fontSize: 17, fontWeight: 800, margin: 0, marginBottom: 5, color: TOKENS.colors.text, letterSpacing: '-0.01em' }}>{p.display_name}</h3>
       <p style={{ fontSize: 13, color: TOKENS.colors.textMuted, margin: 0, fontWeight: 500, lineHeight: 1.5, minHeight: 36 }}>
-        {p.display_description || 'Configure size, paper, finishes, and quantity.'}
+        {p.description || 'Configure size, paper, finishes, and quantity.'}
       </p>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 18, paddingTop: 14, borderTop: `1px solid ${TOKENS.colors.border}` }}>
         <span style={{ fontSize: 11, color: TOKENS.colors.textDim, fontFamily: TOKENS.fonts.mono, textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700 }}>Calculate →</span>
@@ -326,8 +284,9 @@ function EmptyState() {
       <div style={{ fontSize: 52, marginBottom: 16 }}>📦</div>
       <h2 style={{ fontFamily: FONT_DISPLAY, fontSize: 22, fontWeight: 800, color: TOKENS.colors.text, marginBottom: 10 }}>No products yet</h2>
       <p style={{ fontSize: 15, color: TOKENS.colors.textMuted, fontWeight: 500, maxWidth: 460, margin: '0 auto 24px' }}>
-        The admin hasn&apos;t added any products to the catalog yet. Check back soon, or contact support.
+        You haven&apos;t added any products yet. Head to <strong>My Products</strong> to create your first one.
       </p>
+      <Link href="/dashboard/products" style={{ display: 'inline-block', padding: '11px 22px', background: TOKENS.colors.gradient, color: '#fff', fontSize: 14, fontWeight: 700, fontFamily: FONT_DISPLAY, borderRadius: 10, textDecoration: 'none', boxShadow: TOKENS.shadow.glow }}>+ Create a product</Link>
     </div>
   );
 }
@@ -343,9 +302,6 @@ function NeedSignIn({ onLogin }: { onLogin: () => void }) {
   );
 }
 
-function navLinkStyle(): React.CSSProperties {
-  return { fontSize: 14, color: TOKENS.colors.textMuted, textDecoration: 'none', fontWeight: 600, fontFamily: FONT_DISPLAY };
-}
 function primaryBtn(): React.CSSProperties {
   return {
     padding: '11px 22px',

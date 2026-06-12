@@ -7,8 +7,10 @@ import { supabase } from '../../supabase';
 import { TOKENS } from '../../lib/design';
 
 // ─────────────────────────────────────────────────────────────────────────
-// ADMIN — Master Product Catalog
-// Only ADMIN (Harsh) sees this page. Subscribers can never edit math fields.
+// PARKED — 2026-06-12
+// Architecture changed: subscribers now own their products (created via
+// /dashboard/products). This admin master catalog is no longer the source
+// of truth. Page kept for now in case we revive a global catalog later.
 // ─────────────────────────────────────────────────────────────────────────
 
 interface MasterProduct {

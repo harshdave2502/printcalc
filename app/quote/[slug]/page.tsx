@@ -6,7 +6,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { supabase } from '../../supabase';
 import { getTemplate, ProductTemplate } from '../../lib/templates';
 import { TOKENS } from '../../lib/design';
-import { computePrice, computePriceForProduct } from '../../lib/calc';
+import { computePrice } from '../../lib/calc';
 
 // ─────────────────────────────────────────────────────────────────────────
 // Quick Quote — customer-friendly view.
@@ -80,9 +80,7 @@ export default function QuickQuotePage() {
       setHasSession(true);
       const userId = session.user.id;
 
-      const [masterRes, settingRes, legacyRes, paperRes, catRes, rateRes, subRes] = await Promise.all([
-        supabase.from('master_products').select('*').eq('slug', slug).eq('is_active', true).maybeSingle(),
-        supabase.from('subscriber_product_settings').select('*').eq('subscriber_id', userId),
+      const [prodRes, paperRes, catRes, rateRes, subRes] = await Promise.all([
         supabase.from('subscriber_products').select('*').eq('subscriber_id', userId).eq('slug', slug).maybeSingle(),
         supabase.from('paper_stocks').select('id, label, gsm, rate_per_kg, category').eq('subscriber_id', userId).order('gsm'),
         supabase.from('paper_categories').select('category, rate_per_kg').eq('subscriber_id', userId),
@@ -91,29 +89,7 @@ export default function QuickQuotePage() {
       ]);
       if (!mounted) return;
 
-      // Master product wins; fall back to legacy
-      const master = masterRes.data as any;
-      const legacy = legacyRes.data as SubscriberProduct | null;
-      let prod: SubscriberProduct | null = null;
-      if (master) {
-        const setting = (settingRes.data || []).find((s: any) => s.master_product_id === master.id);
-        prod = {
-          id: master.id,
-          template_id: master.category,
-          slug: master.slug,
-          display_name: setting?.custom_display_name || master.name,
-          description: setting?.custom_description || master.description,
-          icon: setting?.custom_icon || master.icon,
-          default_size_label: `${master.size_w_inch} × ${master.size_h_inch} in`,
-          default_size_w_inch: master.size_w_inch,
-          default_size_h_inch: master.size_h_inch,
-        };
-        (prod as any)._masterPlate = master.plate;
-        (prod as any)._masterUps = master.total_ups;
-      } else if (legacy) {
-        prod = legacy;
-      }
-
+      const prod = prodRes.data as SubscriberProduct | null;
       if (!prod) { setLoading(false); return; }
       setProduct(prod);
       setTemplate(getTemplate(prod.template_id) || null);
@@ -154,32 +130,18 @@ export default function QuickQuotePage() {
     const stock = paperStocks.find((p) => p.id === paperId);
     if (!qty || !stock) return null;
 
-    const masterPlate = (product as any)._masterPlate as string | null;
-    const masterUps = (product as any)._masterUps as number | null;
-    const r = (masterPlate && masterUps)
-      ? computePriceForProduct({
-          qty,
-          plate: masterPlate,
-          totalUps: masterUps,
-          stock,
-          paperCategories,
-          printingRates,
-          sides,
-          color,
-          markupPercent,
-          taxPercent,
-        })
-      : computePrice({
-          qty,
-          w, h,
-          stock,
-          paperCategories,
-          printingRates,
-          sides,
-          color,
-          markupPercent,
-          taxPercent,
-        });
+    // Plate + ups auto-derived from size via SIZE_PLATE_MAP inside computePrice.
+    const r = computePrice({
+      qty,
+      w, h,
+      stock,
+      paperCategories,
+      printingRates,
+      sides,
+      color,
+      markupPercent,
+      taxPercent,
+    });
     if (!r.ready) return null;
 
     // Lamination as small flat add-on (quick estimate — proper integration later)
