@@ -4,44 +4,61 @@ import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { supabase } from '../../supabase';
-import { TEMPLATES, ProductTemplate } from '../../lib/templates';
 import { TOKENS } from '../../lib/design';
 
 // ─────────────────────────────────────────────────────────────────────────
-// Product Manager — list, add, enable/disable subscriber's products.
-// Click a product → edit page (next file).
+// Subscriber's product settings page
+// Subscriber sees admin's master_products and customizes display only.
+// 🔒 Math fields (size, plate, total_ups) are READ-ONLY here.
 // ─────────────────────────────────────────────────────────────────────────
 
-interface SubscriberProduct {
+interface MasterProduct {
   id: string;
-  template_id: string;
   slug: string;
-  display_name: string;
+  name: string;
   description: string;
   icon: string;
-  is_enabled: boolean;
-  sort_order: number;
+  category: string;
+  group_label: string | null;
+  size_w_inch: number;
+  size_h_inch: number;
+  plate: string;
+  total_ups: number;
+  default_sides: string;
+  default_color: string;
+  default_paper_category: string | null;
 }
 
-export default function DashboardProductsPage() {
+interface Setting {
+  id?: string;
+  master_product_id: string;
+  is_enabled: boolean;
+  custom_display_name: string | null;
+  custom_description: string | null;
+  custom_icon: string | null;
+  custom_default_sides: string | null;
+  custom_default_color: string | null;
+  custom_default_paper_category: string | null;
+}
+
+const FONT_DISPLAY = TOKENS.fonts.display;
+const FONT_BODY = TOKENS.fonts.body;
+
+export default function SubscriberProductSettingsPage() {
   const router = useRouter();
   const [hasSession, setHasSession] = useState<boolean | null>(null);
   const [loading, setLoading] = useState(true);
-  const [products, setProducts] = useState<SubscriberProduct[]>([]);
-  const [showAdd, setShowAdd] = useState(false);
+  const [products, setProducts] = useState<MasterProduct[]>([]);
+  const [settings, setSettings] = useState<Record<string, Setting>>({});
   const [search, setSearch] = useState('');
-  const [filterTpl, setFilterTpl] = useState<string>('all');
+  const [editing, setEditing] = useState<MasterProduct | null>(null);
 
   useEffect(() => {
     let mounted = true;
     (async () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (!mounted) return;
-      if (!session) {
-        setHasSession(false);
-        setLoading(false);
-        return;
-      }
+      if (!session) { setHasSession(false); setLoading(false); return; }
       setHasSession(true);
       await reload(session.user.id);
       setLoading(false);
@@ -56,522 +73,436 @@ export default function DashboardProductsPage() {
       if (!session) return;
       userId = session.user.id;
     }
-    const { data } = await supabase
-      .from('subscriber_products')
-      .select('*')
-      .eq('subscriber_id', userId)
-      .order('sort_order', { ascending: true });
-    setProducts(data || []);
+    const [masterRes, settingRes] = await Promise.all([
+      supabase.from('master_products').select('*').eq('is_active', true).order('sort_order').order('name'),
+      supabase.from('subscriber_product_settings').select('*').eq('subscriber_id', userId),
+    ]);
+    setProducts((masterRes.data || []) as MasterProduct[]);
+    const map: Record<string, Setting> = {};
+    (settingRes.data || []).forEach((s: any) => { map[s.master_product_id] = s; });
+    setSettings(map);
   }
 
-  async function toggleEnabled(p: SubscriberProduct) {
-    await supabase
-      .from('subscriber_products')
-      .update({ is_enabled: !p.is_enabled })
-      .eq('id', p.id);
-    await reload();
-  }
-
-  async function deleteProduct(p: SubscriberProduct) {
-    if (!confirm(`Delete "${p.display_name}"? This won't affect saved quotes/orders.`)) return;
-    await supabase.from('subscriber_products').delete().eq('id', p.id);
-    await reload();
+  async function toggleEnable(mp: MasterProduct) {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return;
+    const existing = settings[mp.id];
+    const newEnabled = existing ? !existing.is_enabled : false; // first toggle = disable
+    if (existing?.id) {
+      await supabase.from('subscriber_product_settings').update({ is_enabled: newEnabled }).eq('id', existing.id);
+    } else {
+      await supabase.from('subscriber_product_settings').insert({
+        subscriber_id: session.user.id,
+        master_product_id: mp.id,
+        is_enabled: newEnabled,
+      });
+    }
+    await reload(session.user.id);
   }
 
   const filtered = useMemo(() => {
     let list = products;
-    if (filterTpl !== 'all') list = list.filter(p => p.template_id === filterTpl);
     if (search.trim()) {
       const q = search.toLowerCase();
-      list = list.filter(p => p.display_name.toLowerCase().includes(q) || p.slug.includes(q));
+      list = list.filter(p =>
+        (settings[p.id]?.custom_display_name || p.name).toLowerCase().includes(q) ||
+        p.slug.includes(q) ||
+        (p.group_label || '').toLowerCase().includes(q)
+      );
     }
     return list;
-  }, [products, filterTpl, search]);
+  }, [products, settings, search]);
 
   const grouped = useMemo(() => {
-    const g: Record<string, SubscriberProduct[]> = {};
+    const map: Record<string, MasterProduct[]> = {};
     filtered.forEach(p => {
-      if (!g[p.template_id]) g[p.template_id] = [];
-      g[p.template_id].push(p);
+      if (!map[p.category]) map[p.category] = [];
+      map[p.category].push(p);
     });
-    return g;
+    return map;
   }, [filtered]);
 
   return (
-    <div style={{ minHeight: '100vh', background: TOKENS.colors.bgDeep, color: TOKENS.colors.text, fontFamily: TOKENS.fonts.body, position: 'relative', overflow: 'hidden' }}>
+    <div style={{ minHeight: '100vh', background: TOKENS.colors.bgDeep, color: TOKENS.colors.text, fontFamily: FONT_BODY, fontSize: 15, fontWeight: 500 }}>
       <PageStyles />
-      <Ambient />
       <Header />
 
-      <main style={{ maxWidth: 1240, margin: '0 auto', padding: '110px 32px 60px', position: 'relative', zIndex: 1 }}>
-        <Hero count={products.length} onAdd={() => setShowAdd(true)} />
+      <main style={{ maxWidth: 1240, margin: '0 auto', padding: '100px 32px 80px' }}>
+
+        <div style={{ marginBottom: 32 }}>
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: 'rgba(124,58,237,0.08)', color: TOKENS.colors.primary, border: `1px solid ${TOKENS.colors.borderStrong}`, padding: '5px 12px', borderRadius: 100, fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 14 }}>
+            ⚙️ My Products
+          </div>
+          <h1 style={{ fontFamily: FONT_DISPLAY, fontSize: 36, fontWeight: 800, color: TOKENS.colors.text, margin: 0, marginBottom: 8, letterSpacing: '-0.025em' }}>
+            Customize your catalog
+          </h1>
+          <p style={{ fontSize: 15, color: TOKENS.colors.textMuted, margin: 0, fontWeight: 500, maxWidth: 700 }}>
+            Enable / disable products, rename for your market, customize defaults.
+            <strong style={{ color: TOKENS.colors.text }}> Size, plate, and total ups are locked</strong> — those drive the price math.
+          </p>
+        </div>
 
         {hasSession === false && (
           <div style={card({ padding: 40, textAlign: 'center' })}>
             <div style={{ fontSize: 40, marginBottom: 12 }}>🔐</div>
-            <p style={{ color: TOKENS.colors.textMuted, marginBottom: 16 }}>Sign in to manage your products</p>
-            <button onClick={() => router.push('/login')} style={primary()}>Sign In</button>
+            <p style={{ color: TOKENS.colors.textMuted, marginBottom: 16, fontWeight: 600 }}>Sign in to manage your products</p>
+            <button onClick={() => router.push('/login')} style={primaryBtn()}>Sign In</button>
           </div>
         )}
 
-        {hasSession && loading && <Loading />}
+        {hasSession && loading && <LoadingState />}
 
-        {hasSession && !loading && products.length === 0 && (
-          <EmptyState onAdd={() => setShowAdd(true)} />
-        )}
+        {hasSession && !loading && products.length === 0 && <NoMaster />}
 
         {hasSession && !loading && products.length > 0 && (
           <>
-            <Filters search={search} setSearch={setSearch} filterTpl={filterTpl} setFilterTpl={setFilterTpl} count={filtered.length} />
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 36, marginTop: 32 }}>
-              {TEMPLATES.filter(t => grouped[t.id]?.length).map((tpl) => (
-                <TemplateGroup key={tpl.id} template={tpl} products={grouped[tpl.id]} onToggle={toggleEnabled} onDelete={deleteProduct} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, background: TOKENS.colors.bgPanel, border: `1px solid ${TOKENS.colors.border}`, borderRadius: 12, padding: '12px 16px', marginBottom: 24 }}>
+              <span style={{ fontSize: 18, color: TOKENS.colors.textMuted }}>🔍</span>
+              <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search products…" style={{ flex: 1, background: 'transparent', border: 'none', outline: 'none', fontSize: 15, fontWeight: 500, color: TOKENS.colors.text, fontFamily: 'inherit' }} />
+              <span style={{ fontSize: 13, color: TOKENS.colors.textDim, fontWeight: 600 }}>{filtered.length} of {products.length}</span>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 32 }}>
+              {Object.keys(grouped).map(cat => (
+                <CategorySection
+                  key={cat}
+                  category={cat}
+                  products={grouped[cat]}
+                  settings={settings}
+                  onToggle={toggleEnable}
+                  onEdit={(mp) => setEditing(mp)}
+                />
               ))}
             </div>
           </>
         )}
       </main>
 
-      {showAdd && <AddProductModal onClose={() => setShowAdd(false)} onCreated={async (id) => { setShowAdd(false); router.push(`/dashboard/products/${id}`); }} />}
+      {editing && (
+        <EditModal
+          master={editing}
+          setting={settings[editing.id]}
+          onClose={() => setEditing(null)}
+          onSaved={async () => { setEditing(null); await reload(); }}
+        />
+      )}
     </div>
   );
 }
 
 // ──────────────────────────────────────────────────────────────────────
-// Subcomponents
-// ──────────────────────────────────────────────────────────────────────
 
 function Header() {
   return (
-    <nav style={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 50, background: 'rgba(255, 255, 255, 0.92)', backdropFilter: 'blur(20px)', borderBottom: `1px solid ${TOKENS.colors.border}`, padding: '14px 0' }}>
+    <nav style={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 50, background: 'rgba(255,255,255,0.95)', backdropFilter: 'blur(20px)', borderBottom: `1px solid ${TOKENS.colors.border}`, padding: '14px 0' }}>
       <div style={{ maxWidth: 1240, margin: '0 auto', padding: '0 32px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-          <Link href="/dashboard" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: TOKENS.colors.textMuted, textDecoration: 'none', fontSize: 14, fontWeight: 500 }}>← Dashboard</Link>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+          <Link href="/dashboard" style={{ color: TOKENS.colors.textMuted, textDecoration: 'none', fontSize: 14, fontWeight: 600 }}>← Dashboard</Link>
           <div style={{ width: 1, height: 20, background: TOKENS.colors.border }} />
-          <span style={{ fontSize: 14, color: '#1A1330', fontWeight: 600 }}>Manage Products</span>
+          <span style={{ fontSize: 14, color: TOKENS.colors.text, fontWeight: 700, fontFamily: FONT_DISPLAY }}>Manage Products</span>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
-          <Link href="/products" style={{ fontSize: 14, color: TOKENS.colors.accent, textDecoration: 'none', fontWeight: 500 }}>👁️ View Catalog</Link>
-        </div>
+        <Link href="/products" style={{ fontSize: 14, color: TOKENS.colors.primary, textDecoration: 'none', fontWeight: 700, fontFamily: FONT_DISPLAY }}>👁 View Catalog →</Link>
       </div>
     </nav>
   );
 }
 
-function Ambient() {
+function CategorySection({ category, products, settings, onToggle, onEdit }: {
+  category: string;
+  products: MasterProduct[];
+  settings: Record<string, Setting>;
+  onToggle: (mp: MasterProduct) => void;
+  onEdit: (mp: MasterProduct) => void;
+}) {
   return (
-    <>
-      <div style={{ position: 'absolute', top: -150, left: '50%', transform: 'translateX(-50%)', width: 1100, height: 700, background: 'radial-gradient(ellipse, rgba(124,58,237,0.08) 0%, transparent 65%)', pointerEvents: 'none', zIndex: 0 }} />
-      <div style={{ position: 'absolute', inset: 0, backgroundImage: 'linear-gradient(rgba(124,58,237,0.025) 1px, transparent 1px), linear-gradient(90deg, rgba(124,58,237,0.025) 1px, transparent 1px)', backgroundSize: '64px 64px', pointerEvents: 'none', zIndex: 0 }} />
-    </>
-  );
-}
-
-function Hero({ count, onAdd }: { count: number; onAdd: () => void }) {
-  return (
-    <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 24, marginBottom: 32, flexWrap: 'wrap', animation: 'pc-fade-up 0.5s ease both' }}>
-      <div>
-        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: 'rgba(124,58,237,0.12)', border: `1px solid ${TOKENS.colors.borderStrong}`, borderRadius: 100, padding: '6px 14px', fontSize: 12, color: TOKENS.colors.accent, fontWeight: 600, marginBottom: 16, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-          ⚙️ Admin · Product Manager
-        </div>
-        <h1 style={{ fontFamily: TOKENS.fonts.display, fontSize: 'clamp(28px, 4vw, 42px)', fontWeight: 800, letterSpacing: '-0.025em', margin: 0, marginBottom: 8 }}>
-          Your <span style={{ background: TOKENS.colors.gradient, WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>products</span>
-        </h1>
-        <p style={{ fontSize: 15, color: TOKENS.colors.textMuted, margin: 0, maxWidth: 580, lineHeight: 1.6 }}>
-          Add, rename, toggle fields, and create custom products from any of the 7 templates. Disable what you don&apos;t offer — customers will only see what&apos;s enabled.
-        </p>
-      </div>
-      <button onClick={onAdd} style={primary()}>
-        ➕ Add Product
-      </button>
-    </div>
-  );
-}
-
-function Filters({ search, setSearch, filterTpl, setFilterTpl, count }: { search: string; setSearch: (v: string) => void; filterTpl: string; setFilterTpl: (v: string) => void; count: number }) {
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 14, animation: 'pc-fade-up 0.5s 0.1s ease both' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, background: TOKENS.colors.bgCard, border: `1px solid ${TOKENS.colors.border}`, borderRadius: TOKENS.radius.lg, padding: '11px 15px' }}>
-        <span style={{ fontSize: 16, color: TOKENS.colors.textMuted }}>🔍</span>
-        <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search products by name or slug…" style={{ flex: 1, background: 'transparent', border: 'none', outline: 'none', color: TOKENS.colors.text, fontSize: 14, fontFamily: 'inherit' }} />
-        <span style={{ fontSize: 12, color: TOKENS.colors.textDim, fontFamily: TOKENS.fonts.mono }}>{count} {count === 1 ? 'product' : 'products'}</span>
-      </div>
-      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-        <Chip active={filterTpl === 'all'} onClick={() => setFilterTpl('all')}>All Templates</Chip>
-        {TEMPLATES.map((t) => (
-          <Chip key={t.id} active={filterTpl === t.id} onClick={() => setFilterTpl(t.id)} accent={t.accent}>
-            {t.icon} {t.label}
-          </Chip>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function Chip({ active, onClick, children, accent }: { active: boolean; onClick: () => void; children: React.ReactNode; accent?: string }) {
-  return (
-    <button onClick={onClick} style={{
-      padding: '7px 14px',
-      borderRadius: TOKENS.radius.full,
-      border: `1px solid ${active ? (accent || TOKENS.colors.primary) : TOKENS.colors.border}`,
-      background: active ? `${accent || TOKENS.colors.primary}22` : 'transparent',
-      color: active ? (accent || TOKENS.colors.primary) : TOKENS.colors.textMuted,
-      fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit',
-      transition: 'all 0.18s ease',
-    }}>{children}</button>
-  );
-}
-
-function TemplateGroup({ template, products, onToggle, onDelete }: { template: ProductTemplate; products: SubscriberProduct[]; onToggle: (p: SubscriberProduct) => void; onDelete: (p: SubscriberProduct) => void }) {
-  return (
-    <section style={{ animation: 'pc-fade-up 0.5s ease both' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
-        <div style={{ width: 32, height: 32, background: `${template.accent}22`, border: `1px solid ${template.accent}55`, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>{template.icon}</div>
-        <h2 style={{ fontFamily: TOKENS.fonts.display, fontSize: 18, fontWeight: 700, margin: 0 }}>{template.label}</h2>
-        <span style={{ fontSize: 12, color: TOKENS.colors.textDim, fontFamily: TOKENS.fonts.mono }}>{products.length} product{products.length !== 1 ? 's' : ''}</span>
-      </div>
+    <section>
+      <h2 style={{ fontFamily: FONT_DISPLAY, fontSize: 20, fontWeight: 800, color: TOKENS.colors.text, marginBottom: 12, textTransform: 'capitalize', letterSpacing: '-0.01em' }}>
+        {category} <span style={{ color: TOKENS.colors.textDim, fontWeight: 600 }}>· {products.length}</span>
+      </h2>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {products.map((p) => <ProductRow key={p.id} product={p} accent={template.accent} onToggle={onToggle} onDelete={onDelete} />)}
+        {products.map(p => (
+          <ProductRow
+            key={p.id}
+            mp={p}
+            setting={settings[p.id]}
+            onToggle={() => onToggle(p)}
+            onEdit={() => onEdit(p)}
+          />
+        ))}
       </div>
     </section>
   );
 }
 
-function ProductRow({ product, accent, onToggle, onDelete }: { product: SubscriberProduct; accent: string; onToggle: (p: SubscriberProduct) => void; onDelete: (p: SubscriberProduct) => void }) {
+function ProductRow({ mp, setting, onToggle, onEdit }: { mp: MasterProduct; setting?: Setting; onToggle: () => void; onEdit: () => void }) {
+  const isEnabled = setting ? setting.is_enabled : true;
+  const displayName = setting?.custom_display_name || mp.name;
+  const displayIcon = setting?.custom_icon || mp.icon;
+
   return (
     <div style={{
-      display: 'flex', alignItems: 'center', gap: 14, padding: '14px 18px',
-      background: TOKENS.colors.bgCard, border: `1px solid ${TOKENS.colors.border}`,
-      borderRadius: TOKENS.radius.lg, opacity: product.is_enabled ? 1 : 0.55,
-      transition: 'all 0.2s ease',
-    }}>
-      <div style={{ width: 40, height: 40, background: `${accent}22`, border: `1px solid ${accent}55`, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0 }}>
-        {product.icon || '📦'}
-      </div>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-          <h3 style={{ fontFamily: TOKENS.fonts.display, fontSize: 15, fontWeight: 700, margin: 0, color: TOKENS.colors.text }}>{product.display_name}</h3>
-          <code style={{ fontSize: 11, color: TOKENS.colors.textMuted, fontFamily: TOKENS.fonts.mono, background: TOKENS.colors.bgPanel2, padding: '2px 6px', borderRadius: 4 }}>/{product.slug}</code>
-          {!product.is_enabled && <span style={{ fontSize: 10, fontWeight: 600, color: '#fff', background: '#71717a', padding: '2px 7px', borderRadius: 4, letterSpacing: '0.04em' }}>DISABLED</span>}
+      display: 'grid', gridTemplateColumns: '48px 1fr 120px 90px 100px 140px',
+      gap: 14, padding: '14px 18px', alignItems: 'center',
+      background: '#fff',
+      border: `1px solid ${TOKENS.colors.border}`,
+      borderRadius: 12,
+      opacity: isEnabled ? 1 : 0.55,
+      fontFamily: FONT_BODY,
+    }} className="pc-row">
+      <div style={{ fontSize: 26 }}>{displayIcon}</div>
+
+      <div style={{ minWidth: 0 }}>
+        <div style={{ fontFamily: FONT_DISPLAY, fontSize: 15, fontWeight: 800, color: TOKENS.colors.text }}>
+          {displayName}
+          {setting?.custom_display_name && setting.custom_display_name !== mp.name && (
+            <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 600, color: TOKENS.colors.textDim }}>(was: {mp.name})</span>
+          )}
         </div>
-        <p style={{ fontSize: 12, color: TOKENS.colors.textMuted, margin: 0, marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{product.description}</p>
+        <div style={{ fontSize: 12, color: TOKENS.colors.textMuted, marginTop: 2, fontWeight: 500 }}>
+          {mp.group_label || mp.description || '—'}
+        </div>
       </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-        <button onClick={() => onToggle(product)} title={product.is_enabled ? 'Disable' : 'Enable'} style={iconButton(product.is_enabled ? '#10B981' : '#71717a')}>
-          {product.is_enabled ? '✓' : '○'}
+
+      {/* 🔒 LOCKED: Size */}
+      <div title="🔒 Locked — admin only" style={{ fontFamily: TOKENS.fonts.mono, fontSize: 12, fontWeight: 700, color: TOKENS.colors.textMuted, background: TOKENS.colors.bgPanel2, border: `1px dashed ${TOKENS.colors.border}`, padding: '5px 9px', borderRadius: 6, textAlign: 'center' }}>
+        🔒 {mp.size_w_inch}×{mp.size_h_inch}
+      </div>
+      {/* 🔒 LOCKED: Plate */}
+      <div title="🔒 Locked — admin only" style={{ fontFamily: TOKENS.fonts.mono, fontSize: 11, fontWeight: 700, color: TOKENS.colors.textMuted, background: TOKENS.colors.bgPanel2, border: `1px dashed ${TOKENS.colors.border}`, padding: '5px 8px', borderRadius: 6, textAlign: 'center' }}>
+        🔒 {mp.plate}
+      </div>
+      {/* 🔒 LOCKED: Total Ups */}
+      <div title="🔒 Locked — admin only" style={{ fontFamily: TOKENS.fonts.mono, fontSize: 14, fontWeight: 800, color: TOKENS.colors.primary, background: 'rgba(124,58,237,0.08)', border: `1px dashed ${TOKENS.colors.borderStrong}`, padding: '5px 10px', borderRadius: 6, textAlign: 'center' }}>
+        🔒 {mp.total_ups} ups
+      </div>
+
+      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+        <button onClick={onEdit} style={ghostBtn()} title="Customize display">✏️ Edit</button>
+        <button
+          onClick={onToggle}
+          style={{
+            ...togBtn(isEnabled),
+            minWidth: 60,
+          }}
+          title={isEnabled ? 'Disable for my shop' : 'Enable for my shop'}
+        >
+          {isEnabled ? 'ON' : 'OFF'}
         </button>
-        <Link href={`/dashboard/products/${product.id}`} style={{ ...iconButton(accent), textDecoration: 'none', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>✏️</Link>
-        <button onClick={() => onDelete(product)} style={iconButton('#EF4444')}>🗑️</button>
       </div>
     </div>
   );
 }
 
-function Loading() {
+function LoadingState() {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 16 }}>
-      {Array.from({ length: 5 }).map((_, i) => (
-        <div key={i} style={{ height: 70, background: 'linear-gradient(110deg, rgba(243,242,247,0.6) 0%, rgba(232,228,242,0.6) 50%, rgba(243,242,247,0.6) 100%)', backgroundSize: '200% 100%', animation: 'pc-shimmer 1.5s linear infinite', borderRadius: TOKENS.radius.lg }} />
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      {Array.from({ length: 6 }).map((_, i) => (
+        <div key={i} style={{ height: 70, background: TOKENS.colors.bgPanel2, borderRadius: 12 }} />
       ))}
     </div>
   );
 }
 
-function EmptyState({ onAdd }: { onAdd: () => void }) {
+function NoMaster() {
   return (
     <div style={card({ padding: 56, textAlign: 'center' })}>
       <div style={{ fontSize: 48, marginBottom: 16 }}>📦</div>
-      <h2 style={{ fontFamily: TOKENS.fonts.display, fontSize: 22, fontWeight: 700, marginBottom: 10 }}>No products yet</h2>
-      <p style={{ color: TOKENS.colors.textMuted, marginBottom: 24, maxWidth: 480, margin: '0 auto 24px', lineHeight: 1.6 }}>
-        Add your first product to start quoting. Pick a template that matches what you offer — Card, Sheet, Folded, Booklet, Calendar, Stationery, or Folder.
+      <h3 style={{ fontFamily: FONT_DISPLAY, fontSize: 20, fontWeight: 800, color: TOKENS.colors.text, marginBottom: 8 }}>No products in catalog yet</h3>
+      <p style={{ fontSize: 15, color: TOKENS.colors.textMuted, fontWeight: 500, marginBottom: 0 }}>
+        The admin hasn&apos;t added any products yet. Once they do, they&apos;ll appear here for you to customize.
       </p>
-      <button onClick={onAdd} style={primary()}>➕ Add First Product</button>
     </div>
   );
 }
 
 // ──────────────────────────────────────────────────────────────────────
-// Add Product Modal
+// Edit Modal — subscriber customizes display fields (not math)
 // ──────────────────────────────────────────────────────────────────────
 
-function AddProductModal({ onClose, onCreated }: { onClose: () => void; onCreated: (id: string) => Promise<void> }) {
-  const [step, setStep] = useState<'template' | 'preset' | 'custom'>('template');
-  const [selectedTpl, setSelectedTpl] = useState<ProductTemplate | null>(null);
-  const [name, setName] = useState('');
-  const [slug, setSlug] = useState('');
-  const [icon, setIcon] = useState('📦');
-  const [description, setDescription] = useState('');
+function EditModal({ master, setting, onClose, onSaved }: { master: MasterProduct; setting?: Setting; onClose: () => void; onSaved: () => void }) {
+  const [form, setForm] = useState<Setting>({
+    master_product_id: master.id,
+    is_enabled: setting?.is_enabled ?? true,
+    custom_display_name: setting?.custom_display_name || '',
+    custom_description: setting?.custom_description || '',
+    custom_icon: setting?.custom_icon || '',
+    custom_default_sides: setting?.custom_default_sides || '',
+    custom_default_color: setting?.custom_default_color || '',
+    custom_default_paper_category: setting?.custom_default_paper_category || '',
+    id: setting?.id,
+  });
   const [saving, setSaving] = useState(false);
 
-  function pickTemplate(tpl: ProductTemplate) {
-    setSelectedTpl(tpl);
-    setStep('preset');
+  function set<K extends keyof Setting>(k: K, v: any) {
+    setForm(prev => ({ ...prev, [k]: v }));
   }
 
-  async function applyPreset(presetSlug?: string) {
-    if (!selectedTpl) return;
-    if (presetSlug) {
-      const preset = selectedTpl.defaultProducts.find(p => p.slug === presetSlug);
-      if (preset) {
-        await save({ slug: preset.slug, name: preset.name, icon: preset.icon, description: preset.description, defaultSize: preset.defaultSize });
-      }
-    } else {
-      setStep('custom');
-      setName('');
-      setSlug('');
-      setIcon(selectedTpl.icon);
-      setDescription('');
-    }
-  }
-
-  async function save({ slug, name, icon, description, defaultSize }: { slug: string; name: string; icon: string; description: string; defaultSize?: { label: string; w: number; h: number } }) {
-    if (!selectedTpl) return;
-    setSaving(true);
+  async function submit() {
     const { data: { session } } = await supabase.auth.getSession();
-    if (!session) { setSaving(false); onClose(); return; }
-    const { data: existing } = await supabase
-      .from('subscriber_products')
-      .select('id, sort_order')
-      .eq('subscriber_id', session.user.id)
-      .order('sort_order', { ascending: false })
-      .limit(1);
-    const sort_order = (existing && existing[0] && (existing[0] as any).sort_order ? Number((existing[0] as any).sort_order) : 0) + 1;
-    const insertData: any = {
+    if (!session) return;
+    setSaving(true);
+    const payload = {
       subscriber_id: session.user.id,
-      template_id: selectedTpl.id,
-      slug,
-      display_name: name,
-      icon,
-      description,
-      is_enabled: true,
-      sort_order,
+      master_product_id: master.id,
+      is_enabled: form.is_enabled,
+      custom_display_name: form.custom_display_name?.trim() || null,
+      custom_description: form.custom_description?.trim() || null,
+      custom_icon: form.custom_icon?.trim() || null,
+      custom_default_sides: form.custom_default_sides || null,
+      custom_default_color: form.custom_default_color || null,
+      custom_default_paper_category: form.custom_default_paper_category?.trim() || null,
     };
-    if (defaultSize) {
-      insertData.default_size_label = defaultSize.label;
-      insertData.default_size_w_inch = defaultSize.w;
-      insertData.default_size_h_inch = defaultSize.h;
+    if (form.id) {
+      await supabase.from('subscriber_product_settings').update(payload).eq('id', form.id);
+    } else {
+      await supabase.from('subscriber_product_settings').insert(payload);
     }
-    const { data, error } = await supabase
-      .from('subscriber_products')
-      .insert(insertData)
-      .select()
-      .single();
     setSaving(false);
-    if (error) {
-      alert('Could not create product: ' + error.message);
-      return;
-    }
-    if (data) await onCreated(data.id);
-  }
-
-  function slugify(s: string) {
-    return s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    onSaved();
   }
 
   return (
-    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(20, 14, 50, 0.45)', backdropFilter: 'blur(8px)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, animation: 'pc-fade-in 0.2s ease' }}>
-      <div onClick={(e) => e.stopPropagation()} style={{
-        background: TOKENS.colors.bgPanel,
-        border: `1px solid ${TOKENS.colors.borderStrong}`,
-        borderRadius: TOKENS.radius['2xl'],
-        padding: 32,
-        maxWidth: 720,
-        width: '100%',
-        maxHeight: '90vh',
-        overflow: 'auto',
-        boxShadow: TOKENS.shadow.lg,
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
-          <h2 style={{ fontFamily: TOKENS.fonts.display, fontSize: 22, fontWeight: 700, margin: 0 }}>
-            {step === 'template' && 'Pick a template'}
-            {step === 'preset' && `Add a ${selectedTpl?.label.toLowerCase()}`}
-            {step === 'custom' && 'Create custom product'}
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(20,14,50,0.45)', backdropFilter: 'blur(6px)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: '#fff', border: `1px solid ${TOKENS.colors.border}`, borderRadius: 18, maxWidth: 580, width: '100%', maxHeight: '92vh', overflow: 'auto', boxShadow: TOKENS.shadow.lg, fontFamily: FONT_BODY }}>
+        <div style={{ position: 'sticky', top: 0, background: '#fff', padding: '22px 26px', borderBottom: `1px solid ${TOKENS.colors.border}` }}>
+          <h2 style={{ fontFamily: FONT_DISPLAY, fontSize: 20, fontWeight: 800, margin: 0 }}>
+            {master.icon} {master.name}
           </h2>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', color: TOKENS.colors.textMuted, fontSize: 24, cursor: 'pointer', padding: 4 }}>✕</button>
+          <p style={{ fontSize: 13, color: TOKENS.colors.textMuted, marginTop: 4, fontWeight: 500 }}>
+            Customize the display for your shop. Math fields are locked.
+          </p>
         </div>
 
-        {step === 'template' && (
-          <div>
-            <p style={{ color: TOKENS.colors.textMuted, fontSize: 14, marginBottom: 20 }}>
-              Templates define the calculation formula and default fields. Pick one that matches what you make.
-            </p>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 12 }}>
-              {TEMPLATES.map((tpl) => (
-                <button key={tpl.id} onClick={() => pickTemplate(tpl)} style={{
-                  textAlign: 'left',
-                  padding: 18,
-                  background: TOKENS.colors.bgCard,
-                  border: `1px solid ${TOKENS.colors.border}`,
-                  borderRadius: TOKENS.radius.lg,
-                  cursor: 'pointer',
-                  fontFamily: 'inherit',
-                  color: TOKENS.colors.text,
-                  transition: 'all 0.2s ease',
-                }} onMouseEnter={(e) => { e.currentTarget.style.borderColor = tpl.accent; e.currentTarget.style.transform = 'translateY(-2px)'; }} onMouseLeave={(e) => { e.currentTarget.style.borderColor = TOKENS.colors.border; e.currentTarget.style.transform = 'translateY(0)'; }}>
-                  <div style={{ width: 40, height: 40, background: `${tpl.accent}22`, border: `1px solid ${tpl.accent}55`, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, marginBottom: 10 }}>{tpl.icon}</div>
-                  <div style={{ fontFamily: TOKENS.fonts.display, fontSize: 15, fontWeight: 700, marginBottom: 4 }}>{tpl.label}</div>
-                  <div style={{ fontSize: 12, color: TOKENS.colors.textMuted, lineHeight: 1.5 }}>{tpl.description}</div>
-                </button>
-              ))}
+        <div style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 14 }}>
+
+          {/* 🔒 LOCKED — read-only */}
+          <div style={{ padding: 14, background: TOKENS.colors.bgPanel2, border: `1px dashed ${TOKENS.colors.border}`, borderRadius: 10 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: TOKENS.colors.textMuted, marginBottom: 8, letterSpacing: '0.04em', textTransform: 'uppercase' }}>🔒 Locked (admin-only)</div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+              <ReadOnlyField label="Size (inch)" value={`${master.size_w_inch} × ${master.size_h_inch}`} />
+              <ReadOnlyField label="Plate" value={master.plate} />
+              <ReadOnlyField label="Total Ups" value={String(master.total_ups)} />
             </div>
           </div>
-        )}
 
-        {step === 'preset' && selectedTpl && (
-          <div>
-            <p style={{ color: TOKENS.colors.textMuted, fontSize: 14, marginBottom: 20 }}>
-              Pick a common preset, or create a custom product from this template.
-            </p>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 10, marginBottom: 16 }}>
-              {selectedTpl.defaultProducts.map((p) => (
-                <button key={p.slug} onClick={() => applyPreset(p.slug)} disabled={saving} style={{
-                  textAlign: 'left', padding: 14, background: TOKENS.colors.bgCard, border: `1px solid ${TOKENS.colors.border}`, borderRadius: TOKENS.radius.md, cursor: 'pointer', fontFamily: 'inherit', color: TOKENS.colors.text, transition: 'all 0.2s ease',
-                }} onMouseEnter={(e) => { e.currentTarget.style.borderColor = selectedTpl.accent; }} onMouseLeave={(e) => { e.currentTarget.style.borderColor = TOKENS.colors.border; }}>
-                  <div style={{ fontSize: 22, marginBottom: 6 }}>{p.icon}</div>
-                  <div style={{ fontFamily: TOKENS.fonts.display, fontSize: 14, fontWeight: 700, marginBottom: 2 }}>{p.name}</div>
-                  <div style={{ fontSize: 11, color: TOKENS.colors.textMuted, lineHeight: 1.45 }}>{p.description}</div>
-                  {p.defaultSize && <div style={{ fontSize: 10, color: TOKENS.colors.textDim, fontFamily: TOKENS.fonts.mono, marginTop: 6 }}>{p.defaultSize.label}</div>}
-                </button>
-              ))}
+          <Field label="Display name override">
+            <input value={form.custom_display_name || ''} onChange={(e) => set('custom_display_name', e.target.value)} placeholder={master.name} style={inputStyle()} />
+          </Field>
+
+          <Field label="Icon override">
+            <input value={form.custom_icon || ''} onChange={(e) => set('custom_icon', e.target.value)} maxLength={4} placeholder={master.icon} style={{ ...inputStyle(), width: 100, textAlign: 'center', fontSize: 22 }} />
+          </Field>
+
+          <Field label="Description override">
+            <textarea value={form.custom_description || ''} onChange={(e) => set('custom_description', e.target.value)} placeholder={master.description || '—'} rows={2} style={{ ...inputStyle(), fontFamily: 'inherit' }} />
+          </Field>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            <Field label="Default sides">
+              <select value={form.custom_default_sides || ''} onChange={(e) => set('custom_default_sides', e.target.value)} style={inputStyle()}>
+                <option value="">— inherit ({master.default_sides}) —</option>
+                <option value="one">One</option>
+                <option value="both">Both</option>
+              </select>
+            </Field>
+            <Field label="Default color">
+              <select value={form.custom_default_color || ''} onChange={(e) => set('custom_default_color', e.target.value)} style={inputStyle()}>
+                <option value="">— inherit ({master.default_color}) —</option>
+                <option value="four_color">Four Color CMYK</option>
+                <option value="two_color">Two Color</option>
+                <option value="single_color">Single Color</option>
+                <option value="bw">Black & White</option>
+              </select>
+            </Field>
+          </div>
+
+          <Field label="Default paper category">
+            <input value={form.custom_default_paper_category || ''} onChange={(e) => set('custom_default_paper_category', e.target.value)} placeholder={master.default_paper_category || '— inherit —'} style={inputStyle()} />
+          </Field>
+
+          <Field label="Enabled for my shop?">
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button onClick={() => set('is_enabled', true)} style={togBtn(form.is_enabled === true)}>ON</button>
+              <button onClick={() => set('is_enabled', false)} style={togBtn(form.is_enabled === false)}>OFF</button>
             </div>
-            <button onClick={() => applyPreset()} style={{ ...ghost(), width: '100%' }}>
-              ➕ Or create my own custom product
+          </Field>
+
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 12 }}>
+            <button onClick={onClose} style={ghostBtn()}>Cancel</button>
+            <button onClick={submit} disabled={saving} style={{ ...primaryBtn(), opacity: saving ? 0.7 : 1 }}>
+              {saving ? 'Saving…' : 'Save'}
             </button>
-            <div style={{ marginTop: 16, textAlign: 'right' }}>
-              <button onClick={() => setStep('template')} style={{ ...ghost(), padding: '8px 14px', fontSize: 13 }}>← Back</button>
-            </div>
           </div>
-        )}
-
-        {step === 'custom' && selectedTpl && (
-          <div>
-            <p style={{ color: TOKENS.colors.textMuted, fontSize: 14, marginBottom: 20 }}>
-              Create your own product based on the <strong style={{ color: TOKENS.colors.text }}>{selectedTpl.label}</strong> template.
-            </p>
-            <Field label="Product name" hint="Customers will see this">
-              <input value={name} onChange={(e) => { setName(e.target.value); if (!slug || slug === slugify(name)) setSlug(slugify(e.target.value)); }} placeholder="e.g. Wedding Invitation Card" style={input()} />
-            </Field>
-            <Field label="Slug" hint="Used in the URL — letters, numbers, hyphens">
-              <input value={slug} onChange={(e) => setSlug(slugify(e.target.value))} placeholder="wedding-invitation-card" style={input()} />
-            </Field>
-            <Field label="Icon (emoji)">
-              <input value={icon} onChange={(e) => setIcon(e.target.value)} maxLength={4} style={{ ...input(), width: 100 }} />
-            </Field>
-            <Field label="Short description">
-              <input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Brief blurb shown on the product card" style={input()} />
-            </Field>
-            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, marginTop: 24 }}>
-              <button onClick={() => setStep('preset')} style={{ ...ghost(), padding: '10px 16px' }}>← Back</button>
-              <button
-                disabled={saving || !name || !slug}
-                onClick={() => save({ slug, name, icon, description })}
-                style={{ ...primary(), opacity: (saving || !name || !slug) ? 0.5 : 1 }}
-              >
-                {saving ? 'Creating…' : 'Create Product →'}
-              </button>
-            </div>
-          </div>
-        )}
+        </div>
       </div>
     </div>
   );
 }
 
-function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
+function ReadOnlyField({ label, value }: { label: string; value: string }) {
   return (
-    <div style={{ marginBottom: 14 }}>
-      <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: TOKENS.colors.text, marginBottom: 6 }}>
-        {label}
-        {hint && <span style={{ marginLeft: 8, color: TOKENS.colors.textDim, fontWeight: 400, fontSize: 11 }}>· {hint}</span>}
-      </label>
+    <div>
+      <div style={{ fontSize: 10, color: TOKENS.colors.textDim, fontWeight: 700, marginBottom: 3, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{label}</div>
+      <div style={{ fontFamily: TOKENS.fonts.mono, fontSize: 14, fontWeight: 800, color: TOKENS.colors.primary }}>{value}</div>
+    </div>
+  );
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: TOKENS.colors.text, marginBottom: 5 }}>{label}</label>
       {children}
     </div>
   );
 }
 
 // ──────────────────────────────────────────────────────────────────────
-// Style helpers
-// ──────────────────────────────────────────────────────────────────────
 
 function card(extra: React.CSSProperties = {}): React.CSSProperties {
+  return { background: '#fff', border: `1px solid ${TOKENS.colors.border}`, borderRadius: 18, padding: 24, ...extra };
+}
+function inputStyle(): React.CSSProperties {
   return {
-    background: TOKENS.colors.bgCard,
-    border: `1px solid ${TOKENS.colors.border}`,
-    borderRadius: TOKENS.radius.xl,
-    padding: 24,
-    ...extra,
+    width: '100%', background: '#fff', color: TOKENS.colors.text,
+    border: `1.5px solid ${TOKENS.colors.border}`, borderRadius: 9,
+    padding: '10px 13px', fontSize: 14, fontWeight: 600, fontFamily: 'inherit', outline: 'none',
   };
 }
-function input(): React.CSSProperties {
+function primaryBtn(): React.CSSProperties {
   return {
-    width: '100%',
-    background: '#FAFAFB',
-    color: TOKENS.colors.text,
-    border: `1px solid ${TOKENS.colors.border}`,
-    borderRadius: TOKENS.radius.md,
-    padding: '10px 14px',
-    fontSize: 14,
-    fontFamily: 'inherit',
-    outline: 'none',
+    padding: '11px 22px', background: TOKENS.colors.gradient, color: '#fff',
+    fontSize: 14, fontWeight: 700, fontFamily: FONT_DISPLAY,
+    borderRadius: 10, border: 'none', cursor: 'pointer', boxShadow: TOKENS.shadow.glow,
   };
 }
-function primary(): React.CSSProperties {
+function ghostBtn(): React.CSSProperties {
   return {
-    padding: '11px 22px',
-    background: TOKENS.colors.gradient,
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: 600,
-    fontFamily: TOKENS.fonts.display,
-    borderRadius: TOKENS.radius.md,
-    border: 'none',
-    cursor: 'pointer',
-    boxShadow: TOKENS.shadow.glow,
-    transition: 'all 0.2s ease',
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: 6,
+    padding: '8px 14px', background: '#fff', color: TOKENS.colors.text,
+    fontSize: 13, fontWeight: 600, fontFamily: 'inherit',
+    border: `1.5px solid ${TOKENS.colors.border}`, borderRadius: 9, cursor: 'pointer',
   };
 }
-function ghost(): React.CSSProperties {
+function togBtn(active: boolean): React.CSSProperties {
   return {
-    padding: '9px 16px',
-    background: 'transparent',
-    color: TOKENS.colors.text,
-    fontSize: 13,
-    fontWeight: 500,
-    fontFamily: TOKENS.fonts.body,
-    borderRadius: TOKENS.radius.md,
-    border: `1px solid ${TOKENS.colors.border}`,
-    cursor: 'pointer',
-    transition: 'all 0.2s ease',
-  };
-}
-function iconButton(color: string): React.CSSProperties {
-  return {
-    width: 34, height: 34,
-    background: `${color}1a`,
-    border: `1px solid ${color}55`,
-    color,
-    borderRadius: 8,
-    cursor: 'pointer',
-    fontFamily: 'inherit',
-    fontSize: 14,
-    transition: 'all 0.18s ease',
+    padding: '8px 16px',
+    background: active ? '#10B981' : '#fff',
+    color: active ? '#fff' : TOKENS.colors.text,
+    fontSize: 13, fontWeight: 700, fontFamily: 'inherit',
+    border: `1.5px solid ${active ? '#10B981' : TOKENS.colors.border}`,
+    borderRadius: 9, cursor: 'pointer',
   };
 }
 function PageStyles() {
   return (
     <style>{`
-      @keyframes pc-fade-up { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
-      @keyframes pc-fade-in { from { opacity: 0; } to { opacity: 1; } }
-      @keyframes pc-shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
-      input::placeholder { color: ${TOKENS.colors.textDim}; }
-      input:focus { border-color: ${TOKENS.colors.borderStrong} !important; box-shadow: 0 0 0 3px rgba(124,58,237,0.15); }
-      *::-webkit-scrollbar { width: 8px; }
-      *::-webkit-scrollbar-track { background: ${TOKENS.colors.bgPanel2}; }
-      *::-webkit-scrollbar-thumb { background: ${TOKENS.colors.border}; border-radius: 4px; }
-      button:hover:not(:disabled) { filter: brightness(1.05); }
+      input::placeholder, textarea::placeholder { color: ${TOKENS.colors.textDim}; font-weight: 500; }
+      input:focus, select:focus, textarea:focus { border-color: ${TOKENS.colors.primary} !important; box-shadow: 0 0 0 3px rgba(124,58,237,0.10); }
+      button:hover:not(:disabled) { filter: brightness(1.04); }
+      .pc-row:hover { box-shadow: ${TOKENS.shadow.md}; }
+      @media (max-width: 880px) {
+        .pc-row { grid-template-columns: 1fr !important; }
+      }
     `}</style>
   );
 }

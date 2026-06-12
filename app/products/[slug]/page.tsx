@@ -7,7 +7,7 @@ import { supabase } from '../../supabase';
 import { TEMPLATES, getTemplate, ProductTemplate, TemplateField } from '../../lib/templates';
 import { TOKENS } from '../../lib/design';
 import { formatPrice } from '../../lib/countries';
-import { computePrice } from '../../lib/calc';
+import { computePrice, computePriceForProduct } from '../../lib/calc';
 
 // ─────────────────────────────────────────────────────────────────────────
 // Per-product calculator — renders only fields relevant to this product's
@@ -91,8 +91,12 @@ export default function ProductCalculator() {
       setHasSession(true);
       const userId = session.user.id;
 
-      // Load subscriber product, paper, rates, overrides, custom fields, subscriber settings, customers
-      const [prodRes, paperRes, catRes, rateRes, subRes, custRes] = await Promise.all([
+      // Load: try master_products first (new), fall back to subscriber_products (legacy)
+      const [masterRes, settingRes, legacyProdRes, paperRes, catRes, rateRes, subRes, custRes] = await Promise.all([
+        supabase.from('master_products').select('*').eq('slug', slug).eq('is_active', true).maybeSingle(),
+        // Settings may not exist yet — that's OK
+        supabase.from('subscriber_product_settings').select('*').eq('subscriber_id', userId),
+        // Legacy fallback for old auto-seeded products
         supabase.from('subscriber_products').select('*').eq('subscriber_id', userId).eq('slug', slug).maybeSingle(),
         supabase.from('paper_stocks').select('id, label, gsm, rate_per_kg, category').eq('subscriber_id', userId).order('sort_order'),
         supabase.from('paper_categories').select('category, rate_per_kg').eq('subscriber_id', userId),
@@ -102,11 +106,44 @@ export default function ProductCalculator() {
       ]);
 
       if (!mounted) return;
-      const prod = prodRes.data as SubscriberProduct | null;
+
+      // ─── Determine which product source to use ─────────────────────────
+      const master = masterRes.data as any;
+      const legacyProd = legacyProdRes.data as SubscriberProduct | null;
+
+      let prod: SubscriberProduct | null = null;
+      let masterPlate: string | null = null;
+      let masterUps: number | null = null;
+
+      if (master) {
+        // Find subscriber's override settings for this master product
+        const settings = (settingRes.data || []).find((s: any) => s.master_product_id === master.id);
+        // Build a "SubscriberProduct"-shaped object so existing UI keeps working
+        prod = {
+          id: master.id,                                  // use master id as product id
+          template_id: master.category,                   // category maps to template_id
+          slug: master.slug,
+          display_name: settings?.custom_display_name || master.name,
+          description: settings?.custom_description || master.description,
+          icon: settings?.custom_icon || master.icon,
+          default_size_label: `${master.size_w_inch} × ${master.size_h_inch} in`,
+          default_size_w_inch: master.size_w_inch,
+          default_size_h_inch: master.size_h_inch,
+          default_paper_label: master.default_paper_category,
+          default_color: settings?.custom_default_color || master.default_color || 'four_color',
+          default_sides: settings?.custom_default_sides || master.default_sides || 'both',
+        };
+        masterPlate = master.plate;
+        masterUps = master.total_ups;
+      } else if (legacyProd) {
+        prod = legacyProd;
+      }
+
       if (!prod) {
         setLoading(false);
         return;
       }
+
       setProduct(prod);
       setTemplate(getTemplate(prod.template_id) || null);
       setPaperStocks(paperRes.data || []);
@@ -120,14 +157,23 @@ export default function ProductCalculator() {
         setSubscriberInfo({ business_name: subRes.data.business_name || '', email: subRes.data.email || '' });
       }
 
-      // Load field overrides + custom fields
-      const [overridesRes, customRes] = await Promise.all([
-        supabase.from('subscriber_product_fields').select('*').eq('subscriber_product_id', prod.id),
-        supabase.from('subscriber_product_custom_fields').select('*').eq('subscriber_product_id', prod.id).order('sort_order'),
-      ]);
-      if (!mounted) return;
-      setFieldOverrides(overridesRes.data || []);
-      setCustomFields(customRes.data || []);
+      // Field overrides + custom fields only exist for legacy products
+      if (!master && legacyProd) {
+        const [overridesRes, customRes] = await Promise.all([
+          supabase.from('subscriber_product_fields').select('*').eq('subscriber_product_id', legacyProd.id),
+          supabase.from('subscriber_product_custom_fields').select('*').eq('subscriber_product_id', legacyProd.id).order('sort_order'),
+        ]);
+        if (!mounted) return;
+        setFieldOverrides(overridesRes.data || []);
+        setCustomFields(customRes.data || []);
+      } else {
+        setFieldOverrides([]);
+        setCustomFields([]);
+      }
+
+      // Stash master plate/ups on window-scoped ref for calc (read in useMemo)
+      (prod as any)._masterPlate = masterPlate;
+      (prod as any)._masterUps = masterUps;
 
       // Initialize default values
       const initVals: Record<string, any> = {
@@ -179,18 +225,34 @@ export default function ProductCalculator() {
       return { ready: false } as const;
     }
 
-    const r = computePrice({
-      qty,
-      w: size.w,
-      h: size.h,
-      stock,
-      paperCategories,
-      printingRates,
-      sides: sidesVal as 'one' | 'both',
-      color: colorVal as any,
-      markupPercent,
-      taxPercent,
-    });
+    // Use master_products's plate/ups if available, else fall back to SIZE_PLATE_MAP lookup
+    const masterPlate = (product as any)._masterPlate as string | null;
+    const masterUps = (product as any)._masterUps as number | null;
+    const r = (masterPlate && masterUps)
+      ? computePriceForProduct({
+          qty,
+          plate: masterPlate,
+          totalUps: masterUps,
+          stock,
+          paperCategories,
+          printingRates,
+          sides: sidesVal as 'one' | 'both',
+          color: colorVal as any,
+          markupPercent,
+          taxPercent,
+        })
+      : computePrice({
+          qty,
+          w: size.w,
+          h: size.h,
+          stock,
+          paperCategories,
+          printingRates,
+          sides: sidesVal as 'one' | 'both',
+          color: colorVal as any,
+          markupPercent,
+          taxPercent,
+        });
     if (!r.ready) return { ready: false } as const;
 
     // Custom field price impact — added on top of core calc

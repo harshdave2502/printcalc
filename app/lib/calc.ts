@@ -251,6 +251,104 @@ const COLOR_LABEL: Record<string, string> = {
   bw: 'Single Color',
 };
 
+// ─────────────────────────────────────────────────────────────────────────
+// NEW (preferred) — pass plate + ups EXPLICITLY from master_products row.
+// Use this anywhere we have a master_products row to bypass auto-lookup.
+// ─────────────────────────────────────────────────────────────────────────
+export interface ComputeForProductArgs {
+  qty: number;
+  plate: string;          // explicit, from master_products.plate
+  totalUps: number;       // explicit, from master_products.total_ups
+  stock: PaperStock;
+  paperCategories: PaperCategory[];
+  printingRates: PrintingRate[];
+  sides: 'one' | 'both';
+  color: 'four_color' | 'two_color' | 'single_color' | 'bw';
+  markupPercent: number;
+  taxPercent: number;
+}
+
+export function computePriceForProduct(args: ComputeForProductArgs): ComputePriceResult | { ready: false } {
+  const { qty, plate, totalUps, stock, paperCategories, printingRates, sides, color, markupPercent, taxPercent } = args;
+
+  if (!qty || !plate || !totalUps || !stock) return { ready: false };
+
+  const ups = Math.max(1, totalUps);
+  const ws = Math.ceil(qty / ups);
+
+  const isBoardPaper = BOARD_PAPER_CATS.includes(stock.category);
+  const isBothSides = sides === 'both';
+  const canUseWT = isBothSides && !isBoardPaper && ups % 2 === 0 && ups >= 2;
+  const useDoublePlate = isBothSides && (isBoardPaper || !canUseWT);
+  const useWorkAndTurn = isBothSides && canUseWT;
+  const imp = useWorkAndTurn ? ws * 2 : ws;
+  const numPlates = useDoublePlate ? 2 : 1;
+
+  const parent = PARENT_SHEETS[plate] || { parentW: 25, parentH: 36, cuts: 2 };
+  const f = (parent.parentW * parent.parentH * 0.2666) / 828;
+  const ratePerKg = getRatePerKg(paperCategories, stock);
+  const paperCost = ((f * stock.gsm * ratePerKg) / 500) * (ws / parent.cuts);
+
+  const colorLabel = COLOR_LABEL[color] || 'Single Color';
+  const matchingRate = findPrintingRate(printingRates, plate, colorLabel);
+
+  function runCost(rate: PrintingRate | undefined, impressions: number): number {
+    if (!rate) return 0;
+    const fixed = Number(rate.fixed_charge) || 0;
+    const per1000 = Number(rate.per_1000_impression) || 0;
+    const free = 1000;
+    const extra = Math.max(0, impressions - free);
+    const rounded = Math.ceil(extra / 1000) * 1000;
+    return fixed + (rounded / 1000) * per1000;
+  }
+
+  let printCost = 0;
+  const printBreakdown: Array<{ label: string; value: number }> = [];
+  if (matchingRate) {
+    if (useDoublePlate) {
+      const front = runCost(matchingRate, ws);
+      const back = runCost(matchingRate, ws);
+      printCost = front + back;
+      printBreakdown.push({ label: `Front (${colorLabel})`, value: front });
+      printBreakdown.push({ label: `Back (${colorLabel})`, value: back });
+    } else {
+      printCost = runCost(matchingRate, imp);
+      const label = useWorkAndTurn ? `Printing W&T (${colorLabel})` : `Printing (${colorLabel})`;
+      printBreakdown.push({ label, value: printCost });
+    }
+  }
+
+  const subtotal = paperCost + printCost;
+  const markupAmount = subtotal * (markupPercent / 100);
+  const withMarkup = subtotal + markupAmount;
+  const tax = withMarkup * (taxPercent / 100);
+  const total = withMarkup + tax;
+  const perUnit = qty > 0 ? total / qty : 0;
+
+  return {
+    ready: true,
+    qty,
+    plateKey: plate,
+    ups,
+    fromMap: true,
+    ws,
+    imp,
+    numPlates,
+    useWorkAndTurn,
+    useDoublePlate,
+    paperCost,
+    printCost,
+    printBreakdown,
+    subtotal,
+    withMarkup,
+    markupAmount,
+    tax,
+    total,
+    perUnit,
+    ratePerKg,
+  };
+}
+
 export function computePrice(args: ComputePriceArgs): ComputePriceResult | { ready: false } {
   const { qty, w, h, stock, paperCategories, printingRates, sides, color, markupPercent, taxPercent } = args;
 
