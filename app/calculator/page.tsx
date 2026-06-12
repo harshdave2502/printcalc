@@ -8,6 +8,7 @@ const PLATE_DIMS: Record<string,{w:number;h:number}> = {
   '18×23"': {w:17.5, h:22.5},
   '18×25"': {w:17.5, h:24.5},
   '20×28"': {w:19.5, h:27.5},
+  '20×29"': {w:19.0, h:29.0},  // B-series plate (different gripper rule)
   '20×30"': {w:19.5, h:29.5},
   '25×36"': {w:24.5, h:35.5},
 };
@@ -16,29 +17,68 @@ const PARENT_SHEETS: Record<string,{parent:string;cuts:number;pw:number;ph:numbe
   '18×23"': {parent:'23×36"', cuts:2, pw:23, ph:36},
   '18×25"': {parent:'25×36"', cuts:2, pw:25, ph:36},
   '20×28"': {parent:'20×30"', cuts:1, pw:20, ph:30},
+  '20×29"': {parent:'20×30"', cuts:1, pw:20, ph:30},
   '20×30"': {parent:'20×30"', cuts:1, pw:20, ph:30},
   '25×36"': {parent:'25×36"', cuts:1, pw:25, ph:36},
 };
+// Source of truth: C:\Users\ASUS\OneDrive\Desktop\plate_mapping.csv
+// `group` drives the <optgroup> in the size dropdown.
 const FINAL_SIZES = [
-  {id:'a2', label:'A2 (16.5 x 23.4")',   w:16.5, h:23.4,  plateSize:'25×36"'},
-  {id:'a3', label:'A3 (11.7 x 16.5")',   w:11.7, h:16.5,  plateSize:'18×25"'},
-  {id:'a4', label:'A4 (8.3 x 11.7")',    w:8.3,  h:11.7,  plateSize:'18×25"'},
-  {id:'a5', label:'A5 (5.8 x 8.3")',     w:5.8,  h:8.3,   plateSize:'18×25"'},
-  {id:'a6', label:'A6 (4.1 x 5.8")',     w:4.1,  h:5.8,   plateSize:'18×25"'},
-  {id:'am1',label:'4.25 x 5.5"',         w:4.25, h:5.5,   plateSize:'18×25"'},
-  {id:'am2',label:'5.5 x 8.5"',          w:5.5,  h:8.5,   plateSize:'18×25"'},
-  {id:'am3',label:'Letter 8.5 x 11"',    w:8.5,  h:11,    plateSize:'18×23"'},
-  {id:'am4',label:'Legal 8.5 x 14"',     w:8.5,  h:14,    plateSize:'18×23"'},
-  {id:'am5',label:'11 x 17"',            w:11,   h:17,    plateSize:'18×25"'},
-  {id:'am6',label:'18 x 23"',            w:18,   h:23,    plateSize:'18×23"'},
-  {id:'b3', label:'B3 (13.5 x 19.5")',   w:13.5, h:19.5,  plateSize:'20×28"'},
-  {id:'b4', label:'B4 (9.75 x 13.75")',  w:9.75, h:13.75, plateSize:'20×28"'},
-  {id:'b5', label:'B5 (6.85 x 9.75")',   w:6.85, h:9.75,  plateSize:'20×28"'},
-  {id:'b6', label:'B6 (4.85 x 6.85")',   w:4.85, h:6.85,  plateSize:'20×28"'},
-  {id:'vc', label:'Visiting Card (3.5 x 2")',  w:3.5,  h:2,    plateSize:'18×25"'},
-  {id:'dl', label:'DL Envelope (4.3 x 8.5")', w:4.3,  h:8.5,  plateSize:'18×25"'},
-  {id:'custom',label:'Custom size...',         w:0,    h:0,    plateSize:'18×25"'},
+  // A Series
+  {id:'a2', group:'A Series', label:'A2 (16.5 x 23.4")', w:16.5,  h:23.4,  plateSize:'18×25"'},
+  {id:'a3', group:'A Series', label:'A3 (11.7 x 16.5")', w:11.69, h:16.54, plateSize:'18×25"'},
+  {id:'a4', group:'A Series', label:'A4 (8.3 x 11.7")',  w:8.27,  h:11.69, plateSize:'18×25"'},
+  {id:'a5', group:'A Series', label:'A5 (5.8 x 8.3")',   w:5.83,  h:8.27,  plateSize:'18×25"'},
+  {id:'a6', group:'A Series', label:'A6 (4.1 x 5.8")',   w:4.13,  h:5.83,  plateSize:'18×25"'},
+  {id:'a7', group:'A Series', label:'A7 (2.9 x 4.1")',   w:2.91,  h:4.13,  plateSize:'18×25"'},
+
+  // American Standard
+  {id:'am1',group:'American Standard', label:'4.25 x 5.5"',          w:4.25, h:5.5,  plateSize:'18×23"'},
+  {id:'am2',group:'American Standard', label:'5.5 x 8.5"',           w:5.5,  h:8.5,  plateSize:'18×23"'},
+  {id:'am3',group:'American Standard', label:'Letter (8.5 x 11")',   w:8.5,  h:11,   plateSize:'18×23"'},
+  {id:'am4',group:'American Standard', label:'Legal (8.5 x 14")',    w:8.5,  h:14,   plateSize:'15×20"'},
+  {id:'am5',group:'American Standard', label:'Tabloid (11 x 17")',   w:11,   h:17,   plateSize:'18×23"'},
+  {id:'am6',group:'American Standard', label:'18 x 23"',             w:18,   h:23,   plateSize:'18×23"'},
+
+  // Square / Tall
+  {id:'sq1',group:'Square / Tall', label:'8 x 8" (Square)',   w:8, h:8,  plateSize:'18×25"'},
+  {id:'tl1',group:'Square / Tall', label:'8 x 24" (Tall)',    w:8, h:24, plateSize:'18×25"'},
+
+  // B Series — uses 20×29 plate per CSV
+  {id:'b2', group:'B Series', label:'B2 (19 x 29")',   w:19,   h:29,  plateSize:'20×29"'},
+  {id:'b3', group:'B Series', label:'B3 (14 x 19")',   w:14,   h:19,  plateSize:'20×29"'},
+  {id:'b4', group:'B Series', label:'B4 (9.5 x 14")',  w:9.5,  h:14,  plateSize:'20×29"'},
+  {id:'b5', group:'B Series', label:'B5 (7 x 9.5")',   w:7,    h:9.5, plateSize:'20×29"'},
+  {id:'b6', group:'B Series', label:'B6 (4.75 x 7")',  w:4.75, h:7,   plateSize:'20×29"'},
+
+  // Cards
+  {id:'vc',    group:'Cards', label:'Visiting Card (3.5 x 2")',         w:3.5,   h:2,     plateSize:'18×25"'},
+  {id:'vc_eu', group:'Cards', label:'Visiting Card EU (85 x 55 mm)',    w:3.346, h:2.165, plateSize:'18×25"'},
+  {id:'vc_uk', group:'Cards', label:'Visiting Card UK (90 x 55 mm)',    w:3.543, h:2.165, plateSize:'18×25"'},
+  {id:'pc4x6', group:'Cards', label:'Postcard 4 x 6"',                  w:4,     h:6,     plateSize:'18×25"'},
+  {id:'pc5x7', group:'Cards', label:'Postcard 5 x 7"',                  w:5,     h:7,     plateSize:'18×23"'},
+  {id:'gc5x7', group:'Cards', label:'Greeting Card 5 x 7"',             w:5,     h:7,     plateSize:'18×23"'},
+  {id:'wc5x7', group:'Cards', label:'Wedding Card 5 x 7"',              w:5,     h:7,     plateSize:'18×23"'},
+  {id:'rack',  group:'Cards', label:'Rack Card 4 x 9"',                 w:4,     h:9,     plateSize:'20×29"'},
+  {id:'bkmk',  group:'Cards', label:'Bookmark 2 x 7"',                  w:2,     h:7,     plateSize:'20×29"'},
+  {id:'dh',    group:'Cards', label:'Door Hanger 4.25 x 11"',           w:4.25,  h:11,    plateSize:'18×23"'},
+
+  // Stationery
+  {id:'dl',    group:'Stationery', label:'DL Envelope (4.33 x 8.66")',          w:4.33, h:8.66,  plateSize:'18×25"'},
+  {id:'c5',    group:'Stationery', label:'C5 Envelope (6.38 x 9.02")',          w:6.38, h:9.02,  plateSize:'18×25"'},
+  {id:'c4',    group:'Stationery', label:'C4 Envelope (9.02 x 12.76")',         w:9.02, h:12.76, plateSize:'18×25"'},
+  {id:'no10',  group:'Stationery', label:'No.10 Envelope (4.125 x 9.5")',       w:4.125,h:9.5,   plateSize:'18×25"'},
+  {id:'lh_a4', group:'Stationery', label:'Letterhead A4 (8.27 x 11.69")',       w:8.27, h:11.69, plateSize:'18×25"'},
+  {id:'np_a5', group:'Stationery', label:'Notepad A5 (5.83 x 8.27")',           w:5.83, h:8.27,  plateSize:'18×25"'},
+  {id:'np_a6', group:'Stationery', label:'Notepad A6 (4.13 x 5.83")',           w:4.13, h:5.83,  plateSize:'18×25"'},
+
+  // Folder
+  {id:'fold',  group:'Folder', label:'Presentation Folder 9 x 12"', w:9, h:12, plateSize:'18×23"'},
+
+  // Custom
+  {id:'custom',group:'Other', label:'Custom size...',  w:0, h:0, plateSize:'18×25"'},
 ];
+const SIZE_GROUPS = ['A Series','American Standard','Square / Tall','B Series','Cards','Stationery','Folder','Other'];
 
 function calcUps(w:number,h:number,pk:string){
   const p=PLATE_DIMS[pk];if(!p)return 1;
@@ -126,10 +166,15 @@ function SizeSelect({size,setSize,cW,setCW,cH,setCH}:any){
     <div style={{marginBottom:16}}>
       <div style={LBL}>Final size{size.id!=='custom'&&<span style={{background:'#EEF4FA',color:'#185FA5',borderRadius:4,padding:'2px 8px',fontSize:11,fontFamily:'monospace'}}>{u} ups · {pi?.parent||size.plateSize}</span>}</div>
       <select value={size.id} onChange={e=>{const s=FINAL_SIZES.find(x=>x.id===e.target.value);if(s)setSize(s);}} style={IS}>
-        <optgroup label="── A Series ──">{FINAL_SIZES.filter(s=>s.id.startsWith('a')).map(s=><option key={s.id} value={s.id}>{s.label}</option>)}</optgroup>
-        <optgroup label="── American Standard ──">{FINAL_SIZES.filter(s=>s.id.startsWith('am')).map(s=><option key={s.id} value={s.id}>{s.label}</option>)}</optgroup>
-        <optgroup label="── B Series ──">{FINAL_SIZES.filter(s=>s.id.startsWith('b')).map(s=><option key={s.id} value={s.id}>{s.label}</option>)}</optgroup>
-        <optgroup label="── Other ──">{FINAL_SIZES.filter(s=>['vc','dl','custom'].includes(s.id)).map(s=><option key={s.id} value={s.id}>{s.label}</option>)}</optgroup>
+        {SIZE_GROUPS.map(g => {
+          const rows = FINAL_SIZES.filter(s => s.group === g);
+          if (!rows.length) return null;
+          return (
+            <optgroup key={g} label={`── ${g} ──`}>
+              {rows.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
+            </optgroup>
+          );
+        })}
       </select>
       {size.id==='custom'&&(
         <div style={{marginTop:8}}>
@@ -214,7 +259,12 @@ function PrintingTab({subData}:any){
     if(!q||!fW||!fH||!selPlate||!selColor)return;
     const pk=size.id==='custom'?autoSelectPlate(fW,fH):size.plateSize;
     const u=calcUps(fW,fH,pk);const pi=PARENT_SHEETS[pk]||{parent:pk,cuts:1,pw:25,ph:36};
-    const ws=Math.ceil(q/u);const useDoublePlate=sides==='double';const imp=ws;
+    const ws=Math.ceil(q/u);
+    // W&T eligibility: both sides + even ups (≥2). PrintingTab assumes non-board paper
+    // (board jobs go through Full Job which knows the paper category).
+    const useWT = sides==='double' && u % 2 === 0 && u >= 2;
+    const useDoublePlate = sides==='double' && !useWT;
+    const imp = useWT ? ws * 2 : ws;
     let pCost=0;let pBreakdown:any[]=[];
     if(useDoublePlate){
       const rf=plateRates.find(r=>r.plate_name===selPlate&&r.color_option===selColor);
@@ -225,7 +275,7 @@ function PrintingTab({subData}:any){
     } else {
       const rate=plateRates.find(r=>r.plate_name===selPlate&&r.color_option===selColor);
       if(rate){const pf=rate.fixed_charge;const fi=1000;const ei=Math.max(0,imp-fi);const er=Math.ceil(ei/1000)*1000;pCost=pf+(er/1000)*rate.per_1000_impression;}
-      pBreakdown=[{label:'Printing ('+selColor+')',value:sym+pCost.toFixed(2)}];
+      pBreakdown=[{label:useWT?'Printing W&T ('+selColor+')':'Printing ('+selColor+')',value:sym+pCost.toFixed(2)}];
     }
     let lCost=0;
     if(selLam!=='none'){const lr=lamRates.find(r=>r.lam_name===selLam);if(lr){const pd=PLATE_DIMS[pk]||{w:18,h:25};lCost=Math.max((pd.w*pd.h/100)*lr.per_100_sqinch*imp,lr.minimum_charge);}}
@@ -233,7 +283,7 @@ function PrintingTab({subData}:any){
     if(selUV!=='none'){const ur=uvRates.find(r=>r.uv_name===selUV);if(ur){const pd=PLATE_DIMS[pk]||{w:18,h:25};uCost=Math.max((pd.w*pd.h/100)*ur.per_100_sqinch*imp,ur.minimum_charge);}}
     const sub=pCost+lCost+uCost;const am=sub*(1+M/100);const ta=am*(T/100);
     setResult({finalPrice:am+ta,subtotal:sub,markupAmount:am-sub,taxAmount:ta,
-      stats:[{label:'Per piece',value:sym+(((am+ta)/q).toFixed(2))},{label:'Working sheets',value:ws.toLocaleString('en-IN')},{label:'Impressions',value:imp.toLocaleString('en-IN')},{label:(sides==='double'?'2 plates':'1 plate')+' · '+pk,value:u+' ups'}],
+      stats:[{label:'Per piece',value:sym+(((am+ta)/q).toFixed(2))},{label:'Working sheets',value:ws.toLocaleString('en-IN')},{label:'Impressions',value:imp.toLocaleString('en-IN')},{label:(useDoublePlate?'2 plates':(useWT?'W&T · 1 plate':'1 plate'))+' · '+pk,value:u+' ups'}],
       breakdown:[...pBreakdown,...(lCost>0?[{label:selLam,value:sym+lCost.toFixed(2)}]:[]),...(uCost>0?[{label:selUV,value:sym+uCost.toFixed(2)}]:[])]});
   };
   if(!loaded)return <div style={{textAlign:'center',padding:40,color:'#888'}}>Loading rates...</div>;
@@ -247,7 +297,22 @@ function PrintingTab({subData}:any){
         <div style={{marginBottom:16,padding:'8px 12px',background:'#F0F7FF',borderRadius:8,fontSize:12,color:'#185FA5'}}>🎯 Plate: <strong>{selPlate}</strong> (auto from final size) · {calcUps(size.w||8.3,size.h||11.7,size.plateSize)} ups</div>
         <div style={{marginBottom:16}}><div style={LBL}>{sides==='double'?'Front side color':'Print colors'}</div><select value={selColor} onChange={e=>setSelColor(e.target.value)} style={IS}>{colorsByPlate.map(c=><option key={c} value={c}>{c}</option>)}</select></div>
         <div style={{marginBottom:16}}><div style={LBL}>Sides</div><div style={TW}><button style={TB(sides==='single')} onClick={()=>setSides('single')}>Single side</button><button style={TB(sides==='double')} onClick={()=>setSides('double')}>Both Sides</button></div></div>
-        {sides==='double'&&<div style={{marginBottom:16}}><div style={LBL}>2nd plate color<span style={{fontWeight:400,color:'#AAA',fontSize:11,marginLeft:6}}>usually 1 Color for back side</span></div><select value={selBackColor} onChange={e=>setSelBackColor(e.target.value)} style={IS}>{colorsByPlate.map(c=><option key={c} value={c}>{c}</option>)}</select></div>}
+        {/* W&T eligibility: even ups + both sides + (PrintingTab assumes non-board paper) */}
+        {(() => {
+          const fW = size.id==='custom' ? (parseFloat(cW)||0) : size.w;
+          const fH = size.id==='custom' ? (parseFloat(cH)||0) : size.h;
+          const pk = size.id==='custom' ? autoSelectPlate(fW,fH) : size.plateSize;
+          const upsNow = (fW && fH) ? calcUps(fW, fH, pk) : 0;
+          const useWT = sides==='double' && upsNow % 2 === 0 && upsNow >= 2;
+          const useDouble = sides==='double' && !useWT;
+          if (useDouble) {
+            return <div style={{marginBottom:16}}><div style={LBL}>2nd plate color<span style={{fontWeight:400,color:'#AAA',fontSize:11,marginLeft:6}}>usually 1 Color for back side</span></div><select value={selBackColor} onChange={e=>setSelBackColor(e.target.value)} style={IS}>{colorsByPlate.map(c=><option key={c} value={c}>{c}</option>)}</select></div>;
+          }
+          if (useWT) {
+            return <div style={{marginBottom:16,padding:'8px 12px',background:'#F0FFF4',borderRadius:8,fontSize:12,color:'#276749'}}>✓ Work & Turn — same plate runs both sides (sheet through press twice).</div>;
+          }
+          return null;
+        })()}
         <div style={{height:1,background:'var(--color-border-tertiary,#F0F0F0)',margin:'16px 0'}}/>
         <div style={{marginBottom:16}}><div style={LBL}>Lamination</div><select value={selLam} onChange={e=>setSelLam(e.target.value)} style={IS}><option value="none">No Lamination</option>{lamRates.map(r=><option key={r.id} value={r.lam_name}>{r.lam_name}</option>)}</select>{selLam!=='none'&&<div style={{...TW,marginTop:8}}><button style={TB(!lamDbl)} onClick={()=>setLamDbl(false)}>Single side</button><button style={TB(lamDbl)} onClick={()=>setLamDbl(true)}>Both Sides</button></div>}</div>
         <div><div style={LBL}>UV / Coating</div><select value={selUV} onChange={e=>setSelUV(e.target.value)} style={IS}><option value="none">No UV / Coating</option>{uvRates.map(r=><option key={r.id} value={r.uv_name}>{r.uv_name}</option>)}</select></div>
