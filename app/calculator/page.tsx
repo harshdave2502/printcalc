@@ -1,6 +1,7 @@
 'use client';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '../supabase';
+import Header from '../components/Header';
 
 const PLATE_DIMS: Record<string,{w:number;h:number}> = {
   '15×20"': {w:14.5, h:19.5},
@@ -564,27 +565,16 @@ export default function Home(){
         *{box-sizing:border-box;margin:0;padding:0;}body{font-family:'DM Sans',sans-serif;background:#F7F6F3;}
         input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0;}
         input[type=number]{-moz-appearance:textfield;}
-        .topbar{background:#1A1A1A;height:52px;display:flex;align-items:center;justify-content:space-between;padding:0 24px;position:sticky;top:0;z-index:100;}
-        .nav-link{font-size:13px;color:#888;text-decoration:none;}.nav-link:hover{color:#fff;}
-        .nav-btn{font-size:13px;color:#888;background:none;border:none;cursor:pointer;font-family:inherit;}.nav-btn:hover{color:#fff;}
-        .calc-tabs{background:#fff;border-bottom:1px solid #EBEBEB;display:flex;padding:0 24px;}
-        .calc-tab{padding:14px 20px;font-size:14px;font-weight:500;color:#888;cursor:pointer;border-bottom:2px solid transparent;background:none;border-top:none;border-left:none;border-right:none;font-family:inherit;white-space:nowrap;}
-        .calc-tab.active{color:#1A1A1A;border-bottom-color:#C84B31;}.calc-tab:hover{color:#1A1A1A;}
+        .calc-tabs-strip{background:#fff;border-bottom:1px solid #E7E4F2;}
+        .calc-tabs{background:#fff;border-bottom:1px solid #E7E4F2;display:flex;padding:0 32px;max-width:1240px;margin:0 auto;}
+        .calc-tab{padding:14px 18px;font-size:14px;font-weight:700;color:#5B5870;cursor:pointer;border-bottom:2px solid transparent;background:none;border-top:none;border-left:none;border-right:none;font-family:inherit;white-space:nowrap;letter-spacing:-0.01em;}
+        .calc-tab.active{color:#7C3AED;border-bottom-color:#7C3AED;}.calc-tab:hover{color:#1A1330;}
         .page{min-height:calc(100vh - 100px);padding:28px 16px 64px;}
         .container{max-width:540px;margin:0 auto;}
         .live-badge{background:#F0FFF4;border:1px solid #9AE6B4;border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:12px;color:#276749;}
         .demo-notice{background:#FFFBEB;border:1px solid #FDE68A;border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:12px;color:#92400E;}
       `}</style>
-      <div className="topbar">
-        <div style={{display:'flex',alignItems:'center',gap:8}}>
-          <div style={{width:8,height:8,background:'#C84B31',borderRadius:'50%'}}/>
-          <span style={{fontSize:13,fontWeight:500,color:'#fff'}}>PrintCalc</span>
-          {subData&&<span style={{fontSize:11,color:'#888',marginLeft:4}}>· {subData.business_name}</span>}
-        </div>
-        <div style={{display:'flex',alignItems:'center',gap:12}}>
-          {user?(<><a href="/products" className="nav-link">📦 Products</a><a href="/projects" className="nav-link">🎁 Projects</a><a href="/quotes" className="nav-link">Quotes</a><a href="/orders" className="nav-link">Orders</a><a href="/dashboard" className="nav-link">Dashboard</a><button className="nav-btn" onClick={logout}>Logout</button></>):(<><a href="/login" className="nav-link">Login</a><a href="/signup" style={{fontSize:13,fontWeight:500,color:'#fff',background:'#C84B31',border:'none',padding:'7px 16px',borderRadius:6,cursor:'pointer',fontFamily:'inherit',textDecoration:'none'}}>Sign up free</a></>)}
-        </div>
-      </div>
+      <Header subtitle={subData ? `Calculator · ${subData.business_name}` : 'Calculator'} />
       <div className="calc-tabs">
         {[{id:'paper',l:'📄 Paper'},{id:'printing',l:'🖨️ Printing'},{id:'fulljob',l:'✅ Full Job'}].map(t=>(<button key={t.id} className={`calc-tab ${tab===t.id?'active':''}`} onClick={()=>setTab(t.id as any)}>{t.l}</button>))}
         <div style={{flex:1}}/>

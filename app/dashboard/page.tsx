@@ -1,6 +1,7 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { supabase } from '../supabase';
+import Header from '../components/Header';
 
 const GSM_RANGES: Record<string,string> = {
   'Maplitho':'60 GSM – 80 GSM','Art Paper':'80 GSM – 130 GSM','Art Card':'170 GSM – 230 GSM',
@@ -496,18 +497,17 @@ export default function DashboardPage() {
     <>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@600;700;800&family=Inter:wght@400;500;600&family=DM+Mono:wght@400;500&display=swap');
-        *{box-sizing:border-box;margin:0;padding:0;}body{font-family:'Inter',sans-serif;background:#F8F7FF;}
-        .nav{background:#0D0B1A;padding:0 24px;display:flex;align-items:center;justify-content:space-between;height:54px;position:sticky;top:0;z-index:100;}
+        *{box-sizing:border-box;margin:0;padding:0;}body{font-family:'Helvetica Neue',Helvetica,'Inter',sans-serif;background:#FAFAFC;}
         .tabs-wrap{background:#fff;border-bottom:1px solid rgba(124,58,237,0.1);padding:0 24px;display:flex;overflow-x:auto;scrollbar-width:none;}
         .tabs-wrap::-webkit-scrollbar{display:none;}
         .tab{padding:13px 16px;font-size:13px;font-weight:500;color:#9CA3AF;cursor:pointer;border-bottom:2px solid transparent;background:none;border-top:none;border-left:none;border-right:none;font-family:'Inter',sans-serif;white-space:nowrap;flex-shrink:0;transition:color 0.15s;}
         .tab.active{color:#7C3AED;border-bottom-color:#7C3AED;}.tab:hover{color:#4B5563;}
         .content{max-width:1000px;margin:0 auto;padding:24px;}
         .card{background:#fff;border-radius:12px;border:1px solid rgba(124,58,237,0.1);padding:24px;margin-bottom:16px;}
-        .greeting-card{background:linear-gradient(135deg,#0D0B1A 0%,#1E1640 100%);border-radius:14px;padding:20px 24px;margin-bottom:20px;display:flex;align-items:center;justify-content:space-between;}
-        .greeting-av{width:44px;height:44px;border-radius:50%;background:linear-gradient(135deg,#7C3AED,#D946EF);display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:700;color:#fff;flex-shrink:0;font-family:'Plus Jakarta Sans',sans-serif;}
-        .greeting-name{font-family:'Plus Jakarta Sans',sans-serif;font-size:17px;font-weight:700;color:#fff;margin-bottom:2px;}
-        .greeting-sub{font-size:12px;color:#6B7280;}
+        .greeting-card{background:#fff;border:1px solid #E7E4F2;border-radius:14px;padding:20px 24px;margin-bottom:20px;display:flex;align-items:center;justify-content:space-between;box-shadow:0 1px 3px rgba(0,0,0,0.04);}
+        .greeting-av{width:44px;height:44px;border-radius:50%;background:linear-gradient(135deg,#7C3AED,#D946EF);display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:700;color:#fff;flex-shrink:0;font-family:'Helvetica Neue',Helvetica,sans-serif;}
+        .greeting-name{font-family:'Helvetica Neue',Helvetica,sans-serif;font-size:17px;font-weight:800;color:#1A1330;margin-bottom:2px;letter-spacing:-0.01em;}
+        .greeting-sub{font-size:12px;color:#5B5870;font-weight:600;}
         .greeting-plan{background:rgba(124,58,237,0.2);border:1px solid rgba(124,58,237,0.35);color:#A78BFA;font-size:11px;font-weight:600;padding:4px 12px;border-radius:20px;text-transform:capitalize;}
         .field{margin-bottom:14px;}.field label{display:block;font-size:11px;font-weight:600;color:#6B7280;margin-bottom:5px;text-transform:uppercase;letter-spacing:0.06em;}
         input[type="text"],input[type="number"],input[type="email"]{padding:9px 12px;border:1.5px solid #E5E7EB;border-radius:8px;font-size:13px;font-family:'Inter',sans-serif;color:#0F0A1E;background:#FAFAFA;outline:none;}
@@ -549,23 +549,7 @@ export default function DashboardPage() {
         @media(max-width:768px){.stat-grid-4{grid-template-columns:repeat(2,1fr);}.stat-grid-3{grid-template-columns:repeat(2,1fr);}.content{padding:16px;}}
       `}</style>
 
-      <nav className="nav">
-        <div style={{display:'flex',alignItems:'center',gap:8}}>
-          <div style={{width:8,height:8,background:'linear-gradient(135deg,#7C3AED,#D946EF)',borderRadius:'50%'}}/>
-          <span style={{fontFamily:'Plus Jakarta Sans,sans-serif',fontSize:14,fontWeight:700,color:'#fff'}}>PrintCalc</span>
-        </div>
-        <div style={{display:'flex',alignItems:'center',gap:14}}>
-          <a href="/calculator" style={{fontSize:12,color:'#6B7280',textDecoration:'none'}}>← Calculator</a>
-          {sub && (
-            <div className="nav-chip">
-              <div className="nav-chip-av">{(sub.business_name||'?')[0].toUpperCase()}</div>
-              <span className="nav-chip-name">Hi {sub.business_name?.split(' ')[0]} 👋</span>
-            </div>
-          )}
-          <span className="plan-badge">{sub?.plan}</span>
-          <button style={{fontSize:12,color:'#6B7280',background:'none',border:'none',cursor:'pointer',fontFamily:'inherit'}} onClick={logout}>Logout</button>
-        </div>
-      </nav>
+      <Header subtitle={sub ? `Dashboard · ${sub.business_name}` : 'Dashboard'} />
 
       <div className="tabs-wrap">
         {tabs.map(t=>t.href

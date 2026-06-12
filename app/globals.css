@@ -1,26 +1,61 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #FAFAFC;
+  --foreground: #1A1330;
+  --pc-primary: #7C3AED;
+  --pc-text-muted: #5B5870;
+  --pc-text-dim: #9CA3AF;
+  --pc-border: #E7E4F2;
+  --pc-bg-panel: #FFFFFF;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
+/* Force LIGHT THEME everywhere — no auto dark mode */
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: 'Helvetica Neue', Helvetica, 'Inter', Arial, sans-serif;
+  font-size: 15px;
+  font-weight: 500;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+html {
+  font-family: 'Helvetica Neue', Helvetica, 'Inter', Arial, sans-serif;
+}
+
+/* Bold headings by default */
+h1, h2, h3, h4, h5, h6 {
+  font-family: 'Helvetica Neue', Helvetica, 'Inter', Arial, sans-serif;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--foreground);
+}
+
+/* Inputs / buttons inherit font */
+input, select, textarea, button {
+  font-family: inherit;
+  font-weight: 600;
+}
+
+/* Cleaner scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #F5F4F9;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--pc-border);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--pc-primary);
 }
