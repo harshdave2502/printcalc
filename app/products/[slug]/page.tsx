@@ -7,6 +7,7 @@ import { supabase } from '../../supabase';
 import { TEMPLATES, getTemplate, ProductTemplate, TemplateField } from '../../lib/templates';
 import { TOKENS } from '../../lib/design';
 import { formatPrice } from '../../lib/countries';
+import { computePrice } from '../../lib/calc';
 
 // ─────────────────────────────────────────────────────────────────────────
 // Per-product calculator — renders only fields relevant to this product's
@@ -36,57 +37,7 @@ interface PrintingRate { id: string; plate_name: string; color_option: string; f
 interface FieldOverride { field_key: string; is_enabled: boolean; custom_label: string | null; custom_options: any; }
 interface CustomField { field_key: string; label: string; field_type: string; options: any; price_impact: string; price_value: number; help_text: string | null; }
 
-// ─── Plate dimensions (in usable inches after gripper margin) ───────────
-const PLATE_DIMS: Record<string, { w: number; h: number }> = {
-  '15×20"': { w: 14.5, h: 19.5 },
-  '18×23"': { w: 17.5, h: 22.5 },
-  '18×25"': { w: 17.5, h: 24.5 },
-  '20×28"': { w: 19.5, h: 27.5 },
-  '20×30"': { w: 19.5, h: 29.5 },
-  '25×36"': { w: 24.5, h: 35.5 },
-};
-const PARENT_SHEETS: Record<string, { parentW: number; parentH: number; cuts: number }> = {
-  '15×20"': { parentW: 20, parentH: 30, cuts: 2 },
-  '18×23"': { parentW: 23, parentH: 36, cuts: 2 },
-  '18×25"': { parentW: 25, parentH: 36, cuts: 2 },
-  '20×28"': { parentW: 20, parentH: 30, cuts: 1 },
-  '20×30"': { parentW: 20, parentH: 30, cuts: 1 },
-  '25×36"': { parentW: 25, parentH: 36, cuts: 1 },
-};
-
-function calcUps(w: number, h: number, plateKey: string): number {
-  const p = PLATE_DIMS[plateKey];
-  if (!p || !w || !h) return 1;
-  return Math.max(
-    Math.floor(p.w / w) * Math.floor(p.h / h),
-    Math.floor(p.w / h) * Math.floor(p.h / w),
-    1,
-  );
-}
-
-// Match existing /calculator: highest ups wins, smallest plate as tie-breaker.
-function autoSelectPlate(w: number, h: number): string {
-  const plates = Object.keys(PLATE_DIMS);
-  let bestPlate = '18×25"';
-  let bestUps = 0;
-  for (const pk of plates) {
-    const p = PLATE_DIMS[pk];
-    const ups = Math.max(
-      Math.floor(p.w / w) * Math.floor(p.h / h),
-      Math.floor(p.w / h) * Math.floor(p.h / w),
-      1,
-    );
-    if (ups > bestUps || (ups === bestUps && p.w * p.h < PLATE_DIMS[bestPlate].w * PLATE_DIMS[bestPlate].h)) {
-      bestUps = ups;
-      bestPlate = pk;
-    }
-  }
-  return bestPlate;
-}
-
-// Board paper categories — rough/smooth sides cannot do Work & Turn,
-// so both-sides on board paper requires 2 separate plate setups.
-const BOARD_PAPER_CATS = ['SBS', 'FBB', 'Duplex Grey Back', 'Duplex White Back'];
+// Calc constants moved to ../../lib/calc.ts (single source of truth)
 
 // ─────────────────────────────────────────────────────────────────────────
 // Component
@@ -105,6 +56,7 @@ export default function ProductCalculator() {
 
   // Reference data
   const [paperStocks, setPaperStocks] = useState<PaperStock[]>([]);
+  const [paperCategories, setPaperCategories] = useState<Array<{ category: string; rate_per_kg: number }>>([]);
   const [printingRates, setPrintingRates] = useState<PrintingRate[]>([]);
   const [fieldOverrides, setFieldOverrides] = useState<FieldOverride[]>([]);
   const [customFields, setCustomFields] = useState<CustomField[]>([]);
@@ -140,9 +92,10 @@ export default function ProductCalculator() {
       const userId = session.user.id;
 
       // Load subscriber product, paper, rates, overrides, custom fields, subscriber settings, customers
-      const [prodRes, paperRes, rateRes, subRes, custRes] = await Promise.all([
+      const [prodRes, paperRes, catRes, rateRes, subRes, custRes] = await Promise.all([
         supabase.from('subscriber_products').select('*').eq('subscriber_id', userId).eq('slug', slug).maybeSingle(),
         supabase.from('paper_stocks').select('id, label, gsm, rate_per_kg, category').eq('subscriber_id', userId).order('sort_order'),
+        supabase.from('paper_categories').select('category, rate_per_kg').eq('subscriber_id', userId),
         supabase.from('printing_rates').select('id, plate_name, color_option, fixed_charge, per_1000_impression').eq('subscriber_id', userId),
         supabase.from('subscribers').select('currency_symbol, markup_percent, tax_percent, business_name, email').eq('id', userId).maybeSingle(),
         supabase.from('customers').select('id, name, email, phone, company').eq('subscriber_id', userId).order('name'),
@@ -157,6 +110,7 @@ export default function ProductCalculator() {
       setProduct(prod);
       setTemplate(getTemplate(prod.template_id) || null);
       setPaperStocks(paperRes.data || []);
+      setPaperCategories((catRes.data || []) as Array<{ category: string; rate_per_kg: number }>);
       setPrintingRates(rateRes.data || []);
       setCustomers(custRes.data || []);
       if (subRes.data) {
@@ -211,99 +165,59 @@ export default function ProductCalculator() {
     });
   }, [template, fieldOverrides]);
 
-  // ─── Calculate price ───────────────────────────────────────────────────
+  // ─── Calculate price (uses shared lib/calc.ts) ──────────────────────────
   const calc = useMemo(() => {
     if (!product || !template) return null;
     const qty = Number(values.quantity) || 0;
     const size = values.size as { w: number; h: number } | null;
     const paperId = values.paper as string | null;
-    const sides = values.sides as string;
-    const color = values.color as string;
+    const sidesVal = (values.sides as string) === 'both' ? 'both' : 'one';
+    const colorVal = (values.color as string) || 'four_color';
 
     const stock = paperStocks.find((p) => p.id === paperId);
     if (!qty || !size || !size.w || !size.h || !stock) {
       return { ready: false } as const;
     }
 
-    // ─── Mirror the existing /calculator Full Job tab logic ────────────
-    // Plate auto-selected, working sheets at PLATE size, then:
-    //   • paper cost  = uses ws (plate sheets), divided by parent.cuts
-    //   • printing    = uses imp (impressions on plate)
-    //   • W&T:  non-board both-sides → 1 plate setup, imp = ws × 2
-    //   • Board:    board both-sides   → 2 plate setups, each plate sees ws impressions
-    //   • Single:                       → 1 plate setup, imp = ws
-    const plateKey = autoSelectPlate(size.w, size.h);
-    const ups = calcUps(size.w, size.h, plateKey);
-    const ws = Math.ceil(qty / ups);                    // plate-size working sheets
-    const isBoardPaper = BOARD_PAPER_CATS.includes(stock.category);
-    const useDoublePlate = isBoardPaper && sides === 'both';
-    const imp = useDoublePlate ? ws : (sides === 'both' ? ws * 2 : ws);
-    const numPlates = useDoublePlate ? 2 : 1;
-    const useWorkAndTurn = sides === 'both' && !isBoardPaper;
+    const r = computePrice({
+      qty,
+      w: size.w,
+      h: size.h,
+      stock,
+      paperCategories,
+      printingRates,
+      sides: sidesVal as 'one' | 'both',
+      color: colorVal as any,
+      markupPercent,
+      taxPercent,
+    });
+    if (!r.ready) return { ready: false } as const;
 
-    // ─── Paper cost (matches existing helper exactly) ───────────────────
-    const parent = PARENT_SHEETS[plateKey];
-    const f = (parent.parentW * parent.parentH * 0.2666) / 828;
-    const paperCost = ((f * stock.gsm * stock.rate_per_kg) / 500) * (ws / parent.cuts);
-
-    // ─── Printing cost (matches existing helper exactly) ────────────────
-    // fixed_charge × numPlates  +  (extras over 1000 free imp per plate) × per_1000
-    const colorMap: Record<string, string> = {
-      four_color: 'Four Color CMYK',
-      two_color: 'Two Color',
-      single_color: 'Single Color',
-      bw: 'Single Color',
-    };
-    const colorLabel = colorMap[color] || 'Single Color';
-    const matchingRate = printingRates.find((r) => r.color_option === colorLabel) || printingRates[0];
-
-    let printCost = 0;
-    let printBreakdown: Array<{ label: string; value: number }> = [];
-    if (matchingRate) {
-      const fixedCharge = Number(matchingRate.fixed_charge) || 0;
-      const per1000 = Number(matchingRate.per_1000_impression) || 0;
-      const pf = fixedCharge * numPlates;                 // total plate setup cost
-      const fi = 1000 * numPlates;                        // free impressions scale with setups
-      const ei = Math.max(0, imp - fi);
-      const er = Math.ceil(ei / 1000) * 1000;
-      printCost = pf + (er / 1000) * per1000;
-
-      if (useDoublePlate) {
-        printBreakdown = [
-          { label: `Front (${colorLabel})`, value: printCost / 2 },
-          { label: `Back (${colorLabel})`, value: printCost / 2 },
-        ];
-      } else if (useWorkAndTurn) {
-        printBreakdown = [{ label: `Printing — Work & Turn (${colorLabel})`, value: printCost }];
-      } else {
-        printBreakdown = [{ label: `Printing (${colorLabel})`, value: printCost }];
-      }
-    }
-
-    // Custom field price impact
+    // Custom field price impact — added on top of core calc
     let extraCost = 0;
     customFields.forEach((cf) => {
       const v = values[`custom_${cf.field_key}`];
       if (!v) return;
       if (cf.price_impact === 'flat') extraCost += Number(cf.price_value);
       else if (cf.price_impact === 'per_unit') extraCost += Number(cf.price_value) * qty;
-      else if (cf.price_impact === 'percent') extraCost += (paperCost + printCost) * (Number(cf.price_value) / 100);
+      else if (cf.price_impact === 'percent') extraCost += (r.paperCost + r.printCost) * (Number(cf.price_value) / 100);
     });
-
-    const subtotal = paperCost + printCost + extraCost;
-    const withMarkup = subtotal * (1 + markupPercent / 100);
+    const subtotal = r.subtotal + extraCost;
+    const markupAmt = subtotal * (markupPercent / 100);
+    const withMarkup = subtotal + markupAmt;
     const tax = withMarkup * (taxPercent / 100);
     const total = withMarkup + tax;
-    const perUnit = total / qty;
+    const perUnit = qty > 0 ? total / qty : 0;
 
     return {
       ready: true,
-      qty, ws, ups, imp, plateKey, useWorkAndTurn, useDoublePlate,
-      paperCost, printCost, extraCost,
-      printBreakdown,
+      qty, ws: r.ws, ups: r.ups, imp: r.imp, plateKey: r.plateKey,
+      useWorkAndTurn: r.useWorkAndTurn, useDoublePlate: r.useDoublePlate,
+      paperCost: r.paperCost, printCost: r.printCost, extraCost,
+      printBreakdown: r.printBreakdown,
       subtotal, withMarkup, tax, total, perUnit,
     } as const;
-  }, [product, template, values, paperStocks, printingRates, customFields, markupPercent, taxPercent]);
+  }, [product, template, values, paperStocks, paperCategories, printingRates, customFields, markupPercent, taxPercent]);
 
   function setVal(key: string, v: any) {
     setValues((prev) => ({ ...prev, [key]: v }));

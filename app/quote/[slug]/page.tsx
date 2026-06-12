@@ -6,6 +6,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { supabase } from '../../supabase';
 import { getTemplate, ProductTemplate } from '../../lib/templates';
 import { TOKENS } from '../../lib/design';
+import { computePrice } from '../../lib/calc';
 
 // ─────────────────────────────────────────────────────────────────────────
 // Quick Quote — customer-friendly view.
@@ -28,30 +29,7 @@ interface PaperStock { id: string; label: string; gsm: number; rate_per_kg: numb
 interface PrintingRate { id: string; plate_name: string; color_option: string; fixed_charge: number; per_1000_impression: number; }
 interface SubscriberInfo { id: string; business_name: string; email: string; }
 
-const PLATE_DIMS: Record<string, { w: number; h: number }> = {
-  '15×20"': { w: 14.5, h: 19.5 }, '18×23"': { w: 17.5, h: 22.5 }, '18×25"': { w: 17.5, h: 24.5 },
-  '20×28"': { w: 19.5, h: 27.5 }, '20×30"': { w: 19.5, h: 29.5 }, '25×36"': { w: 24.5, h: 35.5 },
-};
-const PARENT_SHEETS: Record<string, { parentW: number; parentH: number; cuts: number }> = {
-  '15×20"': { parentW: 20, parentH: 30, cuts: 2 }, '18×23"': { parentW: 23, parentH: 36, cuts: 2 },
-  '18×25"': { parentW: 25, parentH: 36, cuts: 2 }, '20×28"': { parentW: 20, parentH: 30, cuts: 1 },
-  '20×30"': { parentW: 20, parentH: 30, cuts: 1 }, '25×36"': { parentW: 25, parentH: 36, cuts: 1 },
-};
-const BOARD_PAPER_CATS = ['SBS', 'FBB', 'Duplex Grey Back', 'Duplex White Back'];
-
-function calcUps(w: number, h: number, plateKey: string): number {
-  const p = PLATE_DIMS[plateKey]; if (!p || !w || !h) return 1;
-  return Math.max(Math.floor(p.w / w) * Math.floor(p.h / h), Math.floor(p.w / h) * Math.floor(p.h / w), 1);
-}
-function autoSelectPlate(w: number, h: number): string {
-  let best = '18×25"'; let bestUps = 0;
-  for (const pk of Object.keys(PLATE_DIMS)) {
-    const p = PLATE_DIMS[pk];
-    const ups = Math.max(Math.floor(p.w / w) * Math.floor(p.h / h), Math.floor(p.w / h) * Math.floor(p.h / w), 1);
-    if (ups > bestUps || (ups === bestUps && p.w * p.h < PLATE_DIMS[best].w * PLATE_DIMS[best].h)) { bestUps = ups; best = pk; }
-  }
-  return best;
-}
+// Calc constants moved to ../../lib/calc.ts (single source of truth)
 
 // Plain-language helpers
 function thicknessLabel(gsm: number): { label: string; example: string } {
@@ -73,6 +51,7 @@ export default function QuickQuotePage() {
   const [product, setProduct] = useState<SubscriberProduct | null>(null);
   const [template, setTemplate] = useState<ProductTemplate | null>(null);
   const [paperStocks, setPaperStocks] = useState<PaperStock[]>([]);
+  const [paperCategories, setPaperCategories] = useState<Array<{ category: string; rate_per_kg: number }>>([]);
   const [printingRates, setPrintingRates] = useState<PrintingRate[]>([]);
   const [subscriberInfo, setSubscriberInfo] = useState<SubscriberInfo>({ id: '', business_name: '', email: '' });
   const [currency, setCurrency] = useState('$');
@@ -101,9 +80,10 @@ export default function QuickQuotePage() {
       setHasSession(true);
       const userId = session.user.id;
 
-      const [prodRes, paperRes, rateRes, subRes] = await Promise.all([
+      const [prodRes, paperRes, catRes, rateRes, subRes] = await Promise.all([
         supabase.from('subscriber_products').select('*').eq('subscriber_id', userId).eq('slug', slug).maybeSingle(),
         supabase.from('paper_stocks').select('id, label, gsm, rate_per_kg, category').eq('subscriber_id', userId).order('gsm'),
+        supabase.from('paper_categories').select('category, rate_per_kg').eq('subscriber_id', userId),
         supabase.from('printing_rates').select('id, plate_name, color_option, fixed_charge, per_1000_impression').eq('subscriber_id', userId),
         supabase.from('subscribers').select('id, currency_symbol, markup_percent, tax_percent, business_name, email').eq('id', userId).maybeSingle(),
       ]);
@@ -114,6 +94,7 @@ export default function QuickQuotePage() {
       setProduct(prod);
       setTemplate(getTemplate(prod.template_id) || null);
       setPaperStocks(paperRes.data || []);
+      setPaperCategories((catRes.data || []) as Array<{ category: string; rate_per_kg: number }>);
       setPrintingRates(rateRes.data || []);
       if (subRes.data) {
         setCurrency(subRes.data.currency_symbol || '$');
@@ -141,7 +122,7 @@ export default function QuickQuotePage() {
     return () => { mounted = false; };
   }, [slug]);
 
-  // ─── Calculate price ───────────────────────────────────────────────────
+  // ─── Calculate price (uses shared lib/calc.ts) ─────────────────────────
   const calc = useMemo(() => {
     if (!product || !template) return null;
     const w = Number(product.default_size_w_inch) || 3.5;
@@ -149,48 +130,42 @@ export default function QuickQuotePage() {
     const stock = paperStocks.find((p) => p.id === paperId);
     if (!qty || !stock) return null;
 
-    const plateKey = autoSelectPlate(w, h);
-    const ups = calcUps(w, h, plateKey);
-    const ws = Math.ceil(qty / ups);
-    const isBoardPaper = BOARD_PAPER_CATS.includes(stock.category);
-    const useDoublePlate = isBoardPaper && sides === 'both';
-    const imp = useDoublePlate ? ws : (sides === 'both' ? ws * 2 : ws);
-    const numPlates = useDoublePlate ? 2 : 1;
+    const r = computePrice({
+      qty,
+      w, h,
+      stock,
+      paperCategories,
+      printingRates,
+      sides,
+      color,
+      markupPercent,
+      taxPercent,
+    });
+    if (!r.ready) return null;
 
-    // Paper cost
-    const parent = PARENT_SHEETS[plateKey];
-    const f = (parent.parentW * parent.parentH * 0.2666) / 828;
-    const paperCost = ((f * stock.gsm * stock.rate_per_kg) / 500) * (ws / parent.cuts);
-
-    // Printing cost
-    const colorMap: Record<string, string> = { four_color: 'Four Color CMYK', single_color: 'Single Color', bw: 'Single Color' };
-    const colorLabel = colorMap[color] || 'Single Color';
-    const matchingRate = printingRates.find((r) => r.color_option === colorLabel) || printingRates[0];
-    let printCost = 0;
-    if (matchingRate) {
-      const fixedCharge = Number(matchingRate.fixed_charge) || 0;
-      const per1000 = Number(matchingRate.per_1000_impression) || 0;
-      const pf = fixedCharge * numPlates;
-      const fi = 1000 * numPlates;
-      const ei = Math.max(0, imp - fi);
-      const er = Math.ceil(ei / 1000) * 1000;
-      printCost = pf + (er / 1000) * per1000;
-    }
-
-    // Lamination add-on (flat estimate — proper integration with lamination_rates can come later)
-    let lamCost = 0;
-    if (lamination) {
-      // Estimate: small flat fee per impression
-      lamCost = Math.max(100, ws * 0.5);
-    }
-
-    const subtotal = paperCost + printCost + lamCost;
+    // Lamination as small flat add-on (quick estimate — proper integration later)
+    const lamCost = lamination ? Math.max(100, r.ws * 0.5) : 0;
+    const subtotal = r.subtotal + lamCost;
     const withMarkup = subtotal * (1 + markupPercent / 100);
     const tax = withMarkup * (taxPercent / 100);
     const total = withMarkup + tax;
-    const perUnit = total / qty;
-    return { qty, ws, ups, plateKey, paperCost, printCost, lamCost, subtotal, withMarkup, tax, total, perUnit };
-  }, [product, template, qty, paperId, sides, color, lamination, paperStocks, printingRates, markupPercent, taxPercent]);
+    const perUnit = qty > 0 ? total / qty : 0;
+
+    return {
+      qty,
+      ws: r.ws,
+      ups: r.ups,
+      plateKey: r.plateKey,
+      paperCost: r.paperCost,
+      printCost: r.printCost,
+      lamCost,
+      subtotal,
+      withMarkup,
+      tax,
+      total,
+      perUnit,
+    };
+  }, [product, template, qty, paperId, sides, color, lamination, paperStocks, paperCategories, printingRates, markupPercent, taxPercent]);
 
   // ─── Render ────────────────────────────────────────────────────────────
   if (loading) return <FullPageLoading />;

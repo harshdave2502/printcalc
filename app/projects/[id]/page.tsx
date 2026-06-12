@@ -6,6 +6,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { supabase } from '../../supabase';
 import { TEMPLATES, getTemplate, ProductTemplate } from '../../lib/templates';
 import { TOKENS } from '../../lib/design';
+import { computePrice } from '../../lib/calc';
 
 // ─────────────────────────────────────────────────────────────────────────
 // Project Editor — assemble multiple products into one quote.
@@ -61,65 +62,28 @@ interface SubscriberProduct {
 interface PaperStock { id: string; label: string; gsm: number; rate_per_kg: number; category: string; }
 interface PrintingRate { id: string; plate_name: string; color_option: string; fixed_charge: number; per_1000_impression: number; }
 
-const PLATE_DIMS: Record<string, { w: number; h: number }> = {
-  '15×20"': { w: 14.5, h: 19.5 }, '18×23"': { w: 17.5, h: 22.5 }, '18×25"': { w: 17.5, h: 24.5 },
-  '20×28"': { w: 19.5, h: 27.5 }, '20×30"': { w: 19.5, h: 29.5 }, '25×36"': { w: 24.5, h: 35.5 },
-};
-const PARENT_SHEETS: Record<string, { parentW: number; parentH: number; cuts: number }> = {
-  '15×20"': { parentW: 20, parentH: 30, cuts: 2 }, '18×23"': { parentW: 23, parentH: 36, cuts: 2 },
-  '18×25"': { parentW: 25, parentH: 36, cuts: 2 }, '20×28"': { parentW: 20, parentH: 30, cuts: 1 },
-  '20×30"': { parentW: 20, parentH: 30, cuts: 1 }, '25×36"': { parentW: 25, parentH: 36, cuts: 1 },
-};
-const BOARD_PAPER_CATS = ['SBS', 'FBB', 'Duplex Grey Back', 'Duplex White Back'];
-
-function calcUps(w: number, h: number, pk: string): number {
-  const p = PLATE_DIMS[pk]; if (!p || !w || !h) return 1;
-  return Math.max(Math.floor(p.w / w) * Math.floor(p.h / h), Math.floor(p.w / h) * Math.floor(p.h / w), 1);
-}
-function autoSelectPlate(w: number, h: number): string {
-  let best = '18×25"'; let bestUps = 0;
-  for (const pk of Object.keys(PLATE_DIMS)) {
-    const ups = calcUps(w, h, pk); const p = PLATE_DIMS[pk];
-    if (ups > bestUps || (ups === bestUps && p.w * p.h < PLATE_DIMS[best].w * PLATE_DIMS[best].h)) { bestUps = ups; best = pk; }
-  }
-  return best;
-}
-
-// Computes line cost for one project item using same engine as /products/[slug]
+// Computes line cost for one project item — uses shared lib/calc.ts (no tax — tax is at project level)
 function computeLineCost({
-  qty, w, h, stock, sides, color, paperStocks, printingRates, markupPercent,
+  qty, w, h, stock, sides, color, paperCategories, printingRates, markupPercent,
 }: {
   qty: number; w: number; h: number; stock: PaperStock;
   sides: 'one' | 'both'; color: 'four_color' | 'single_color' | 'bw';
-  paperStocks: PaperStock[]; printingRates: PrintingRate[]; markupPercent: number;
+  paperCategories: Array<{ category: string; rate_per_kg: number }>;
+  printingRates: PrintingRate[]; markupPercent: number;
 }): { lineTotal: number; unitPrice: number; sheets: number; ups: number; plate: string } | null {
   if (!qty || !stock) return null;
-  const plateKey = autoSelectPlate(w, h);
-  const ups = calcUps(w, h, plateKey);
-  const ws = Math.ceil(qty / ups);
-  const isBoard = BOARD_PAPER_CATS.includes(stock.category);
-  const useDoublePlate = isBoard && sides === 'both';
-  const imp = useDoublePlate ? ws : (sides === 'both' ? ws * 2 : ws);
-  const numPlates = useDoublePlate ? 2 : 1;
-  const parent = PARENT_SHEETS[plateKey];
-  const f = (parent.parentW * parent.parentH * 0.2666) / 828;
-  const paperCost = ((f * stock.gsm * stock.rate_per_kg) / 500) * (ws / parent.cuts);
-  const colorMap: Record<string, string> = { four_color: 'Four Color CMYK', single_color: 'Single Color', bw: 'Single Color' };
-  const colorLabel = colorMap[color] || 'Single Color';
-  const rate = printingRates.find((r) => r.color_option === colorLabel) || printingRates[0];
-  let printCost = 0;
-  if (rate) {
-    const fixed = Number(rate.fixed_charge) || 0;
-    const per1000 = Number(rate.per_1000_impression) || 0;
-    const pf = fixed * numPlates;
-    const fi = 1000 * numPlates;
-    const ei = Math.max(0, imp - fi);
-    const er = Math.ceil(ei / 1000) * 1000;
-    printCost = pf + (er / 1000) * per1000;
-  }
-  const subtotal = paperCost + printCost;
-  const withMarkup = subtotal * (1 + markupPercent / 100);
-  return { lineTotal: withMarkup, unitPrice: withMarkup / qty, sheets: ws, ups, plate: plateKey };
+  const r = computePrice({
+    qty, w, h, stock, paperCategories, printingRates, sides, color,
+    markupPercent, taxPercent: 0, // line items don't carry tax — project-level
+  });
+  if (!r.ready) return null;
+  return {
+    lineTotal: r.withMarkup,
+    unitPrice: r.perUnit,
+    sheets: r.ws,
+    ups: r.ups,
+    plate: r.plateKey,
+  };
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -135,6 +99,7 @@ export default function ProjectEditorPage() {
   const [items, setItems] = useState<ProjectItem[]>([]);
   const [products, setProducts] = useState<SubscriberProduct[]>([]);
   const [paperStocks, setPaperStocks] = useState<PaperStock[]>([]);
+  const [paperCategories, setPaperCategories] = useState<Array<{ category: string; rate_per_kg: number }>>([]);
   const [printingRates, setPrintingRates] = useState<PrintingRate[]>([]);
   const [currency, setCurrency] = useState('$');
   const [defaultMarkup, setDefaultMarkup] = useState(25);
@@ -156,11 +121,12 @@ export default function ProjectEditorPage() {
       setHasSession(true);
       const userId = session.user.id;
 
-      const [prRes, itRes, prodRes, papRes, rateRes, subRes] = await Promise.all([
+      const [prRes, itRes, prodRes, papRes, catRes, rateRes, subRes] = await Promise.all([
         supabase.from('projects').select('*').eq('id', id).eq('subscriber_id', userId).maybeSingle(),
         supabase.from('project_items').select('*').eq('project_id', id).order('sort_order'),
         supabase.from('subscriber_products').select('*').eq('subscriber_id', userId).eq('is_enabled', true).order('sort_order'),
         supabase.from('paper_stocks').select('id, label, gsm, rate_per_kg, category').eq('subscriber_id', userId).order('gsm'),
+        supabase.from('paper_categories').select('category, rate_per_kg').eq('subscriber_id', userId),
         supabase.from('printing_rates').select('id, plate_name, color_option, fixed_charge, per_1000_impression').eq('subscriber_id', userId),
         supabase.from('subscribers').select('currency_symbol, markup_percent, tax_percent, business_name, email').eq('id', userId).maybeSingle(),
       ]);
@@ -172,6 +138,7 @@ export default function ProjectEditorPage() {
       setItems((itRes.data || []) as ProjectItem[]);
       setProducts((prodRes.data || []) as SubscriberProduct[]);
       setPaperStocks(papRes.data || []);
+      setPaperCategories((catRes.data || []) as Array<{ category: string; rate_per_kg: number }>);
       setPrintingRates(rateRes.data || []);
       if (subRes.data) {
         setCurrency(subRes.data.currency_symbol || '$');
@@ -477,6 +444,7 @@ export default function ProjectEditorPage() {
         <AddItemModal
           products={products}
           paperStocks={paperStocks}
+          paperCategories={paperCategories}
           printingRates={printingRates}
           markupPercent={defaultMarkup}
           currency={currency}
@@ -684,10 +652,11 @@ function Row({ label, value }: { label: string; value: string }) {
 // ──────────────────────────────────────────────────────────────────────
 
 function AddItemModal({
-  products, paperStocks, printingRates, markupPercent, currency, onClose, onAdd,
+  products, paperStocks, paperCategories, printingRates, markupPercent, currency, onClose, onAdd,
 }: {
   products: SubscriberProduct[];
   paperStocks: PaperStock[];
+  paperCategories: Array<{ category: string; rate_per_kg: number }>;
   printingRates: PrintingRate[];
   markupPercent: number;
   currency: string;
@@ -721,8 +690,8 @@ function AddItemModal({
     if (!stock) return null;
     const w = Number(selectedProduct.default_size_w_inch) || 3.5;
     const h = Number(selectedProduct.default_size_h_inch) || 2;
-    return computeLineCost({ qty, w, h, stock, sides, color, paperStocks, printingRates, markupPercent });
-  }, [selectedProduct, paperId, qty, sides, color, paperStocks, printingRates, markupPercent]);
+    return computeLineCost({ qty, w, h, stock, sides, color, paperCategories, printingRates, markupPercent });
+  }, [selectedProduct, paperId, qty, sides, color, paperStocks, paperCategories, printingRates, markupPercent]);
 
   function confirmAdd() {
     if (!selectedProduct || !calc) return;
