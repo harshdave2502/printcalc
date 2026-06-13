@@ -18,6 +18,88 @@ import { fitWithPaperCutting, FitWithCuttingResult, parentSheetsFor as parentShe
 export const PLATE_DIMS = PLATE_DIMS_FROM_PLATES;
 export const PARENT_SHEETS = PARENT_SHEETS_FROM_PLATES;
 
+// ─────────────────────────────────────────────────────────────────────────
+// Unified plate/ups/parent resolver — single brain for ALL surfaces
+// (/products/[slug], /quote/[slug], /projects/[id], /calculator Full Job,
+//  /calculator Printing).
+//
+// Standard size (matches SIZE_PLATE_MAP) → use the prescribed plate + ups
+// and the legacy plate→parent lookup. Result is byte-identical to the
+// old /calculator math.
+//
+// Custom size → run Mode B (paper cutting). Picks parent + cut + plate.
+// Falls back to old plate-only auto-pick if Mode B finds nothing.
+// ─────────────────────────────────────────────────────────────────────────
+export interface ResolveLayoutArgs {
+  pieceW: number;
+  pieceH: number;
+  paperCategory: string;
+  isBothSides: boolean;
+  subscriberSheets?: Array<{ w: number; h: number; label: string }>;
+}
+
+export interface ResolvedLayout {
+  plate: string;
+  ups: number;
+  parentW: number;
+  parentH: number;
+  cutsPerParent: number;
+  fromMap: boolean;
+  cuttingFit: FitWithCuttingResult | null;
+}
+
+export function resolveLayout(args: ResolveLayoutArgs): ResolvedLayout {
+  const { pieceW, pieceH, paperCategory, isBothSides, subscriberSheets } = args;
+
+  // 1. Standard size — locked plate + ups from CSV.
+  const mapped = lookupSizeMap(pieceW, pieceH);
+  if (mapped) {
+    const parent = PARENT_SHEETS[mapped.plate] || { parentW: 25, parentH: 36, cuts: 2 };
+    return {
+      plate: mapped.plate,
+      ups: mapped.ups,
+      parentW: parent.parentW,
+      parentH: parent.parentH,
+      cutsPerParent: parent.cuts,
+      fromMap: true,
+      cuttingFit: null,
+    };
+  }
+
+  // 2. Custom size — Mode B (parent → press sheet → plate).
+  const fit = fitWithPaperCutting({
+    pieceW,
+    pieceH,
+    paperCategory,
+    isBothSides,
+    subscriberSheets,
+  });
+  if (fit) {
+    return {
+      plate: fit.plate,
+      ups: fit.upsPerCutSheet,
+      parentW: fit.parent.w,
+      parentH: fit.parent.h,
+      cutsPerParent: fit.cutsPerParent,
+      fromMap: false,
+      cuttingFit: fit,
+    };
+  }
+
+  // 3. Last resort — old plate-only fitter so we never crash.
+  const fallback = autoSelectPlate(pieceW, pieceH);
+  const parent = PARENT_SHEETS[fallback.plate] || { parentW: 25, parentH: 36, cuts: 2 };
+  return {
+    plate: fallback.plate,
+    ups: fallback.ups,
+    parentW: parent.parentW,
+    parentH: parent.parentH,
+    cutsPerParent: parent.cuts,
+    fromMap: false,
+    cuttingFit: null,
+  };
+}
+
 // ─── Board paper categories — cannot Work & Turn (rough/smooth sides) ────
 export const BOARD_PAPER_CATS = ['SBS', 'FBB', 'Duplex Grey Back', 'Duplex White Back'];
 
@@ -595,61 +677,34 @@ export function computePrice(args: ComputePriceArgs): ComputePriceResult | { rea
   const isBothSides = sides === 'both';
   const preferEvenUps = isBothSides && !isBoardPaper;
 
-  const mapped = lookupSizeMap(w, h);
-  let plateKey: string;
-  let ups: number;
-  let fromMap: boolean;
-  let orientation: 'natural' | 'rotated' = 'natural';
-  let wastagePercent: number | undefined;
-  let hasHighWastage: boolean | undefined;
-  let fitWarnings: string[] = [];
+  // Unified layout decision — standard size uses SIZE_PLATE_MAP, custom size
+  // uses Mode B paper cutting. Same code path as /calculator now.
+  const layout = resolveLayout({
+    pieceW: w,
+    pieceH: h,
+    paperCategory: stock.category,
+    isBothSides,
+  });
+  const plateKey = layout.plate;
+  const ups = layout.ups;
+  const fromMap = layout.fromMap;
+  const cuttingFit = layout.cuttingFit;
+
+  let orientation: 'natural' | 'rotated' = cuttingFit?.pieceOrientation ?? 'natural';
+  let wastagePercent: number | undefined = cuttingFit?.paperWastePercent;
+  let hasHighWastage: boolean | undefined =
+    cuttingFit ? cuttingFit.paperWastePercent > 35 && cuttingFit.upsPerParent < 4 : undefined;
+  let fitWarnings: string[] = cuttingFit?.warnings ?? [];
   let fitSuggestions: SizeSuggestion[] | undefined;
   let fitExplanation: string | undefined;
-  // Mode B (paper cutting) — populated when the size is custom.
-  let cuttingFit: FitWithCuttingResult | null = null;
-
-  if (mapped) {
-    plateKey = mapped.plate;
-    ups = mapped.ups;
-    fromMap = true;
-  } else {
-    // Custom size → Mode B: try cutting the parent paper into press sheets
-    // sized to the piece, then choose the plate to fit the cut.
-    cuttingFit = fitWithPaperCutting({
-      pieceW: w,
-      pieceH: h,
-      paperCategory: stock.category,
-      isBothSides,
-    });
-    if (cuttingFit) {
-      plateKey = cuttingFit.plate;
-      ups = cuttingFit.upsPerCutSheet;
-      orientation = cuttingFit.pieceOrientation;
-      wastagePercent = cuttingFit.paperWastePercent;
-      hasHighWastage = cuttingFit.paperWastePercent > 35 && cuttingFit.upsPerParent < 4;
-      fitWarnings = cuttingFit.warnings;
-      if (hasHighWastage) {
-        fitSuggestions = suggestNearbySizes(w, h);
-        const top = fitSuggestions[0];
-        if (top) {
-          fitExplanation =
-            `At this size we cut ${cuttingFit.parent.label} sheets into ${cuttingFit.pressSheet.w.toFixed(2)}×${cuttingFit.pressSheet.h.toFixed(2)}" pieces — ${cuttingFit.paperWastePercent}% of each parent sheet is left over. ` +
-            `${top.label} fits ${top.ups} ups with only ${top.wastagePercent}% waste — cheaper per piece.`;
-        }
-      }
-    } else {
-      // Truly hopeless — fall back to old plate-only fitter so we never crash.
-      const fit = fitCustomSize(w, h, { preferEvenUps });
-      plateKey = fit.plate;
-      ups = fit.ups;
-      orientation = fit.orientation;
-      wastagePercent = fit.wastagePercent;
-      hasHighWastage = fit.hasHighWastage;
-      fitWarnings = fit.warnings;
-      fitSuggestions = fit.suggestions;
-      fitExplanation = fit.explanation;
+  if (cuttingFit && hasHighWastage) {
+    fitSuggestions = suggestNearbySizes(w, h);
+    const top = fitSuggestions[0];
+    if (top) {
+      fitExplanation =
+        `At this size we cut ${cuttingFit.parent.label} sheets into ${cuttingFit.pressSheet.w.toFixed(2)}×${cuttingFit.pressSheet.h.toFixed(2)}" pieces — ${cuttingFit.paperWastePercent}% of each parent sheet is left over. ` +
+        `${top.label} fits ${top.ups} ups with only ${top.wastagePercent}% waste — cheaper per piece.`;
     }
-    fromMap = false;
   }
 
   // ─ Working sheets (press sheets) at the chosen layout.
@@ -667,23 +722,10 @@ export function computePrice(args: ComputePriceArgs): ComputePriceResult | { rea
   const imp = useWorkAndTurn ? ws * 2 : ws;
   const numPlates = useDoublePlate ? 2 : 1;
 
-  // ─ Paper cost
-  //   Mode A (standard size): parent comes from PARENT_SHEETS[plate] table.
-  //   Mode B (custom + paper cutting): parent + cuts-per-parent come from cuttingFit.
-  let parentW: number, parentH: number, cutsPerParent: number;
-  if (cuttingFit) {
-    parentW = cuttingFit.parent.w;
-    parentH = cuttingFit.parent.h;
-    cutsPerParent = cuttingFit.cutsPerParent;
-  } else {
-    const parent = PARENT_SHEETS[plateKey] || { parentW: 25, parentH: 36, cuts: 2 };
-    parentW = parent.parentW;
-    parentH = parent.parentH;
-    cutsPerParent = parent.cuts;
-  }
-  const f = (parentW * parentH * 0.2666) / 828;
+  // ─ Paper cost — parent dimensions + cuts come from resolveLayout()
+  const f = (layout.parentW * layout.parentH * 0.2666) / 828;
   const ratePerKg = getRatePerKg(paperCategories, stock);
-  const paperCost = ((f * stock.gsm * ratePerKg) / 500) * (ws / Math.max(cutsPerParent, 1));
+  const paperCost = ((f * stock.gsm * ratePerKg) / 500) * (ws / Math.max(layout.cutsPerParent, 1));
 
   // ─ Printing cost — uses the SAME printCost helper as /calculator Full Job
   const colorLabel = COLOR_LABEL[color] || 'Single Color';

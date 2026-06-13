@@ -3,6 +3,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '../supabase';
 import Header from '../components/Header';
 import { FINAL_SIZES, SIZE_GROUPS } from '../lib/sizes';
+import { resolveLayout } from '../lib/calc';
 
 const PLATE_DIMS: Record<string,{w:number;h:number}> = {
   '15×20"': {w:14.5, h:19.5},
@@ -206,8 +207,13 @@ function PrintingTab({subData}:any){
   const calc=()=>{
     const q=parseInt(qty);const fW=size.id==='custom'?(parseFloat(cW)||0):size.w;const fH=size.id==='custom'?(parseFloat(cH)||0):size.h;
     if(!q||!fW||!fH||!selPlate||!selColor)return;
-    const pk=size.id==='custom'?autoSelectPlate(fW,fH):size.plateSize;
-    const u=calcUps(fW,fH,pk);const pi=PARENT_SHEETS[pk]||{parent:pk,cuts:1,pw:25,ph:36};
+    // Unified resolver — same brain as Full Job & Products so a custom 13×13
+    // gives the same answer everywhere. PrintingTab has no paper category
+    // input, so we default to Art Paper (the most common non-board category).
+    const layout = resolveLayout({ pieceW: fW, pieceH: fH, paperCategory: 'Art Paper', isBothSides: sides==='double' });
+    const pk = layout.plate;
+    const u = layout.ups;
+    const pi = { parent: `${layout.parentW}×${layout.parentH}"`, cuts: layout.cutsPerParent, pw: layout.parentW, ph: layout.parentH };
     const ws=Math.ceil(q/u);
     // W&T eligibility: both sides + even ups (≥2). PrintingTab assumes non-board paper
     // (board jobs go through Full Job which knows the paper category).
@@ -243,15 +249,24 @@ function PrintingTab({subData}:any){
         <SizeSelect size={size} setSize={setSize} cW={cW} setCW={setCW} cH={cH} setCH={setCH}/>
         <div style={{marginBottom:16}}><div style={LBL}>Quantity<span style={{fontWeight:400,color:'#AAA',fontSize:11}}>pieces</span></div><input type="number" placeholder="Enter quantity" value={qty} onChange={e=>setQty(e.target.value)} style={NIS}/></div>
         <div style={{height:1,background:'var(--color-border-tertiary,#F0F0F0)',margin:'16px 0'}}/>
-        <div style={{marginBottom:16,padding:'8px 12px',background:'#F0F7FF',borderRadius:8,fontSize:12,color:'#185FA5'}}>🎯 Plate: <strong>{selPlate}</strong> (auto from final size) · {calcUps(size.w||8.3,size.h||11.7,size.plateSize)} ups</div>
+        {(() => {
+          const fW = size.id==='custom' ? (parseFloat(cW)||0) : size.w;
+          const fH = size.id==='custom' ? (parseFloat(cH)||0) : size.h;
+          const lo = (fW && fH) ? resolveLayout({ pieceW: fW, pieceH: fH, paperCategory: 'Art Paper', isBothSides: sides==='double' }) : null;
+          return (
+            <div style={{marginBottom:16,padding:'8px 12px',background:'#F0F7FF',borderRadius:8,fontSize:12,color:'#185FA5'}}>
+              🎯 Plate: <strong>{lo?.plate || selPlate}</strong> {lo?.fromMap ? '(standard size)' : '(auto-cut from parent)'} · {lo?.ups ?? 0} ups
+            </div>
+          );
+        })()}
         <div style={{marginBottom:16}}><div style={LBL}>{sides==='double'?'Front side color':'Print colors'}</div><select value={selColor} onChange={e=>setSelColor(e.target.value)} style={IS}>{colorsByPlate.map(c=><option key={c} value={c}>{c}</option>)}</select></div>
         <div style={{marginBottom:16}}><div style={LBL}>Sides</div><div style={TW}><button style={TB(sides==='single')} onClick={()=>setSides('single')}>Single side</button><button style={TB(sides==='double')} onClick={()=>setSides('double')}>Both Sides</button></div></div>
         {/* W&T eligibility: even ups + both sides + (PrintingTab assumes non-board paper) */}
         {(() => {
           const fW = size.id==='custom' ? (parseFloat(cW)||0) : size.w;
           const fH = size.id==='custom' ? (parseFloat(cH)||0) : size.h;
-          const pk = size.id==='custom' ? autoSelectPlate(fW,fH) : size.plateSize;
-          const upsNow = (fW && fH) ? calcUps(fW, fH, pk) : 0;
+          const layoutPreview = (fW && fH) ? resolveLayout({ pieceW: fW, pieceH: fH, paperCategory: 'Art Paper', isBothSides: sides==='double' }) : null;
+          const upsNow = layoutPreview?.ups ?? 0;
           const useWT = sides==='double' && upsNow % 2 === 0 && upsNow >= 2;
           const useDouble = sides==='double' && !useWT;
           if (useDouble) {
@@ -347,7 +362,10 @@ function FullJobTab({subData}:any){
 
   const validatePages=(v:string)=>{const n=parseInt(v);if(!n){setPageError('');return;}if(n%4!==0)setPageError('Pages must be divisible by 4');else setPageError('');};
 
-  const paperCost=(cat:any,gsmVal:number,sheets:number,pk:string)=>{if(!cat||!gsmVal||!sheets)return 0;const pi=PARENT_SHEETS[pk]||{cuts:1,pw:25,ph:36};const f=(pi.pw*pi.ph*0.2666)/828;return((f*gsmVal*cat.rate_per_kg)/500)*(sheets/pi.cuts);};
+  // Paper cost — now takes explicit parent dimensions + cuts (from resolveLayout())
+  // so the call site controls whether it's the standard plate→parent table or a
+  // Mode B custom cut.
+  const paperCost=(cat:any,gsmVal:number,sheets:number,parentW:number,parentH:number,cuts:number)=>{if(!cat||!gsmVal||!sheets)return 0;const f=(parentW*parentH*0.2666)/828;return((f*gsmVal*cat.rate_per_kg)/500)*(sheets/Math.max(cuts,1));};
   const printCost=(plateName:string,colorOpt:string,numPlates:number,impressions:number)=>{if(!plateName||!colorOpt||!numPlates||!impressions)return 0;const rate=plateRates.find(r=>r.plate_name===plateName&&r.color_option===colorOpt);if(!rate)return 0;const pf=rate.fixed_charge*numPlates;const fi=1000*numPlates;const ei=Math.max(0,impressions-fi);const er=Math.ceil(ei/1000)*1000;return pf+(er/1000)*rate.per_1000_impression;};
   const lamCost=(lamName:string,pk:string,impressions:number)=>{if(lamName==='none'||!impressions)return 0;const lr=lamRates.find(r=>r.lam_name===lamName);if(!lr)return 0;const pd=PLATE_DIMS[pk]||{w:18,h:25};return Math.max((pd.w*pd.h/100)*lr.per_100_sqinch*impressions,lr.minimum_charge);};
   const uvCost=(uvName:string,pk:string,impressions:number)=>{if(uvName==='none'||!impressions)return 0;const ur=uvRates.find(r=>r.uv_name===uvName);if(!ur)return 0;const pd=PLATE_DIMS[pk]||{w:18,h:25};return Math.max((pd.w*pd.h/100)*ur.per_100_sqinch*impressions,ur.minimum_charge);};
@@ -356,12 +374,18 @@ function FullJobTab({subData}:any){
   const calc=()=>{
     const q=parseInt(qty);const fW=size.id==='custom'?(parseFloat(cW)||0):size.w;const fH=size.id==='custom'?(parseFloat(cH)||0):size.h;
     if(!q||!fW||!fH)return;
-    const pk=size.id==='custom'?autoSelectPlate(fW,fH):size.plateSize;
-    const u=calcUps(fW,fH,pk);const pi=PARENT_SHEETS[pk]||{parent:pk,cuts:1,pw:25,ph:36};
+    // Unified resolver — standard sizes use SIZE_PLATE_MAP, customs go through Mode B paper cutting.
+    // Paper category gates which parent sheets Mode B can choose from.
+    const primaryCat = (jobType==='single' ? selCat?.category : (jobType==='book' ? covCat?.category : selCat?.category)) || 'Art Paper';
+    const layout = resolveLayout({ pieceW: fW, pieceH: fH, paperCategory: primaryCat, isBothSides: sides==='double' });
+    const pk = layout.plate;
+    const u = layout.ups;
+    const parentLabel = `${layout.parentW}×${layout.parentH}"`;
+    const pi = { parent: parentLabel, cuts: layout.cutsPerParent, pw: layout.parentW, ph: layout.parentH };
     if(jobType==='single'){
       if(!selCat)return;
       const ws=Math.ceil(q/u);const isBoardPaper=BOARD_PAPER_CATS.includes(selCat?.category||'');const useDoublePlate=isBoardPaper&&sides==='double';const imp=useDoublePlate?ws:(sides==='double'?ws*2:ws);
-      const papC=paperCost(selCat,gsm,ws,pk);
+      const papC=paperCost(selCat,gsm,ws,pi.pw,pi.ph,pi.cuts);
       let prC=0;let prBreakdown:any[]=[];
       if(useDoublePlate){const fC=printCost(selPlate,selColor,1,ws);const bC=printCost(selPlate,selBackColor,1,ws);prC=fC+bC;prBreakdown=[{label:'Front printing ('+selColor+')',value:sym+fC.toFixed(2)},{label:'Back printing ('+selBackColor+')',value:sym+bC.toFixed(2)}];}
       else{prC=printCost(selPlate,selColor,1,imp);prBreakdown=[{label:'Printing ('+selColor+')',value:sym+prC.toFixed(2)}];}
@@ -374,9 +398,9 @@ function FullJobTab({subData}:any){
       const pages=parseInt(totalPages);if(!pages||pages%4!==0||!covCat||!innCat)return;
       const coverPages=4;const innerPages=pages-4;
       const covWS=(coverPages/(u*2))*q;const covImp=covWS*2;const covPlates=Math.ceil(coverPages/u);
-      const covPapC=paperCost(covCat,covGsm,covWS,pk);const covPrC=printCost(selPlate,covColor,covPlates,covImp);const covLC=lamCost(covLam,pk,covImp);const covUC=uvCost(covUV,pk,covImp);
+      const covPapC=paperCost(covCat,covGsm,covWS,pi.pw,pi.ph,pi.cuts);const covPrC=printCost(selPlate,covColor,covPlates,covImp);const covLC=lamCost(covLam,pk,covImp);const covUC=uvCost(covUV,pk,covImp);
       const innSheetsPerCopy=innerPages/(u*2);const innWS=innSheetsPerCopy*q;const innImp=innWS*2;const innPlates=Math.ceil(innerPages/u);
-      const innPapC=paperCost(innCat,innGsm,innWS,pk);const innPrC=printCost(selPlate,innColor,innPlates,innImp);const innLC=lamCost(innLam,pk,innImp);
+      const innPapC=paperCost(innCat,innGsm,innWS,pi.pw,pi.ph,pi.cuts);const innPrC=printCost(selPlate,innColor,innPlates,innImp);const innLC=lamCost(innLam,pk,innImp);
       const bindFormatsPerCopy=innSheetsPerCopy+1;let bC=0;
       if(selBind!=='none'){const br=bindRates.find(r=>r.binding_name===selBind);if(br)bC=bindFormatsPerCopy*br.per_binding_format*q;}
       const sub=covPapC+covPrC+covLC+covUC+innPapC+innPrC+innLC+bC;const am=sub*(1+M/100);const ta=am*(T/100);
@@ -389,8 +413,8 @@ function FullJobTab({subData}:any){
       const unitsPerCopy=pg/2;
       const totalUnits=unitsPerCopy*q;
       const ws=Math.ceil(totalUnits/u);
-      const frontPapC=paperCost(selCat,gsm,ws,pk);
-      const backPapC=paperCost(b2bBackCat,b2bBackGsm,ws,pk);
+      const frontPapC=paperCost(selCat,gsm,ws,pi.pw,pi.ph,pi.cuts);
+      const backPapC=paperCost(b2bBackCat,b2bBackGsm,ws,pi.pw,pi.ph,pi.cuts);
       const frontPrC=printCost(selPlate,selColor,1,ws);
       const backPrC=printCost(selPlate,selBackColor,1,ws);
       const finImp=ws*2;// both printed sides always get finished
