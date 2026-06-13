@@ -439,41 +439,134 @@ export interface PrintingRate {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// Rate selection — must MIRROR /calculator Full Job exactly so that
-// product page and calculator never diverge for the same inputs.
+// Rate selection — smart match against the plate the calc chose AND the
+// requested color, handling the two naming conventions subscribers use:
 //
-// Full Job picks: plateRates.find(r => r.plate_name === selPlate &&
-//                                       r.color_option === selColor)
-// where selPlate = first unique plate_name by sort_order (plateNames[0]).
+// Plate names in the wild:
+//   • Group: "Small Plate (15×20, 18×23, 18×25)", "Medium Plate (20×28, 20×30)"
+//   • Individual: "18x23", "18x25", "20x28"
 //
-// We replicate that here.
+// Color names in the wild:
+//   • "Single Color" ≡ "1 Color"  → single_color request
+//   • "Two Color"    ≡ "2 Color"  → two_color
+//   • "Four Color CMYK" ≡ "4 Color" → four_color
+//   • bw request maps to single-color rows
+//   • "Five Color (CMYK + White)", "Five Color + Coater", etc. — distinct, never aliased
 // ─────────────────────────────────────────────────────────────────────────
+
+// Parse a plate name into all the (w, h) dimension pairs it covers.
+//   "18x23"                              → [{w:18, h:23}]
+//   "Small Plate (15×20, 18×23, 18×25)"  → [{w:15,h:20}, {w:18,h:23}, {w:18,h:25}]
+//   "Big Plate"                          → []   (generic name)
+function parsePlateDims(name: string): Array<{ w: number; h: number }> {
+  const norm = name.toLowerCase().replace(/×/g, 'x');
+  const out: Array<{ w: number; h: number }> = [];
+  // Match "NxM" or "N×M" (also tolerates "N x M")
+  const re = /(\d+(?:\.\d+)?)\s*x\s*(\d+(?:\.\d+)?)/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(norm)) !== null) {
+    out.push({ w: parseFloat(m[1]), h: parseFloat(m[2]) });
+  }
+  return out;
+}
+
+function platePairsContain(
+  pairs: Array<{ w: number; h: number }>,
+  targetW: number,
+  targetH: number,
+): boolean {
+  return pairs.some(p => (p.w === targetW && p.h === targetH) || (p.w === targetH && p.h === targetW));
+}
+
+function platePairsContainEitherDim(
+  pairs: Array<{ w: number; h: number }>,
+  targetW: number,
+  targetH: number,
+): boolean {
+  return pairs.some(p =>
+    p.w === targetW || p.h === targetW || p.w === targetH || p.h === targetH
+  );
+}
+
+// Canonical color → list of strings that should be considered the same.
+// Match is "row color (lowercase, trimmed) starts-with or equals one of these aliases".
+const COLOR_ALIASES: Record<string, string[]> = {
+  four_color:   ['four color cmyk', '4 color', '4-color', 'four colour cmyk'],
+  two_color:    ['two color', '2 color', '2-color', 'two colour'],
+  single_color: ['single color', '1 color', '1-color', 'one color', 'single colour'],
+  bw:           ['single color', '1 color', 'black & white', 'bw', 'b&w', 'one color'],
+};
+
+function matchColor(rowColor: string, requested: string): boolean {
+  const r = rowColor.toLowerCase().trim();
+  const aliases = COLOR_ALIASES[requested] || [];
+  return aliases.some(a => r === a);
+}
+
 export function findPrintingRate(
   rates: PrintingRate[],
-  _plateKey: string,        // kept for backward compat — not used; FullJob ignores it too
-  colorLabel: string,
+  plateKey: string,
+  colorLabel: string,            // canonical key: 'four_color' | 'two_color' | 'single_color' | 'bw'
 ): PrintingRate | undefined {
   if (!rates.length) return undefined;
 
-  // Unique plate names in DB sort_order (rates is assumed already ordered).
-  const plateNames: string[] = [];
-  for (const r of rates) {
-    if (!plateNames.includes(r.plate_name)) plateNames.push(r.plate_name);
+  // Parse the plate the calc chose. plateKey is like "18×25\"" or "20×29\"".
+  const target = parsePlateDims(plateKey)[0];
+  const tW = target?.w ?? 0;
+  const tH = target?.h ?? 0;
+
+  // Filter to rows whose color matches the request.
+  const colorMatches = rates.filter(r => matchColor(r.color_option, colorLabel));
+  if (!colorMatches.length) {
+    // No color row at all — fall back to anything matching the plate, or the first row.
+    return rates[0];
   }
-  const firstPlate = plateNames[0];
 
-  // 1. Exact match: first plate name + requested color  (Full Job's pick)
-  const exact = rates.find(
-    (r) => r.plate_name === firstPlate && r.color_option === colorLabel,
-  );
-  if (exact) return exact;
+  // Score each candidate by how well its plate name matches the chosen plate.
+  //
+  // Plate-name pairs are (W, H) where W is the plate's small dim, H the large.
+  // We MUST distinguish "shares the W with our target" (same plate family)
+  // from "shares some raw number" (coincidental).
+  //
+  // Example for target 20×29:
+  //   Small Plate (15×20, 18×23, 18×25)  → "20" appears as H of 15×20 → NOT same family
+  //   Medium Plate (20×28, 20×30)        → W=20 in both pairs → SAME family, close H
+  function score(r: PrintingRate): number {
+    const pairs = parsePlateDims(r.plate_name);
+    let s = 0;
+    if (pairs.length === 0) {
+      // Generic plate name (no dimensions written) — neutral fallback.
+      s = 50;
+    } else if (platePairsContain(pairs, tW, tH)) {
+      // 1000: exact (W, H) pair is named in this row.
+      s = 1000;
+    } else if (pairs.some(p => p.w === tW && Math.abs(p.h - tH) <= 5)) {
+      // 700: same W family AND close H (within 5"). Classic neighbour-fit case
+      //      like 20×29 → "Medium Plate (20×28, 20×30)".
+      s = 700;
+    } else if (pairs.some(p => p.h === tH && Math.abs(p.w - tW) <= 5)) {
+      // 600: same H family AND close W.
+      s = 600;
+    } else if (pairs.some(p => p.w === tW)) {
+      // 500: same plate family by W, but H is far. Still a plausible fit.
+      s = 500;
+    } else if (pairs.some(p => p.h === tH)) {
+      // 400: shares H dimension only (less specific than W match).
+      s = 400;
+    } else if (pairs.some(p => p.h === tW || p.w === tH)) {
+      // 100: rotated raw-number match. Weak.
+      s = 100;
+    } else {
+      // 20: no dim relation at all.
+      s = 20;
+    }
+    // Tiebreak: lower sort_order wins very slightly.
+    s -= (Number(r.sort_order) || 0) * 0.001;
+    return s;
+  }
 
-  // 2. Any rate with the requested color
-  const anyColor = rates.find((r) => r.color_option === colorLabel);
-  if (anyColor) return anyColor;
-
-  // 3. First rate row (last resort)
-  return rates[0];
+  // Pick the highest-scoring row. JS sort is stable for ties.
+  return [...colorMatches].sort((a, b) => score(b) - score(a))[0];
 }
 
 // Full Job's printCost (calculator/page.tsx:402), exposed for reuse.
@@ -612,8 +705,11 @@ export function computePriceForProduct(args: ComputeForProductArgs): ComputePric
   const ratePerKg = getRatePerKg(paperCategories, stock);
   const paperCost = ((f * stock.gsm * ratePerKg) / 500) * (ws / parent.cuts);
 
+  // findPrintingRate takes the canonical color key (e.g. 'four_color') and
+  // returns the row whose plate_name + color_option best match. Plate-name
+  // matching scores exact > range > one-dim > generic.
   const colorLabel = COLOR_LABEL[color] || 'Single Color';
-  const matchingRate = findPrintingRate(printingRates, plate, colorLabel);
+  const matchingRate = findPrintingRate(printingRates, plate, color);
 
   // Same shape as Full Job:
   //   W&T or single side  → printCost(rate, 1, imp)
@@ -729,7 +825,7 @@ export function computePrice(args: ComputePriceArgs): ComputePriceResult | { rea
 
   // ─ Printing cost — uses the SAME printCost helper as /calculator Full Job
   const colorLabel = COLOR_LABEL[color] || 'Single Color';
-  const matchingRate = findPrintingRate(printingRates, plateKey, colorLabel);
+  const matchingRate = findPrintingRate(printingRates, plateKey, color);
 
   let printCostVal = 0;
   const printBreakdown: Array<{ label: string; value: number }> = [];
