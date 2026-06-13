@@ -336,6 +336,8 @@ export default function ProductCalculator() {
       wastagePercent: r.wastagePercent,
       hasHighWastage: r.hasHighWastage,
       warnings: r.warnings,
+      suggestions: r.suggestions,
+      wastageExplanation: r.wastageExplanation,
       subtotal, withMarkup, tax, total, perUnit,
     } as const;
   }, [product, template, values, paperStocks, paperCategories, printingRates, customFields, markupPercent, taxPercent]);
@@ -387,6 +389,7 @@ export default function ProductCalculator() {
             values={values}
             overrideWastage={overrideWastage}
             setOverrideWastage={setOverrideWastage}
+            onApplySuggestion={(s) => setVal('size', { key: s.id, label: s.label, w: s.w, h: s.h })}
             onSaveQuote={() => calc?.ready && setShowSaveModal(true)}
             onDownloadPdf={() => calc?.ready && setShowPrintView(true)}
             onConvertToOrder={() => calc?.ready && setShowOrderModal(true)}
@@ -735,7 +738,7 @@ function FieldInput({
 
 function PricePanel({
   calc, currency, product, template, values, overrideWastage, setOverrideWastage,
-  onSaveQuote, onDownloadPdf, onConvertToOrder,
+  onApplySuggestion, onSaveQuote, onDownloadPdf, onConvertToOrder,
 }: {
   calc: any;
   currency: string;
@@ -744,6 +747,7 @@ function PricePanel({
   values: Record<string, any>;
   overrideWastage: boolean;
   setOverrideWastage: (b: boolean) => void;
+  onApplySuggestion: (s: { id: string; label: string; w: number; h: number }) => void;
   onSaveQuote: () => void;
   onDownloadPdf: () => void;
   onConvertToOrder: () => void;
@@ -760,12 +764,39 @@ function PricePanel({
         {isBlocked && (
           <div style={{ padding: 16, background: '#FFFBEB', border: '1.5px solid #FDE68A', borderRadius: 12, marginBottom: 16 }}>
             <div style={{ fontSize: 14, fontWeight: 800, color: '#92400E', marginBottom: 6 }}>
-              ⚠️ Significant paper waste
+              ⚠️ This size wastes paper
             </div>
-            <div style={{ fontSize: 13, color: '#92400E', fontWeight: 500, marginBottom: 12, lineHeight: 1.5 }}>
-              At this size, <strong>{calc.wastagePercent}%</strong> of the printing plate is unused. The price below already accounts for the full plate cost.
-              Consider switching to a closer standard size — or continue at this rate.
+            <div style={{ fontSize: 13, color: '#92400E', fontWeight: 500, marginBottom: 12, lineHeight: 1.55 }}>
+              {calc.wastageExplanation || (
+                <>At <strong>{values.size?.w} × {values.size?.h}"</strong>, only <strong>{calc.ups}</strong> piece{calc.ups === 1 ? '' : 's'} fits per plate — <strong>{calc.wastagePercent}%</strong> of the plate is unused. You still pay for the full plate, so per-piece cost is higher.</>
+              )}
             </div>
+
+            {/* Nearby-size suggestions */}
+            {calc.suggestions && calc.suggestions.length > 0 && (
+              <div style={{ marginBottom: 12 }}>
+                <div style={{ fontSize: 11, color: '#92400E', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>
+                  Better standard sizes nearby
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {calc.suggestions.map((s: any) => (
+                    <button
+                      key={s.id}
+                      onClick={() => onApplySuggestion(s)}
+                      style={{ textAlign: 'left', padding: '10px 12px', background: '#fff', border: '1.5px solid #FDE68A', borderRadius: 9, cursor: 'pointer', fontFamily: 'inherit' }}
+                    >
+                      <div style={{ fontSize: 13, fontWeight: 800, color: '#1A1330' }}>
+                        {s.label} <span style={{ fontWeight: 500, color: '#5B5870' }}>· tap to use</span>
+                      </div>
+                      <div style={{ fontSize: 11, color: '#5B5870', marginTop: 2, fontWeight: 600 }}>
+                        Fits {s.ups} pcs/plate · {s.wastagePercent}% waste · plate {s.plate}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <button
               onClick={() => setOverrideWastage(true)}
               style={{ padding: '9px 16px', background: '#92400E', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}

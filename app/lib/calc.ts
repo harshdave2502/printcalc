@@ -9,6 +9,8 @@
 // Goal: NO price fluctuation across screens for same inputs.
 // ─────────────────────────────────────────────────────────────────────────
 
+import { FINAL_SIZES } from './sizes';
+
 // ─── Plate dimensions (usable area after gripper margin) ─────────────────
 export const PLATE_DIMS: Record<string, { w: number; h: number }> = {
   '15×20"': { w: 14.5, h: 19.5 },
@@ -147,14 +149,27 @@ export function autoSelectPlate(w: number, h: number): { plate: string; ups: num
 // both orientations, score for max ups (prefer EVEN ups when the job is
 // both-sides + non-board, so W&T can apply), and report paper wastage.
 // ─────────────────────────────────────────────────────────────────────────
+export interface SizeSuggestion {
+  id: string;
+  label: string;
+  w: number;
+  h: number;
+  plate: string;
+  ups: number;
+  wastagePercent: number;
+  similarityPercent: number;   // 100 = identical, 0 = totally different
+}
+
 export interface FitResult {
   plate: string;
   ups: number;
   orientation: 'natural' | 'rotated';
   preferEvenUps: boolean;
   wastagePercent: number;        // (1 - used / plateArea) × 100
-  hasHighWastage: boolean;       // true when wastagePercent > 25
+  hasHighWastage: boolean;       // true when wastagePercent > 50 AND ups < 4
   warnings: string[];
+  suggestions?: SizeSuggestion[];  // populated when hasHighWastage
+  explanation?: string;            // plain-language "why your size is worse"
 }
 
 // Only warn when the fit is genuinely poor.
@@ -240,10 +255,28 @@ export function fitCustomSize(
   //   (b) ups is below the quiet bar — i.e. the piece doesn't tile well.
   // This silences warnings for legitimate custom sizes that pack 4+ up.
   const hasHighWastage = wastagePercent > WASTAGE_THRESHOLD && best.ups < QUIET_IF_UPS_AT_LEAST;
+
+  let suggestions: SizeSuggestion[] | undefined;
+  let explanation: string | undefined;
   if (hasHighWastage) {
+    suggestions = suggestNearbySizes(w, h);
     warnings.push(
-      `Significant paper waste at this size: ${wastagePercent}% of the plate is unused at ${best.ups} up${best.ups === 1 ? '' : 's'}. Consider standardising to a stock size.`,
+      `Significant paper waste at this size: ${wastagePercent}% of the plate is unused at ${best.ups} up${best.ups === 1 ? '' : 's'}.`,
     );
+    if (suggestions.length > 0) {
+      const top = suggestions[0];
+      const upsDelta = top.ups - best.ups;
+      if (upsDelta > 0) {
+        explanation =
+          `Your size fits ${best.ups} up${best.ups === 1 ? '' : 's'} on a ${best.plate} plate. ` +
+          `A close standard size — ${top.label} — fits ${top.ups} ups on a ${top.plate} plate (only ${top.wastagePercent}% waste). ` +
+          `More pieces per sheet means cheaper paper and printing per piece.`;
+      } else {
+        explanation =
+          `Your size leaves ${wastagePercent}% of the plate unused. ` +
+          `${top.label} fits ${top.ups} ups with only ${top.wastagePercent}% waste — cheaper per piece.`;
+      }
+    }
   }
 
   return {
@@ -254,7 +287,68 @@ export function fitCustomSize(
     wastagePercent,
     hasHighWastage,
     warnings,
+    suggestions,
+    explanation,
   };
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Suggest nearby standard sizes from FINAL_SIZES that would fit better.
+// Used when the customer's custom W × H triggers a wastage warning.
+//
+// Algorithm:
+//   1. Compare each FINAL_SIZES row to the input (orientation-agnostic).
+//   2. Keep rows within ±25% of each dimension (so we suggest similar sizes,
+//      not "try a business card instead of a wall calendar").
+//   3. Compute each candidate's own fit (plate + ups + wastage).
+//   4. Rank by combined score: lower wastage wins, closer to input breaks ties.
+//   5. Return top 3.
+// ─────────────────────────────────────────────────────────────────────────
+export function suggestNearbySizes(w: number, h: number, max: number = 3): SizeSuggestion[] {
+  if (!w || !h) return [];
+
+  const a = Math.min(w, h);
+  const b = Math.max(w, h);
+
+  type Cand = SizeSuggestion & { _avgDiff: number };
+  const cands: Cand[] = [];
+
+  for (const s of FINAL_SIZES) {
+    if (!s.w || !s.h) continue;                     // skip placeholder rows
+    const sa = Math.min(s.w, s.h);
+    const sb = Math.max(s.w, s.h);
+
+    // Dimension distance — average of per-side % difference.
+    const aDiff = Math.abs(sa - a) / a;
+    const bDiff = Math.abs(sb - b) / b;
+    const avgDiff = (aDiff + bDiff) / 2;
+    if (avgDiff > 0.25) continue;                   // too far away
+
+    const fit = fitCustomSize(s.w, s.h, {});
+    const similarity = Math.round((1 - avgDiff) * 100);
+
+    cands.push({
+      id: s.id,
+      label: s.label,
+      w: s.w,
+      h: s.h,
+      plate: fit.plate,
+      ups: fit.ups,
+      wastagePercent: fit.wastagePercent,
+      similarityPercent: similarity,
+      _avgDiff: avgDiff,
+    });
+  }
+
+  // Rank: lower wastage wins, then higher similarity, then more ups.
+  cands.sort(
+    (x, y) =>
+      x.wastagePercent - y.wastagePercent ||
+      x._avgDiff - y._avgDiff ||
+      y.ups - x.ups,
+  );
+
+  return cands.slice(0, max).map(({ _avgDiff: _drop, ...rest }) => rest);
 }
 
 // ─── Find printing rate by plate match ────────────────────────────────────
@@ -367,6 +461,8 @@ export interface ComputePriceResult {
   wastagePercent?: number;
   hasHighWastage?: boolean;
   warnings?: string[];
+  suggestions?: SizeSuggestion[];
+  wastageExplanation?: string;
   ws: number;                 // working sheets (plate-size)
   imp: number;                // impressions
   numPlates: number;          // plate setups (1 for W&T or single side, 2 for sheetwise)
@@ -502,6 +598,8 @@ export function computePrice(args: ComputePriceArgs): ComputePriceResult | { rea
   let wastagePercent: number | undefined;
   let hasHighWastage: boolean | undefined;
   let fitWarnings: string[] = [];
+  let fitSuggestions: SizeSuggestion[] | undefined;
+  let fitExplanation: string | undefined;
 
   if (mapped) {
     plateKey = mapped.plate;
@@ -516,6 +614,8 @@ export function computePrice(args: ComputePriceArgs): ComputePriceResult | { rea
     wastagePercent = fit.wastagePercent;
     hasHighWastage = fit.hasHighWastage;
     fitWarnings = fit.warnings;
+    fitSuggestions = fit.suggestions;
+    fitExplanation = fit.explanation;
   }
 
   // ─ Working sheets at plate size
@@ -579,6 +679,8 @@ export function computePrice(args: ComputePriceArgs): ComputePriceResult | { rea
     wastagePercent,
     hasHighWastage,
     warnings: fitWarnings.length > 0 ? fitWarnings : undefined,
+    suggestions: fitSuggestions,
+    wastageExplanation: fitExplanation,
     ws,
     imp,
     numPlates,
