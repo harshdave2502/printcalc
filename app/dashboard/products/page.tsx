@@ -426,35 +426,61 @@ function EditModal({ initial, paperCats, bindings, lams, uvs, pastings, subscrib
     ? autoSelectPlate(defaultSizeMeta.w, defaultSizeMeta.h)
     : null;
 
-  function validate(): boolean {
+  // Field labels for the error summary banner.
+  const FIELD_LABELS: Record<string, string> = {
+    display_name: 'Product name',
+    template_id: 'Category',
+    allowed_size_ids: 'Allowed sizes',
+    default_size_id: 'Default size',
+    allowed_paper_categories: 'Allowed paper categories',
+    default_paper_category: 'Default paper category',
+    allowed_colors: 'Allowed colors',
+    allowed_sides: 'Allowed sides',
+    default_qty: 'Default qty',
+    slug: 'URL slug',
+  };
+
+  // Draft = lax (name + slug only). Complete = strict (everything).
+  function validate(strict: boolean): boolean {
     const e: Record<string, string> = {};
     if (!form.display_name?.trim()) e.display_name = 'Product name is required';
-    if (!form.template_id) e.template_id = 'Pick a category';
-
-    const isResold = form.product_type === 'resold';
-    if (!isResold) {
-      // Manufactured mode requires the full allowed-lists set.
-      if (!form.allowed_size_ids?.length && !form.allow_custom_size) {
-        e.allowed_size_ids = 'Pick at least one allowed size (or enable custom size)';
-      }
-      if (form.allowed_size_ids?.length && !form.default_size_id) {
-        e.default_size_id = 'Pick a default size from the allowed sizes';
-      }
-      if (!form.allowed_paper_categories?.length) e.allowed_paper_categories = 'Pick at least one paper category';
-      if (!form.default_paper_category) e.default_paper_category = 'Pick a default paper category';
-      if (!form.allowed_colors?.length) e.allowed_colors = 'Pick at least one color option';
-      if (!form.allowed_sides?.length) e.allowed_sides = 'Pick at least one side option';
-    }
-    if (!form.default_qty || Number(form.default_qty) <= 0) e.default_qty = 'Enter a default quantity (e.g. 1000)';
     const slug = (form.slug || slugify(form.display_name || '')).trim();
     if (!slug) e.slug = 'Slug is required';
     else if (existingSlugs.has(slug)) e.slug = 'You already have a product with this slug';
+
+    if (strict) {
+      if (!form.template_id) e.template_id = 'Pick a category';
+      const isResold = form.product_type === 'resold';
+      if (!isResold) {
+        if (!form.allowed_size_ids?.length && !form.allow_custom_size) {
+          e.allowed_size_ids = 'Pick at least one allowed size (or enable custom size)';
+        }
+        if (form.allowed_size_ids?.length && !form.default_size_id) {
+          e.default_size_id = 'Pick a default size from the allowed sizes';
+        }
+        if (!form.allowed_paper_categories?.length) e.allowed_paper_categories = 'Pick at least one paper category';
+        if (!form.default_paper_category) e.default_paper_category = 'Pick a default paper category';
+        if (!form.allowed_colors?.length) e.allowed_colors = 'Pick at least one color option';
+        if (!form.allowed_sides?.length) e.allowed_sides = 'Pick at least one side option';
+      }
+      if (!form.default_qty || Number(form.default_qty) <= 0) e.default_qty = 'Enter a default quantity (e.g. 1000)';
+    }
     setErrors(e);
+
+    // If something failed, scroll to the FIRST error field so the user can see it.
+    const firstError = Object.keys(e)[0];
+    if (firstError) {
+      setTimeout(() => {
+        const el = document.querySelector(`[data-field="${firstError}"]`) as HTMLElement | null;
+        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }, 50);
+    }
     return Object.keys(e).length === 0;
   }
 
   async function submit(markComplete: boolean) {
-    if (!validate()) return;
+    // Mark-complete requires everything. Draft requires just name + slug.
+    if (!validate(markComplete)) return;
     setSaving(true);
     const slug = (form.slug || slugify(form.display_name || '')).trim();
 
@@ -569,12 +595,12 @@ function EditModal({ initial, paperCats, bindings, lams, uvs, pastings, subscrib
           {/* BASICS */}
           <SectionHeader title="Basics" />
 
-          <Field label="Product name" required error={errors.display_name}>
+          <Field label="Product name" required error={errors.display_name} fieldKey="display_name">
             <input value={form.display_name || ''} onChange={(e) => setName(e.target.value)} placeholder="e.g. Wall Calendar" style={inputStyle(!!errors.display_name)} />
           </Field>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 110px', gap: 12 }}>
-            <Field label="URL slug" required error={errors.slug}>
+            <Field label="URL slug" required error={errors.slug} fieldKey="slug">
               <input
                 value={form.slug || ''}
                 onChange={(e) => { setTouchedSlug(true); set('slug', slugify(e.target.value)); }}
@@ -587,7 +613,7 @@ function EditModal({ initial, paperCats, bindings, lams, uvs, pastings, subscrib
             </Field>
           </div>
 
-          <Field label="Category" required error={errors.template_id}>
+          <Field label="Category" required error={errors.template_id} fieldKey="template_id">
             <select value={form.template_id || 'card'} onChange={(e) => set('template_id', e.target.value)} style={inputStyle(!!errors.template_id)}>
               {CATEGORIES.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}
             </select>
@@ -603,7 +629,7 @@ function EditModal({ initial, paperCats, bindings, lams, uvs, pastings, subscrib
 
           {/* SIZES */}
           <SectionHeader title="Allowed sizes" subtitle="Pick which sizes this product can be made in. Customer only sees these." />
-          <Field label="" required error={errors.allowed_size_ids}>
+          <Field label="" required error={errors.allowed_size_ids} fieldKey="allowed_size_ids">
             <div style={{ background: TOKENS.colors.bgPanel2, border: `1px solid ${TOKENS.colors.border}`, borderRadius: 10, padding: 14, maxHeight: 320, overflow: 'auto' }}>
               {SIZE_GROUPS.map(g => (
                 <div key={g} style={{ marginBottom: 12 }}>
@@ -624,7 +650,7 @@ function EditModal({ initial, paperCats, bindings, lams, uvs, pastings, subscrib
           </Field>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            <Field label="Default size" required error={errors.default_size_id}>
+            <Field label="Default size" required error={errors.default_size_id} fieldKey="default_size_id">
               <select value={form.default_size_id || ''} onChange={(e) => set('default_size_id', e.target.value || null)} style={inputStyle(!!errors.default_size_id)}>
                 <option value="">— pick from allowed —</option>
                 {allowedSizeIds.map(id => {
@@ -652,7 +678,7 @@ function EditModal({ initial, paperCats, bindings, lams, uvs, pastings, subscrib
           {/* PAPER */}
           <SectionHeader title="Paper" subtitle="Which paper categories suit this product?" />
 
-          <Field label="Allowed paper categories" required error={errors.allowed_paper_categories}>
+          <Field label="Allowed paper categories" required error={errors.allowed_paper_categories} fieldKey="allowed_paper_categories">
             {paperCats.length === 0 ? (
               <NoticeMissing url="/dashboard" what="paper categories" />
             ) : (
@@ -670,7 +696,7 @@ function EditModal({ initial, paperCats, bindings, lams, uvs, pastings, subscrib
           </Field>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            <Field label="Default paper category" required error={errors.default_paper_category}>
+            <Field label="Default paper category" required error={errors.default_paper_category} fieldKey="default_paper_category">
               <select value={form.default_paper_category || ''} onChange={(e) => set('default_paper_category', e.target.value || null)} style={inputStyle(!!errors.default_paper_category)}>
                 <option value="">— pick from allowed —</option>
                 {(form.allowed_paper_categories || []).map(c => (
@@ -686,7 +712,7 @@ function EditModal({ initial, paperCats, bindings, lams, uvs, pastings, subscrib
           {/* PRINT */}
           <SectionHeader title="Print options" />
 
-          <Field label="Allowed colors" required error={errors.allowed_colors}>
+          <Field label="Allowed colors" required error={errors.allowed_colors} fieldKey="allowed_colors">
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
               {COLOR_OPTIONS.map(c => {
                 const active = (form.allowed_colors || []).includes(c.id);
@@ -699,7 +725,7 @@ function EditModal({ initial, paperCats, bindings, lams, uvs, pastings, subscrib
             </div>
           </Field>
 
-          <Field label="Allowed sides" required error={errors.allowed_sides}>
+          <Field label="Allowed sides" required error={errors.allowed_sides} fieldKey="allowed_sides">
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
               {SIDES_OPTIONS.map(s => {
                 const active = (form.allowed_sides || []).includes(s.id);
@@ -713,7 +739,7 @@ function EditModal({ initial, paperCats, bindings, lams, uvs, pastings, subscrib
           </Field>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
-            <Field label="Default qty" required error={errors.default_qty}>
+            <Field label="Default qty" required error={errors.default_qty} fieldKey="default_qty">
               <input type="number" value={form.default_qty ?? ''} onChange={(e) => set('default_qty', e.target.value ? Number(e.target.value) : undefined)} placeholder="1000" style={inputStyle(!!errors.default_qty)} />
             </Field>
             <Field label="Default sides">
@@ -769,6 +795,22 @@ function EditModal({ initial, paperCats, bindings, lams, uvs, pastings, subscrib
           <div style={{ fontSize: 12, color: TOKENS.colors.textDim, fontWeight: 500 }}>
             Customers only see products marked <strong>Setup complete</strong>. Save as draft first, then flip ON when you&apos;re ready.
           </div>
+
+          {/* Error summary — visible right next to the buttons so a failed submit isn't silent. */}
+          {Object.keys(errors).length > 0 && (
+            <div style={{ padding: '12px 14px', background: '#FEF2F2', border: '1.5px solid #FECACA', borderRadius: 10 }}>
+              <div style={{ fontSize: 13, fontWeight: 800, color: '#991B1B', marginBottom: 6 }}>
+                ⚠️ {Object.keys(errors).length} field{Object.keys(errors).length === 1 ? '' : 's'} need{Object.keys(errors).length === 1 ? 's' : ''} attention
+              </div>
+              <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, color: '#991B1B', fontWeight: 600, lineHeight: 1.7 }}>
+                {Object.entries(errors).map(([k, v]) => (
+                  <li key={k}>
+                    <strong>{FIELD_LABELS[k] || k}:</strong> {v}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
 
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 10, paddingTop: 16, borderTop: `1px solid ${TOKENS.colors.border}` }}>
             <button onClick={onClose} style={ghostBtn()}>Cancel</button>
@@ -1037,9 +1079,9 @@ function SectionHeader({ title, subtitle }: { title: string; subtitle?: string }
   );
 }
 
-function Field({ label, required, error, children }: { label: string; required?: boolean; error?: string; children: React.ReactNode }) {
+function Field({ label, required, error, fieldKey, children }: { label: string; required?: boolean; error?: string; fieldKey?: string; children: React.ReactNode }) {
   return (
-    <div>
+    <div data-field={fieldKey}>
       {label && (
         <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: TOKENS.colors.text, marginBottom: 5 }}>
           {label} {required && <span style={{ color: '#DC2626' }}>*</span>}
