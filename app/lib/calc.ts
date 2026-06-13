@@ -152,39 +152,59 @@ export interface PrintingRate {
   per_1000_impression: number;
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// Rate selection — must MIRROR /calculator Full Job exactly so that
+// product page and calculator never diverge for the same inputs.
+//
+// Full Job picks: plateRates.find(r => r.plate_name === selPlate &&
+//                                       r.color_option === selColor)
+// where selPlate = first unique plate_name by sort_order (plateNames[0]).
+//
+// We replicate that here.
+// ─────────────────────────────────────────────────────────────────────────
 export function findPrintingRate(
   rates: PrintingRate[],
-  plateKey: string,
+  _plateKey: string,        // kept for backward compat — not used; FullJob ignores it too
   colorLabel: string,
 ): PrintingRate | undefined {
   if (!rates.length) return undefined;
 
-  // Extract dimensions from plateKey like "18×25\""
-  const dims = plateKey.replace(/["]/g, '').replace(/×/g, 'x');
-  const [w, h] = dims.split('x').map((s) => Number(s) || 0);
-
-  const colorMatches = rates.filter((r) => r.color_option === colorLabel);
-  if (!colorMatches.length) return rates[0];
-
-  // 1. Plate name contains both dimensions e.g. "18×25" or "18x25"
-  for (const r of colorMatches) {
-    const n = r.plate_name.toLowerCase();
-    if (n.includes(`${w}×${h}`) || n.includes(`${w}x${h}`) ||
-        n.includes(`${w} × ${h}`) || n.includes(`${w} x ${h}`)) {
-      return r;
-    }
+  // Unique plate names in DB sort_order (rates is assumed already ordered).
+  const plateNames: string[] = [];
+  for (const r of rates) {
+    if (!plateNames.includes(r.plate_name)) plateNames.push(r.plate_name);
   }
+  const firstPlate = plateNames[0];
 
-  // 2. Plate name contains either dimension
-  for (const r of colorMatches) {
-    const n = r.plate_name.toLowerCase();
-    if (n.includes(String(w)) || n.includes(String(h))) {
-      return r;
-    }
-  }
+  // 1. Exact match: first plate name + requested color  (Full Job's pick)
+  const exact = rates.find(
+    (r) => r.plate_name === firstPlate && r.color_option === colorLabel,
+  );
+  if (exact) return exact;
 
-  // 3. First color match (fallback)
-  return colorMatches[0];
+  // 2. Any rate with the requested color
+  const anyColor = rates.find((r) => r.color_option === colorLabel);
+  if (anyColor) return anyColor;
+
+  // 3. First rate row (last resort)
+  return rates[0];
+}
+
+// Full Job's printCost (calculator/page.tsx:402), exposed for reuse.
+// Returns ₹0 if any required input is missing — same null-safety as FullJob.
+export function printCost(
+  rate: PrintingRate | undefined,
+  numPlates: number,
+  impressions: number,
+): number {
+  if (!rate || !numPlates || !impressions) return 0;
+  const fixed = Number(rate.fixed_charge) || 0;
+  const per1000 = Number(rate.per_1000_impression) || 0;
+  const pf = fixed * numPlates;
+  const fi = 1000 * numPlates;
+  const ei = Math.max(0, impressions - fi);
+  const er = Math.ceil(ei / 1000) * 1000;
+  return pf + (er / 1000) * per1000;
 }
 
 // ─── Get paper rate per kg from category (not stock) ─────────────────────
@@ -292,33 +312,26 @@ export function computePriceForProduct(args: ComputeForProductArgs): ComputePric
   const colorLabel = COLOR_LABEL[color] || 'Single Color';
   const matchingRate = findPrintingRate(printingRates, plate, colorLabel);
 
-  function runCost(rate: PrintingRate | undefined, impressions: number): number {
-    if (!rate) return 0;
-    const fixed = Number(rate.fixed_charge) || 0;
-    const per1000 = Number(rate.per_1000_impression) || 0;
-    const free = 1000;
-    const extra = Math.max(0, impressions - free);
-    const rounded = Math.ceil(extra / 1000) * 1000;
-    return fixed + (rounded / 1000) * per1000;
-  }
-
-  let printCost = 0;
+  // Same shape as Full Job:
+  //   W&T or single side  → printCost(rate, 1, imp)
+  //   Sheetwise           → printCost(rate, 1, ws) twice (Full Job calls it twice)
+  let printCostVal = 0;
   const printBreakdown: Array<{ label: string; value: number }> = [];
   if (matchingRate) {
     if (useDoublePlate) {
-      const front = runCost(matchingRate, ws);
-      const back = runCost(matchingRate, ws);
-      printCost = front + back;
+      const front = printCost(matchingRate, 1, ws);
+      const back = printCost(matchingRate, 1, ws);
+      printCostVal = front + back;
       printBreakdown.push({ label: `Front (${colorLabel})`, value: front });
       printBreakdown.push({ label: `Back (${colorLabel})`, value: back });
     } else {
-      printCost = runCost(matchingRate, imp);
+      printCostVal = printCost(matchingRate, 1, imp);
       const label = useWorkAndTurn ? `Printing W&T (${colorLabel})` : `Printing (${colorLabel})`;
-      printBreakdown.push({ label, value: printCost });
+      printBreakdown.push({ label, value: printCostVal });
     }
   }
 
-  const subtotal = paperCost + printCost;
+  const subtotal = paperCost + printCostVal;
   const markupAmount = subtotal * (markupPercent / 100);
   const withMarkup = subtotal + markupAmount;
   const tax = withMarkup * (taxPercent / 100);
@@ -337,7 +350,7 @@ export function computePriceForProduct(args: ComputeForProductArgs): ComputePric
     useWorkAndTurn,
     useDoublePlate,
     paperCost,
-    printCost,
+    printCost: printCostVal,
     printBreakdown,
     subtotal,
     withMarkup,
@@ -382,40 +395,30 @@ export function computePrice(args: ComputePriceArgs): ComputePriceResult | { rea
   const ratePerKg = getRatePerKg(paperCategories, stock);
   const paperCost = ((f * stock.gsm * ratePerKg) / 500) * (ws / parent.cuts);
 
-  // ─ Printing cost
+  // ─ Printing cost — uses the SAME printCost helper as /calculator Full Job
   const colorLabel = COLOR_LABEL[color] || 'Single Color';
   const matchingRate = findPrintingRate(printingRates, plateKey, colorLabel);
 
-  function computeRunCost(rate: PrintingRate | undefined, impressions: number): number {
-    if (!rate) return 0;
-    const fixed = Number(rate.fixed_charge) || 0;
-    const per1000 = Number(rate.per_1000_impression) || 0;
-    const free = 1000;
-    const extra = Math.max(0, impressions - free);
-    const rounded = Math.ceil(extra / 1000) * 1000;
-    return fixed + (rounded / 1000) * per1000;
-  }
-
-  let printCost = 0;
+  let printCostVal = 0;
   const printBreakdown: Array<{ label: string; value: number }> = [];
   if (matchingRate) {
     if (useDoublePlate) {
-      // Sheetwise — 2 separate plate runs, each sees `ws` impressions
-      const front = computeRunCost(matchingRate, ws);
-      const back = computeRunCost(matchingRate, ws);
-      printCost = front + back;
+      // Sheetwise — 2 separate plate runs (Full Job does this with two printCost(...,1,ws) calls)
+      const front = printCost(matchingRate, 1, ws);
+      const back = printCost(matchingRate, 1, ws);
+      printCostVal = front + back;
       printBreakdown.push({ label: `Front (${colorLabel})`, value: front });
       printBreakdown.push({ label: `Back (${colorLabel})`, value: back });
     } else {
       // Single side OR W&T: one plate setup, impressions = imp
-      printCost = computeRunCost(matchingRate, imp);
+      printCostVal = printCost(matchingRate, 1, imp);
       const label = useWorkAndTurn ? `Printing W&T (${colorLabel})` : `Printing (${colorLabel})`;
-      printBreakdown.push({ label, value: printCost });
+      printBreakdown.push({ label, value: printCostVal });
     }
   }
 
   // ─ Totals
-  const subtotal = paperCost + printCost;
+  const subtotal = paperCost + printCostVal;
   const markupAmount = subtotal * (markupPercent / 100);
   const withMarkup = subtotal + markupAmount;
   const tax = withMarkup * (taxPercent / 100);
@@ -434,7 +437,7 @@ export function computePrice(args: ComputePriceArgs): ComputePriceResult | { rea
     useWorkAndTurn,
     useDoublePlate,
     paperCost,
-    printCost,
+    printCost: printCostVal,
     printBreakdown,
     subtotal,
     withMarkup,

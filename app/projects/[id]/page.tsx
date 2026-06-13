@@ -127,7 +127,7 @@ export default function ProjectEditorPage() {
         supabase.from('subscriber_products').select('*').eq('subscriber_id', userId).eq('is_enabled', true).order('sort_order'),
         supabase.from('paper_stocks').select('id, label, gsm, rate_per_kg, category').eq('subscriber_id', userId).order('gsm'),
         supabase.from('paper_categories').select('category, rate_per_kg').eq('subscriber_id', userId),
-        supabase.from('printing_rates').select('id, plate_name, color_option, fixed_charge, per_1000_impression').eq('subscriber_id', userId),
+        supabase.from('printing_rates').select('id, plate_name, color_option, fixed_charge, per_1000_impression').eq('subscriber_id', userId).order('sort_order'),
         supabase.from('subscribers').select('currency_symbol, markup_percent, tax_percent, business_name, email').eq('id', userId).maybeSingle(),
       ]);
 
