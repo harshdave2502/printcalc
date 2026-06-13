@@ -141,6 +141,112 @@ export function autoSelectPlate(w: number, h: number): { plate: string; ups: num
   return { plate: '25×36"', ups: 1, fromMap: false };
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// Custom-size fit analysis.
+// Used when the customer enters arbitrary W × H. We test every plate in
+// both orientations, score for max ups (prefer EVEN ups when the job is
+// both-sides + non-board, so W&T can apply), and report paper wastage.
+// ─────────────────────────────────────────────────────────────────────────
+export interface FitResult {
+  plate: string;
+  ups: number;
+  orientation: 'natural' | 'rotated';
+  preferEvenUps: boolean;
+  wastagePercent: number;        // (1 - used / plateArea) × 100
+  hasHighWastage: boolean;       // true when wastagePercent > 25
+  warnings: string[];
+}
+
+const WASTAGE_THRESHOLD = 25;
+
+export function fitCustomSize(
+  w: number,
+  h: number,
+  opts: { preferEvenUps?: boolean } = {},
+): FitResult {
+  const preferEvenUps = !!opts.preferEvenUps;
+  const warnings: string[] = [];
+
+  if (!w || !h) {
+    return {
+      plate: '18×25"', ups: 1, orientation: 'natural',
+      preferEvenUps, wastagePercent: 100, hasHighWastage: true,
+      warnings: ['Enter both width and height to compute fit.'],
+    };
+  }
+
+  // Score every plate + orientation. Higher ups is better. Ties broken by
+  // (a) when preferEvenUps, prefer even ups; (b) smaller plate area; (c) less wastage.
+  type Candidate = { plate: string; ups: number; orientation: 'natural' | 'rotated'; plateArea: number; wastage: number; usedArea: number };
+  const candidates: Candidate[] = [];
+
+  for (const plate of Object.keys(PLATE_DIMS)) {
+    const p = PLATE_DIMS[plate];
+    const plateArea = p.w * p.h;
+    // natural: piece w × h
+    const upsNat = Math.floor(p.w / w) * Math.floor(p.h / h);
+    if (upsNat >= 1) {
+      const usedArea = upsNat * w * h;
+      candidates.push({ plate, ups: upsNat, orientation: 'natural', plateArea, wastage: 1 - usedArea / plateArea, usedArea });
+    }
+    // rotated 90°: piece h × w
+    const upsRot = Math.floor(p.w / h) * Math.floor(p.h / w);
+    if (upsRot >= 1) {
+      const usedArea = upsRot * w * h;
+      candidates.push({ plate, ups: upsRot, orientation: 'rotated', plateArea, wastage: 1 - usedArea / plateArea, usedArea });
+    }
+  }
+
+  if (candidates.length === 0) {
+    // Doesn't fit any plate, even rotated. Use largest plate, 1 up, full wastage.
+    return {
+      plate: '25×36"', ups: 1, orientation: 'natural',
+      preferEvenUps, wastagePercent: 100, hasHighWastage: true,
+      warnings: ['This size does not fit any plate. Confirm dimensions.'],
+    };
+  }
+
+  const score = (c: Candidate): number => {
+    // Higher is better.
+    // Base: ups (weight 1000)
+    // Even-ups bonus (when requested): +500
+    // Less wastage: +(1 - wastage) * 100
+    // Smaller plate area when ups tied: marginal effect
+    let s = c.ups * 1000;
+    if (preferEvenUps && c.ups % 2 === 0 && c.ups >= 2) s += 500;
+    s += (1 - c.wastage) * 100;
+    s -= c.plateArea * 0.001; // slight preference for smaller plate
+    return s;
+  };
+
+  candidates.sort((a, b) => score(b) - score(a));
+  const best = candidates[0];
+
+  if (preferEvenUps && best.ups % 2 !== 0) {
+    warnings.push(
+      'No orientation gives even ups — Work & Turn won\'t apply. Job will run as 2 separate plate setups (more expensive).',
+    );
+  }
+
+  const wastagePercent = Math.round(best.wastage * 1000) / 10;
+  const hasHighWastage = wastagePercent > WASTAGE_THRESHOLD;
+  if (hasHighWastage) {
+    warnings.push(
+      `Significant paper waste at this size: ${wastagePercent}% of the plate is unused. Consider standardising to a stock size.`,
+    );
+  }
+
+  return {
+    plate: best.plate,
+    ups: best.ups,
+    orientation: best.orientation,
+    preferEvenUps,
+    wastagePercent,
+    hasHighWastage,
+    warnings,
+  };
+}
+
 // ─── Find printing rate by plate match ────────────────────────────────────
 // Old calc uses plate-name patterns like "Small Plate (15×20, 18×23, 18×25)".
 // We match by checking if any of the auto-selected plate's dimensions appear in plate_name.
@@ -247,6 +353,10 @@ export interface ComputePriceResult {
   plateKey: string;
   ups: number;
   fromMap: boolean;
+  orientation?: 'natural' | 'rotated';
+  wastagePercent?: number;
+  hasHighWastage?: boolean;
+  warnings?: string[];
   ws: number;                 // working sheets (plate-size)
   imp: number;                // impressions
   numPlates: number;          // plate setups (1 for W&T or single side, 2 for sheetwise)
@@ -367,15 +477,39 @@ export function computePrice(args: ComputePriceArgs): ComputePriceResult | { rea
 
   if (!qty || !w || !h || !stock) return { ready: false };
 
-  // ─ Plate + ups (use SIZE_PLATE_MAP, fallback to auto)
-  const { plate: plateKey, ups, fromMap } = autoSelectPlate(w, h);
+  // ─ Plate + ups: prefer SIZE_PLATE_MAP (CSV-confirmed). If not in map,
+  //   run the smart fit (tries both orientations, prefers EVEN ups when
+  //   sides='both' + non-board so W&T can apply, returns wastage %).
+  const isBoardPaper = BOARD_PAPER_CATS.includes(stock.category);
+  const isBothSides = sides === 'both';
+  const preferEvenUps = isBothSides && !isBoardPaper;
+
+  const mapped = lookupSizeMap(w, h);
+  let plateKey: string;
+  let ups: number;
+  let fromMap: boolean;
+  let orientation: 'natural' | 'rotated' = 'natural';
+  let wastagePercent: number | undefined;
+  let hasHighWastage: boolean | undefined;
+  let fitWarnings: string[] = [];
+
+  if (mapped) {
+    plateKey = mapped.plate;
+    ups = mapped.ups;
+    fromMap = true;
+  } else {
+    const fit = fitCustomSize(w, h, { preferEvenUps });
+    plateKey = fit.plate;
+    ups = fit.ups;
+    fromMap = false;
+    orientation = fit.orientation;
+    wastagePercent = fit.wastagePercent;
+    hasHighWastage = fit.hasHighWastage;
+    fitWarnings = fit.warnings;
+  }
 
   // ─ Working sheets at plate size
   const ws = Math.ceil(qty / Math.max(ups, 1));
-
-  // ─ Both-sides handling (W&T vs sheetwise)
-  const isBoardPaper = BOARD_PAPER_CATS.includes(stock.category);
-  const isBothSides = sides === 'both';
 
   // W&T requires EVEN ups (we need to split half front, half back)
   // If ups is odd and both-sides regular paper, fall back to sheetwise (2 plates)
@@ -431,6 +565,10 @@ export function computePrice(args: ComputePriceArgs): ComputePriceResult | { rea
     plateKey,
     ups,
     fromMap,
+    orientation,
+    wastagePercent,
+    hasHighWastage,
+    warnings: fitWarnings.length > 0 ? fitWarnings : undefined,
     ws,
     imp,
     numPlates,

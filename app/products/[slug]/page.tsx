@@ -8,6 +8,7 @@ import { TEMPLATES, getTemplate, ProductTemplate, TemplateField } from '../../li
 import { TOKENS } from '../../lib/design';
 import { formatPrice } from '../../lib/countries';
 import { computePrice } from '../../lib/calc';
+import { FINAL_SIZES } from '../../lib/sizes';
 
 // ─────────────────────────────────────────────────────────────────────────
 // Per-product calculator — renders only fields relevant to this product's
@@ -73,6 +74,11 @@ export default function ProductCalculator() {
   const [paperStocks, setPaperStocks] = useState<PaperStock[]>([]);
   const [paperCategories, setPaperCategories] = useState<Array<{ category: string; rate_per_kg: number }>>([]);
   const [printingRates, setPrintingRates] = useState<PrintingRate[]>([]);
+  const [bindings, setBindings] = useState<Array<{ id: string; name: string }>>([]);
+  const [lams, setLams] = useState<Array<{ id: string; name: string }>>([]);
+  const [uvs, setUvs] = useState<Array<{ id: string; name: string }>>([]);
+  const [pastings, setPastings] = useState<Array<{ id: string; name: string }>>([]);
+  const [overrideWastage, setOverrideWastage] = useState(false);
   const [fieldOverrides, setFieldOverrides] = useState<FieldOverride[]>([]);
   const [customFields, setCustomFields] = useState<CustomField[]>([]);
 
@@ -106,13 +112,17 @@ export default function ProductCalculator() {
       setHasSession(true);
       const userId = session.user.id;
 
-      const [prodRes, paperRes, catRes, rateRes, subRes, custRes] = await Promise.all([
+      const [prodRes, paperRes, catRes, rateRes, subRes, custRes, bindRes, lamRes, uvRes, pastRes] = await Promise.all([
         supabase.from('subscriber_products').select('*').eq('subscriber_id', userId).eq('slug', slug).maybeSingle(),
         supabase.from('paper_stocks').select('id, label, gsm, rate_per_kg, category').eq('subscriber_id', userId).order('sort_order'),
         supabase.from('paper_categories').select('category, rate_per_kg').eq('subscriber_id', userId),
         supabase.from('printing_rates').select('id, plate_name, color_option, fixed_charge, per_1000_impression').eq('subscriber_id', userId).order('sort_order'),
         supabase.from('subscribers').select('currency_symbol, markup_percent, tax_percent, business_name, email').eq('id', userId).maybeSingle(),
         supabase.from('customers').select('id, name, email, phone, company').eq('subscriber_id', userId).order('name'),
+        supabase.from('binding_rates').select('id, binding_name').eq('subscriber_id', userId).order('sort_order'),
+        supabase.from('lamination_rates').select('id, lam_name').eq('subscriber_id', userId).order('sort_order'),
+        supabase.from('uv_rates').select('id, uv_name').eq('subscriber_id', userId).order('sort_order'),
+        supabase.from('pasting_rates').select('id, pasting_name').eq('subscriber_id', userId).order('sort_order'),
       ]);
 
       if (!mounted) return;
@@ -131,6 +141,14 @@ export default function ProductCalculator() {
         ? (paperRes.data || []).filter((s: any) => allowedCats.includes(s.category))
         : (paperRes.data || []);
       setPaperStocks(filteredStocks);
+
+      // Map rate-table rows for finishing options
+      const mapRate = (rows: any[], nameField: string) =>
+        (rows || []).map((r: any) => ({ id: r.id, name: r[nameField] }));
+      setBindings(mapRate(bindRes.data || [], 'binding_name'));
+      setLams(mapRate(lamRes.data || [], 'lam_name'));
+      setUvs(mapRate(uvRes.data || [], 'uv_name'));
+      setPastings(mapRate(pastRes.data || [], 'pasting_name'));
       setPaperCategories((catRes.data || []) as Array<{ category: string; rate_per_kg: number }>);
       setPrintingRates(rateRes.data || []);
       setCustomers(custRes.data || []);
@@ -172,26 +190,94 @@ export default function ProductCalculator() {
     return () => { mounted = false; };
   }, [slug]);
 
-  // ─── Build active field list (template + overrides + custom) ───────────
+  // ─── Build active field list (template + overrides + per-product allowed lists) ───
   const activeFields = useMemo(() => {
     if (!template) return [] as TemplateField[];
     const overrideMap: Record<string, FieldOverride> = {};
     fieldOverrides.forEach((o) => { overrideMap[o.field_key] = o; });
+
+    // Per-product allowed lists
+    const allowedColors = product?.allowed_colors || [];
+    const allowedSides = product?.allowed_sides || [];
+    const allowedSizeIds = product?.allowed_size_ids || [];
+    const allowCustom = !!product?.allow_custom_size;
+    const allowedBindingIds = product?.allowed_binding_ids || [];
+    const allowedLamIds = product?.allowed_lamination_ids || [];
+    const allowedUvIds = product?.allowed_uv_ids || [];
+    const allowedPastingIds = product?.allowed_pasting_ids || [];
+
+    // Build size options from allowed_size_ids (+ optional custom)
+    const sizeOptions: any[] = [];
+    if (allowedSizeIds.length > 0) {
+      allowedSizeIds.forEach((id) => {
+        const s = FINAL_SIZES.find((x) => x.id === id);
+        if (s) sizeOptions.push({ value: id, label: s.label, w: s.w, h: s.h });
+      });
+    }
+    if (allowCustom) sizeOptions.push({ value: 'custom', label: 'Custom W × H', w: 0, h: 0 });
+
     return template.fields.filter((f) => {
       const ov = overrideMap[f.key];
       if (ov && ov.is_enabled === false) return false;
+
+      // Hide finishing fields if subscriber has no allowed rows in that category
+      if (f.key === 'binding' && allowedBindingIds.length === 0) return false;
+      if (f.key === 'lamination' && allowedLamIds.length === 0) return false;
+      if (f.key === 'uv' && allowedUvIds.length === 0) return false;
+      if (f.key === 'pasting' && allowedPastingIds.length === 0) return false;
+
       // Optional fields default to OFF unless explicitly enabled
       if (f.optional) return ov?.is_enabled === true;
       return true;
     }).map((f) => {
       const ov = overrideMap[f.key];
+      let defaultOptions = ov?.custom_options || f.defaultOptions;
+
+      // SIZE — replace with this product's allowed sizes (+ custom if enabled)
+      if (f.key === 'size' && sizeOptions.length > 0) {
+        defaultOptions = sizeOptions;
+      }
+      // COLOR — filter to allowed_colors
+      if (f.key === 'color' && allowedColors.length > 0 && Array.isArray(defaultOptions)) {
+        defaultOptions = (defaultOptions as any[]).filter((o) => allowedColors.includes(o.value));
+      }
+      // SIDES — filter to allowed_sides
+      if (f.key === 'sides' && allowedSides.length > 0 && Array.isArray(defaultOptions)) {
+        defaultOptions = (defaultOptions as any[]).filter((o) => allowedSides.includes(o.value));
+      }
+      // FINISHING — build from product's allowed_*_ids
+      if (f.key === 'binding' && allowedBindingIds.length > 0) {
+        defaultOptions = [
+          { value: 'none', label: 'No binding' },
+          ...bindings.filter((b) => allowedBindingIds.includes(b.id)).map((b) => ({ value: b.id, label: b.name })),
+        ];
+      }
+      if (f.key === 'lamination' && allowedLamIds.length > 0) {
+        defaultOptions = [
+          { value: 'none', label: 'No lamination' },
+          ...lams.filter((b) => allowedLamIds.includes(b.id)).map((b) => ({ value: b.id, label: b.name })),
+        ];
+      }
+      if (f.key === 'uv' && allowedUvIds.length > 0) {
+        defaultOptions = [
+          { value: 'none', label: 'No UV' },
+          ...uvs.filter((b) => allowedUvIds.includes(b.id)).map((b) => ({ value: b.id, label: b.name })),
+        ];
+      }
+      if (f.key === 'pasting' && allowedPastingIds.length > 0) {
+        defaultOptions = [
+          { value: 'none', label: 'No pasting' },
+          ...pastings.filter((b) => allowedPastingIds.includes(b.id)).map((b) => ({ value: b.id, label: b.name })),
+        ];
+      }
+
       return {
         ...f,
         label: ov?.custom_label || f.label,
-        defaultOptions: ov?.custom_options || f.defaultOptions,
+        defaultOptions,
       };
     });
-  }, [template, fieldOverrides]);
+  }, [template, fieldOverrides, product, bindings, lams, uvs, pastings]);
 
   // ─── Calculate price (uses shared lib/calc.ts) ──────────────────────────
   const calc = useMemo(() => {
@@ -244,12 +330,20 @@ export default function ProductCalculator() {
       useWorkAndTurn: r.useWorkAndTurn, useDoublePlate: r.useDoublePlate,
       paperCost: r.paperCost, printCost: r.printCost, extraCost,
       printBreakdown: r.printBreakdown,
+      // Custom-size fit info (Phase 2)
+      fromMap: r.fromMap,
+      orientation: r.orientation,
+      wastagePercent: r.wastagePercent,
+      hasHighWastage: r.hasHighWastage,
+      warnings: r.warnings,
       subtotal, withMarkup, tax, total, perUnit,
     } as const;
   }, [product, template, values, paperStocks, paperCategories, printingRates, customFields, markupPercent, taxPercent]);
 
   function setVal(key: string, v: any) {
     setValues((prev) => ({ ...prev, [key]: v }));
+    // Wastage override is per-size — reset it whenever inputs that affect fit change.
+    if (key === 'size' || key === 'sides' || key === 'paper') setOverrideWastage(false);
   }
 
   // ─── Render ────────────────────────────────────────────────────────────
@@ -291,6 +385,8 @@ export default function ProductCalculator() {
             product={product}
             template={template}
             values={values}
+            overrideWastage={overrideWastage}
+            setOverrideWastage={setOverrideWastage}
             onSaveQuote={() => calc?.ready && setShowSaveModal(true)}
             onDownloadPdf={() => calc?.ready && setShowPrintView(true)}
             onConvertToOrder={() => calc?.ready && setShowOrderModal(true)}
@@ -638,17 +734,21 @@ function FieldInput({
 // ──────────────────────────────────────────────────────────────────────────
 
 function PricePanel({
-  calc, currency, product, template, values, onSaveQuote, onDownloadPdf, onConvertToOrder,
+  calc, currency, product, template, values, overrideWastage, setOverrideWastage,
+  onSaveQuote, onDownloadPdf, onConvertToOrder,
 }: {
   calc: any;
   currency: string;
   product: SubscriberProduct;
   template: ProductTemplate;
   values: Record<string, any>;
+  overrideWastage: boolean;
+  setOverrideWastage: (b: boolean) => void;
   onSaveQuote: () => void;
   onDownloadPdf: () => void;
   onConvertToOrder: () => void;
 }) {
+  const isBlocked = calc?.ready && calc.hasHighWastage && !overrideWastage;
   return (
     <div style={{ position: 'sticky', top: 90, animation: 'pc-fade-up 0.5s 0.2s ease both' }}>
       <div style={{ background: 'rgba(255, 255, 255, 0.95)', border: `1px solid ${template.accent}55`, borderRadius: TOKENS.radius['2xl'], padding: 24, backdropFilter: 'blur(20px)', boxShadow: `0 20px 60px ${template.accent}22`, overflow: 'hidden', position: 'relative' }}>
@@ -656,10 +756,44 @@ function PricePanel({
 
         <div style={{ fontSize: 11, fontWeight: 600, color: TOKENS.colors.textDim, letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 8 }}>Estimate</div>
 
+        {/* Wastage warning — block price card until customer confirms */}
+        {isBlocked && (
+          <div style={{ padding: 16, background: '#FFFBEB', border: '1.5px solid #FDE68A', borderRadius: 12, marginBottom: 16 }}>
+            <div style={{ fontSize: 14, fontWeight: 800, color: '#92400E', marginBottom: 6 }}>
+              ⚠️ Significant paper waste
+            </div>
+            <div style={{ fontSize: 13, color: '#92400E', fontWeight: 500, marginBottom: 12, lineHeight: 1.5 }}>
+              At this size, <strong>{calc.wastagePercent}%</strong> of the printing plate is unused. The price below already accounts for the full plate cost.
+              Consider switching to a closer standard size — or continue at this rate.
+            </div>
+            <button
+              onClick={() => setOverrideWastage(true)}
+              style={{ padding: '9px 16px', background: '#92400E', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}
+            >
+              Show price anyway →
+            </button>
+          </div>
+        )}
+
+        {/* Other (non-wastage) warnings — e.g. odd-ups W&T-impossible */}
+        {calc?.ready && calc.warnings && calc.warnings.length > 0 && !calc.hasHighWastage && (
+          <div style={{ padding: 12, background: '#EFF6FF', border: '1px solid #BFDBFE', borderRadius: 10, marginBottom: 14 }}>
+            {calc.warnings.map((w: string, i: number) => (
+              <div key={i} style={{ fontSize: 12, color: '#1E3A8A', fontWeight: 600, lineHeight: 1.5 }}>ℹ️ {w}</div>
+            ))}
+          </div>
+        )}
+
         {!calc?.ready ? (
           <div style={{ padding: '40px 0', textAlign: 'center' }}>
             <div style={{ fontSize: 36, marginBottom: 12, opacity: 0.5 }}>🧮</div>
             <p style={{ fontSize: 14, color: TOKENS.colors.textMuted, margin: 0 }}>Fill in the form to see your price</p>
+          </div>
+        ) : isBlocked ? (
+          <div style={{ padding: '20px 0', textAlign: 'center' }}>
+            <div style={{ fontSize: 14, color: TOKENS.colors.textMuted, fontWeight: 600 }}>
+              Click <strong>“Show price anyway”</strong> above to reveal the estimate.
+            </div>
           </div>
         ) : (
           <>
