@@ -25,6 +25,7 @@ interface SubProduct {
   default_sides: string;
   default_color: string;
   is_enabled: boolean;
+  is_setup_complete: boolean | null;
   sort_order: number;
 }
 
@@ -63,6 +64,9 @@ export default function ProductsPage() {
       setHasSession(true);
 
       const userId = session.user.id;
+      // Customer view: only setup-complete products. Subscriber sees their own
+      // incomplete products too (with a "Setup incomplete" badge) so they can
+      // jump back to /dashboard/products and finish them.
       const { data: rows } = await supabase
         .from('subscriber_products')
         .select('*')
@@ -76,7 +80,7 @@ export default function ProductsPage() {
       const resolved: ResolvedProduct[] = (rows || []).map((p: SubProduct) => ({
         ...p,
         display_category: p.template_id,
-      }));
+      })).filter(p => p.is_setup_complete);
 
       setProducts(resolved);
       setLoading(false);

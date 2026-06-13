@@ -2,6 +2,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '../supabase';
 import Header from '../components/Header';
+import { FINAL_SIZES, SIZE_GROUPS } from '../lib/sizes';
 
 const PLATE_DIMS: Record<string,{w:number;h:number}> = {
   '15×20"': {w:14.5, h:19.5},
@@ -21,64 +22,12 @@ const PARENT_SHEETS: Record<string,{parent:string;cuts:number;pw:number;ph:numbe
   '20×30"': {parent:'20×30"', cuts:1, pw:20, ph:30},
   '25×36"': {parent:'25×36"', cuts:1, pw:25, ph:36},
 };
-// Source of truth: C:\Users\ASUS\OneDrive\Desktop\plate_mapping.csv
-// `group` drives the <optgroup> in the size dropdown.
-const FINAL_SIZES = [
-  // A Series
-  {id:'a2', group:'A Series', label:'A2 (16.5 x 23.4")', w:16.5,  h:23.4,  plateSize:'18×25"'},
-  {id:'a3', group:'A Series', label:'A3 (11.7 x 16.5")', w:11.69, h:16.54, plateSize:'18×25"'},
-  {id:'a4', group:'A Series', label:'A4 (8.3 x 11.7")',  w:8.27,  h:11.69, plateSize:'18×25"'},
-  {id:'a5', group:'A Series', label:'A5 (5.8 x 8.3")',   w:5.83,  h:8.27,  plateSize:'18×25"'},
-  {id:'a6', group:'A Series', label:'A6 (4.1 x 5.8")',   w:4.13,  h:5.83,  plateSize:'18×25"'},
-  {id:'a7', group:'A Series', label:'A7 (2.9 x 4.1")',   w:2.91,  h:4.13,  plateSize:'18×25"'},
-
-  // American Standard
-  {id:'am1',group:'American Standard', label:'4.25 x 5.5"',          w:4.25, h:5.5,  plateSize:'18×23"'},
-  {id:'am2',group:'American Standard', label:'5.5 x 8.5"',           w:5.5,  h:8.5,  plateSize:'18×23"'},
-  {id:'am3',group:'American Standard', label:'Letter (8.5 x 11")',   w:8.5,  h:11,   plateSize:'18×23"'},
-  {id:'am4',group:'American Standard', label:'Legal (8.5 x 14")',    w:8.5,  h:14,   plateSize:'15×20"'},
-  {id:'am5',group:'American Standard', label:'Tabloid (11 x 17")',   w:11,   h:17,   plateSize:'18×23"'},
-  {id:'am6',group:'American Standard', label:'18 x 23"',             w:18,   h:23,   plateSize:'18×23"'},
-
-  // Square / Tall
-  {id:'sq1',group:'Square / Tall', label:'8 x 8" (Square)',   w:8, h:8,  plateSize:'18×25"'},
-  {id:'tl1',group:'Square / Tall', label:'8 x 24" (Tall)',    w:8, h:24, plateSize:'18×25"'},
-
-  // B Series — uses 20×29 plate per CSV
-  {id:'b2', group:'B Series', label:'B2 (19 x 29")',   w:19,   h:29,  plateSize:'20×29"'},
-  {id:'b3', group:'B Series', label:'B3 (14 x 19")',   w:14,   h:19,  plateSize:'20×29"'},
-  {id:'b4', group:'B Series', label:'B4 (9.5 x 14")',  w:9.5,  h:14,  plateSize:'20×29"'},
-  {id:'b5', group:'B Series', label:'B5 (7 x 9.5")',   w:7,    h:9.5, plateSize:'20×29"'},
-  {id:'b6', group:'B Series', label:'B6 (4.75 x 7")',  w:4.75, h:7,   plateSize:'20×29"'},
-
-  // Cards
-  {id:'vc',    group:'Cards', label:'Visiting Card (3.5 x 2")',         w:3.5,   h:2,     plateSize:'18×25"'},
-  {id:'vc_eu', group:'Cards', label:'Visiting Card EU (85 x 55 mm)',    w:3.346, h:2.165, plateSize:'18×25"'},
-  {id:'vc_uk', group:'Cards', label:'Visiting Card UK (90 x 55 mm)',    w:3.543, h:2.165, plateSize:'18×25"'},
-  {id:'pc4x6', group:'Cards', label:'Postcard 4 x 6"',                  w:4,     h:6,     plateSize:'18×25"'},
-  {id:'pc5x7', group:'Cards', label:'Postcard 5 x 7"',                  w:5,     h:7,     plateSize:'18×23"'},
-  {id:'gc5x7', group:'Cards', label:'Greeting Card 5 x 7"',             w:5,     h:7,     plateSize:'18×23"'},
-  {id:'wc5x7', group:'Cards', label:'Wedding Card 5 x 7"',              w:5,     h:7,     plateSize:'18×23"'},
-  {id:'rack',  group:'Cards', label:'Rack Card 4 x 9"',                 w:4,     h:9,     plateSize:'20×29"'},
-  {id:'bkmk',  group:'Cards', label:'Bookmark 2 x 7"',                  w:2,     h:7,     plateSize:'20×29"'},
-  {id:'dh',    group:'Cards', label:'Door Hanger 4.25 x 11"',           w:4.25,  h:11,    plateSize:'18×23"'},
-
-  // Stationery
-  {id:'dl',    group:'Stationery', label:'DL Envelope (4.33 x 8.66")',          w:4.33, h:8.66,  plateSize:'18×25"'},
-  {id:'c5',    group:'Stationery', label:'C5 Envelope (6.38 x 9.02")',          w:6.38, h:9.02,  plateSize:'18×25"'},
-  {id:'c4',    group:'Stationery', label:'C4 Envelope (9.02 x 12.76")',         w:9.02, h:12.76, plateSize:'18×25"'},
-  {id:'no10',  group:'Stationery', label:'No.10 Envelope (4.125 x 9.5")',       w:4.125,h:9.5,   plateSize:'18×25"'},
-  {id:'lh_a4', group:'Stationery', label:'Letterhead A4 (8.27 x 11.69")',       w:8.27, h:11.69, plateSize:'18×25"'},
-  {id:'np_a5', group:'Stationery', label:'Notepad A5 (5.83 x 8.27")',           w:5.83, h:8.27,  plateSize:'18×25"'},
-  {id:'np_a6', group:'Stationery', label:'Notepad A6 (4.13 x 5.83")',           w:4.13, h:5.83,  plateSize:'18×25"'},
-
-  // Folder
-  {id:'fold',  group:'Folder', label:'Presentation Folder 9 x 12"', w:9, h:12, plateSize:'18×23"'},
-
-  // Custom
-  {id:'custom',group:'Other', label:'Custom size...',  w:0, h:0, plateSize:'18×25"'},
+// Custom-size row appended at the end so the user can still type w/h freely.
+const FINAL_SIZES_WITH_CUSTOM = [
+  ...FINAL_SIZES,
+  { id: 'custom', group: 'Other', label: 'Custom size...', w: 0, h: 0, plateSize: '18×25"' },
 ];
-const SIZE_GROUPS = ['A Series','American Standard','Square / Tall','B Series','Cards','Stationery','Folder','Other'];
+const SIZE_GROUPS_WITH_CUSTOM = [...SIZE_GROUPS, 'Other'];
 
 function calcUps(w:number,h:number,pk:string){
   const p=PLATE_DIMS[pk];if(!p)return 1;
@@ -165,9 +114,9 @@ function SizeSelect({size,setSize,cW,setCW,cH,setCH}:any){
   return(
     <div style={{marginBottom:16}}>
       <div style={LBL}>Final size{size.id!=='custom'&&<span style={{background:'#EEF4FA',color:'#185FA5',borderRadius:4,padding:'2px 8px',fontSize:11,fontFamily:'monospace'}}>{u} ups · {pi?.parent||size.plateSize}</span>}</div>
-      <select value={size.id} onChange={e=>{const s=FINAL_SIZES.find(x=>x.id===e.target.value);if(s)setSize(s);}} style={IS}>
-        {SIZE_GROUPS.map(g => {
-          const rows = FINAL_SIZES.filter(s => s.group === g);
+      <select value={size.id} onChange={e=>{const s=FINAL_SIZES_WITH_CUSTOM.find(x=>x.id===e.target.value);if(s)setSize(s);}} style={IS}>
+        {SIZE_GROUPS_WITH_CUSTOM.map(g => {
+          const rows = FINAL_SIZES_WITH_CUSTOM.filter(s => s.group === g);
           if (!rows.length) return null;
           return (
             <optgroup key={g} label={`── ${g} ──`}>

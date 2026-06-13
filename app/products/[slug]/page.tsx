@@ -28,6 +28,21 @@ interface SubscriberProduct {
   default_paper_label: string | null;
   default_color: string;
   default_sides: string;
+  default_qty: number | null;
+  // Per-product allowed lists (Phase 1)
+  allowed_size_ids: string[] | null;
+  default_size_id: string | null;
+  allow_custom_size: boolean | null;
+  allowed_paper_categories: string[] | null;
+  default_paper_category: string | null;
+  default_gsm: number | null;
+  allowed_colors: string[] | null;
+  allowed_sides: string[] | null;
+  allowed_binding_ids: string[] | null;
+  allowed_lamination_ids: string[] | null;
+  allowed_uv_ids: string[] | null;
+  allowed_pasting_ids: string[] | null;
+  is_setup_complete: boolean | null;
 }
 
 interface SubscriberInfo { business_name: string; email: string; }
@@ -110,7 +125,12 @@ export default function ProductCalculator() {
 
       setProduct(prod);
       setTemplate(getTemplate(prod.template_id) || null);
-      setPaperStocks(paperRes.data || []);
+      // Filter paper stocks to those whose category is in allowed_paper_categories
+      const allowedCats = prod.allowed_paper_categories || [];
+      const filteredStocks = allowedCats.length > 0
+        ? (paperRes.data || []).filter((s: any) => allowedCats.includes(s.category))
+        : (paperRes.data || []);
+      setPaperStocks(filteredStocks);
       setPaperCategories((catRes.data || []) as Array<{ category: string; rate_per_kg: number }>);
       setPrintingRates(rateRes.data || []);
       setCustomers(custRes.data || []);
@@ -129,15 +149,23 @@ export default function ProductCalculator() {
       setFieldOverrides(overridesRes.data || []);
       setCustomFields(customRes.data || []);
 
-      // Initialize default values
+      // Initialize default values from product's per-product config
       const initVals: Record<string, any> = {
-        quantity: 500,
+        quantity: prod.default_qty || 500,
         size: prod.default_size_w_inch
           ? { w: Number(prod.default_size_w_inch), h: Number(prod.default_size_h_inch), label: prod.default_size_label }
           : null,
         sides: prod.default_sides || 'one',
         color: prod.default_color || 'four_color',
       };
+      // If there's a default paper category, pre-pick the first stock from that category
+      if (prod.default_paper_category && paperRes.data) {
+        const candidates = paperRes.data.filter((s: any) =>
+          s.category === prod.default_paper_category &&
+          (!prod.default_gsm || s.gsm === prod.default_gsm),
+        );
+        if (candidates.length > 0) initVals.paper = candidates[0].id;
+      }
       setValues(initVals);
       setLoading(false);
     })();
