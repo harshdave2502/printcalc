@@ -298,12 +298,19 @@ export function fitCustomSize(
 //
 // Algorithm:
 //   1. Compare each FINAL_SIZES row to the input (orientation-agnostic).
-//   2. Keep rows within ±25% of each dimension (so we suggest similar sizes,
-//      not "try a business card instead of a wall calendar").
+//   2. Keep rows within ±15% on each dimension AND ≤15% averaged — so we
+//      suggest VISUALLY similar sizes (no "use Tabloid instead of 7×10").
 //   3. Compute each candidate's own fit (plate + ups + wastage).
-//   4. Rank by combined score: lower wastage wins, closer to input breaks ties.
+//   4. Rank: closest size wins first, then lower wastage breaks ties.
 //   5. Return top 3.
 // ─────────────────────────────────────────────────────────────────────────
+// Calibrated against the user's explicit ask: for 7×10",
+//   • B5 7×9.5 (avg diff 2.5%) — MUST suggest
+//   • Letter 8.5×11 (avg diff 15.7%) — MUST suggest
+//   • Tabloid 11×17 (avg diff 63.5%) — MUST NOT suggest
+const SUGGESTION_MAX_DIM_DIFF = 0.22;   // each side must be within ±22%
+const SUGGESTION_MAX_AVG_DIFF = 0.18;   // average diff must also be ≤18%
+
 export function suggestNearbySizes(w: number, h: number, max: number = 3): SizeSuggestion[] {
   if (!w || !h) return [];
 
@@ -318,11 +325,14 @@ export function suggestNearbySizes(w: number, h: number, max: number = 3): SizeS
     const sa = Math.min(s.w, s.h);
     const sb = Math.max(s.w, s.h);
 
-    // Dimension distance — average of per-side % difference.
+    // Both dimensions must be close — no single-side runaway match.
     const aDiff = Math.abs(sa - a) / a;
     const bDiff = Math.abs(sb - b) / b;
+    if (aDiff > SUGGESTION_MAX_DIM_DIFF) continue;
+    if (bDiff > SUGGESTION_MAX_DIM_DIFF) continue;
+
     const avgDiff = (aDiff + bDiff) / 2;
-    if (avgDiff > 0.25) continue;                   // too far away
+    if (avgDiff > SUGGESTION_MAX_AVG_DIFF) continue;
 
     const fit = fitCustomSize(s.w, s.h, {});
     const similarity = Math.round((1 - avgDiff) * 100);
@@ -340,11 +350,11 @@ export function suggestNearbySizes(w: number, h: number, max: number = 3): SizeS
     });
   }
 
-  // Rank: lower wastage wins, then higher similarity, then more ups.
+  // Rank: closest match first, then lower wastage breaks ties, then more ups.
   cands.sort(
     (x, y) =>
-      x.wastagePercent - y.wastagePercent ||
       x._avgDiff - y._avgDiff ||
+      x.wastagePercent - y.wastagePercent ||
       y.ups - x.ups,
   );
 

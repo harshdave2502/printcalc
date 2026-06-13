@@ -79,6 +79,10 @@ export default function ProductCalculator() {
   const [uvs, setUvs] = useState<Array<{ id: string; name: string }>>([]);
   const [pastings, setPastings] = useState<Array<{ id: string; name: string }>>([]);
   const [overrideWastage, setOverrideWastage] = useState(false);
+  // Subscriber-only detail toggle. OFF by default so a customer looking
+  // over the subscriber's shoulder (in-person quote, screen share) doesn't
+  // see plate/ups/cost-split business internals.
+  const [showDetails, setShowDetails] = useState(false);
   const [fieldOverrides, setFieldOverrides] = useState<FieldOverride[]>([]);
   const [customFields, setCustomFields] = useState<CustomField[]>([]);
 
@@ -389,6 +393,8 @@ export default function ProductCalculator() {
             values={values}
             overrideWastage={overrideWastage}
             setOverrideWastage={setOverrideWastage}
+            showDetails={showDetails}
+            setShowDetails={setShowDetails}
             onApplySuggestion={(s) => setVal('size', { key: s.id, label: s.label, w: s.w, h: s.h })}
             onSaveQuote={() => calc?.ready && setShowSaveModal(true)}
             onDownloadPdf={() => calc?.ready && setShowPrintView(true)}
@@ -738,6 +744,7 @@ function FieldInput({
 
 function PricePanel({
   calc, currency, product, template, values, overrideWastage, setOverrideWastage,
+  showDetails, setShowDetails,
   onApplySuggestion, onSaveQuote, onDownloadPdf, onConvertToOrder,
 }: {
   calc: any;
@@ -747,6 +754,8 @@ function PricePanel({
   values: Record<string, any>;
   overrideWastage: boolean;
   setOverrideWastage: (b: boolean) => void;
+  showDetails: boolean;
+  setShowDetails: (b: boolean) => void;
   onApplySuggestion: (s: { id: string; label: string; w: number; h: number }) => void;
   onSaveQuote: () => void;
   onDownloadPdf: () => void;
@@ -767,33 +776,39 @@ function PricePanel({
               ⚠️ This size wastes paper
             </div>
             <div style={{ fontSize: 13, color: '#92400E', fontWeight: 500, marginBottom: 12, lineHeight: 1.55 }}>
-              {calc.wastageExplanation || (
-                <>At <strong>{values.size?.w} × {values.size?.h}"</strong>, only <strong>{calc.ups}</strong> piece{calc.ups === 1 ? '' : 's'} fits per plate — <strong>{calc.wastagePercent}%</strong> of the plate is unused. You still pay for the full plate, so per-piece cost is higher.</>
-              )}
+              {showDetails && calc.wastageExplanation
+                ? calc.wastageExplanation
+                : <>This size doesn't fit the printing plate efficiently, so the per-piece cost goes up. Try one of the standard sizes below for a better rate.</>
+              }
             </div>
 
-            {/* Nearby-size suggestions */}
+            {/* Nearby-size suggestions — show only the size NAME.
+                Plate / ups / wastage % are internals shown to subscriber only. */}
             {calc.suggestions && calc.suggestions.length > 0 && (
               <div style={{ marginBottom: 12 }}>
                 <div style={{ fontSize: 11, color: '#92400E', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>
-                  Better standard sizes nearby
+                  Closer standard sizes
                 </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                   {calc.suggestions.map((s: any) => (
                     <button
                       key={s.id}
                       onClick={() => onApplySuggestion(s)}
-                      style={{ textAlign: 'left', padding: '10px 12px', background: '#fff', border: '1.5px solid #FDE68A', borderRadius: 9, cursor: 'pointer', fontFamily: 'inherit' }}
+                      style={{ padding: '8px 14px', background: '#fff', border: '1.5px solid #FDE68A', borderRadius: 100, fontSize: 13, fontWeight: 700, color: '#1A1330', cursor: 'pointer', fontFamily: 'inherit' }}
                     >
-                      <div style={{ fontSize: 13, fontWeight: 800, color: '#1A1330' }}>
-                        {s.label} <span style={{ fontWeight: 500, color: '#5B5870' }}>· tap to use</span>
-                      </div>
-                      <div style={{ fontSize: 11, color: '#5B5870', marginTop: 2, fontWeight: 600 }}>
-                        Fits {s.ups} pcs/plate · {s.wastagePercent}% waste · plate {s.plate}
-                      </div>
+                      {s.label}
                     </button>
                   ))}
                 </div>
+                {showDetails && (
+                  <div style={{ marginTop: 8, fontSize: 11, color: '#92400E', fontWeight: 600, lineHeight: 1.5 }}>
+                    {calc.suggestions.map((s: any, i: number) => (
+                      <div key={i}>
+                        🔒 {s.label} — {s.ups} ups on {s.plate}, {s.wastagePercent}% waste
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
 
@@ -837,30 +852,52 @@ function PricePanel({
               </div>
             </div>
 
+            {/* Customer-safe rows. Tax is normal to show on an invoice. */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, paddingTop: 16, borderTop: `1px solid ${TOKENS.colors.border}` }}>
-              <PriceRow
-                label="Sheets needed"
-                value={`${calc.ws.toLocaleString()} (${calc.ups}-up on ${calc.plateKey})`}
-              />
-              {calc.useWorkAndTurn && (
-                <PriceRow label="Method" value={`Work & Turn · ${calc.imp.toLocaleString()} impressions`} />
+              <PriceRow label="Quantity" value={calc.qty.toLocaleString()} />
+              {calc.tax > 0 && (
+                <PriceRow label="Tax" value={`${currency}${calc.tax.toFixed(2)}`} />
               )}
-              {calc.useDoublePlate && (
-                <PriceRow label="Method" value={`2 plate setups · ${calc.imp.toLocaleString()} imp/plate`} />
-              )}
-              <PriceRow label="Paper" value={`${currency}${calc.paperCost.toFixed(2)}`} />
-              {calc.printBreakdown && calc.printBreakdown.length > 1 ? (
-                calc.printBreakdown.map((b: { label: string; value: number }, i: number) => (
-                  <PriceRow key={i} label={b.label} value={`${currency}${b.value.toFixed(2)}`} />
-                ))
-              ) : (
-                <PriceRow label="Printing" value={`${currency}${calc.printCost.toFixed(2)}`} />
-              )}
-              {calc.extraCost > 0 && <PriceRow label="Add-ons" value={`${currency}${calc.extraCost.toFixed(2)}`} />}
-              <PriceRow label="Subtotal" value={`${currency}${calc.subtotal.toFixed(2)}`} />
-              <PriceRow label="Markup" value={`${currency}${(calc.withMarkup - calc.subtotal).toFixed(2)}`} />
-              {calc.tax > 0 && <PriceRow label="Tax" value={`${currency}${calc.tax.toFixed(2)}`} />}
+              <PriceRow label="Total" value={`${currency}${calc.total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`} />
             </div>
+
+            {/* Subscriber details toggle. Default OFF so a customer looking at the
+                screen never sees plate / ups / cost split / markup. */}
+            <button
+              onClick={() => setShowDetails(!showDetails)}
+              style={{ marginTop: 14, width: '100%', padding: '8px 12px', background: 'transparent', border: `1px dashed ${TOKENS.colors.border}`, borderRadius: 8, fontSize: 12, fontWeight: 700, color: TOKENS.colors.textMuted, cursor: 'pointer', fontFamily: 'inherit' }}
+            >
+              {showDetails ? '▾ Hide calculation details' : '▸ Show calculation details (subscriber only)'}
+            </button>
+
+            {showDetails && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 12, paddingTop: 12, borderTop: `1px dashed ${TOKENS.colors.border}` }}>
+                <div style={{ fontSize: 10, fontWeight: 800, color: TOKENS.colors.textDim, letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+                  🔒 Internal — keep off-screen during customer calls
+                </div>
+                <PriceRow
+                  label="Sheets needed"
+                  value={`${calc.ws.toLocaleString()} (${calc.ups}-up on ${calc.plateKey})`}
+                />
+                {calc.useWorkAndTurn && (
+                  <PriceRow label="Method" value={`Work & Turn · ${calc.imp.toLocaleString()} impressions`} />
+                )}
+                {calc.useDoublePlate && (
+                  <PriceRow label="Method" value={`2 plate setups · ${calc.imp.toLocaleString()} imp/plate`} />
+                )}
+                <PriceRow label="Paper cost" value={`${currency}${calc.paperCost.toFixed(2)}`} />
+                {calc.printBreakdown && calc.printBreakdown.length > 1 ? (
+                  calc.printBreakdown.map((b: { label: string; value: number }, i: number) => (
+                    <PriceRow key={i} label={b.label} value={`${currency}${b.value.toFixed(2)}`} />
+                  ))
+                ) : (
+                  <PriceRow label="Printing cost" value={`${currency}${calc.printCost.toFixed(2)}`} />
+                )}
+                {calc.extraCost > 0 && <PriceRow label="Add-ons" value={`${currency}${calc.extraCost.toFixed(2)}`} />}
+                <PriceRow label="Subtotal (cost)" value={`${currency}${calc.subtotal.toFixed(2)}`} />
+                <PriceRow label="Markup" value={`${currency}${(calc.withMarkup - calc.subtotal).toFixed(2)}`} />
+              </div>
+            )}
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 20 }}>
               <button onClick={onSaveQuote} style={{ ...primaryButton(template.accent), width: '100%' }}>📋 Save Quote</button>
