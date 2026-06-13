@@ -157,7 +157,13 @@ export interface FitResult {
   warnings: string[];
 }
 
-const WASTAGE_THRESHOLD = 25;
+// Only warn when the fit is genuinely poor.
+//   • Up to 50% wastage is normal for custom sizes (pieces never tile a plate
+//     perfectly — the press still pays for the full plate run).
+//   • Ups ≥ 4 means the piece tiles well — silence the warning even if the
+//     theoretical wastage looks high.
+const WASTAGE_THRESHOLD = 50;
+const QUIET_IF_UPS_AT_LEAST = 4;
 
 export function fitCustomSize(
   w: number,
@@ -229,10 +235,14 @@ export function fitCustomSize(
   }
 
   const wastagePercent = Math.round(best.wastage * 1000) / 10;
-  const hasHighWastage = wastagePercent > WASTAGE_THRESHOLD;
+  // Wastage only counts as "high" when BOTH:
+  //   (a) the % of plate left empty exceeds the threshold, AND
+  //   (b) ups is below the quiet bar — i.e. the piece doesn't tile well.
+  // This silences warnings for legitimate custom sizes that pack 4+ up.
+  const hasHighWastage = wastagePercent > WASTAGE_THRESHOLD && best.ups < QUIET_IF_UPS_AT_LEAST;
   if (hasHighWastage) {
     warnings.push(
-      `Significant paper waste at this size: ${wastagePercent}% of the plate is unused. Consider standardising to a stock size.`,
+      `Significant paper waste at this size: ${wastagePercent}% of the plate is unused at ${best.ups} up${best.ups === 1 ? '' : 's'}. Consider standardising to a stock size.`,
     );
   }
 
