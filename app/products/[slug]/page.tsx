@@ -340,7 +340,7 @@ export default function ProductCalculator() {
       useWorkAndTurn: r.useWorkAndTurn, useDoublePlate: r.useDoublePlate,
       paperCost: r.paperCost, printCost: r.printCost, extraCost,
       printBreakdown: r.printBreakdown,
-      // Custom-size fit info (Phase 2)
+      // Custom-size fit info (Phase 2 + Mode B paper cutting)
       fromMap: r.fromMap,
       orientation: r.orientation,
       wastagePercent: r.wastagePercent,
@@ -348,6 +348,7 @@ export default function ProductCalculator() {
       warnings: r.warnings,
       suggestions: r.suggestions,
       wastageExplanation: r.wastageExplanation,
+      cuttingFit: r.cuttingFit,
       subtotal, withMarkup, tax, total, perUnit,
     } as const;
   }, [product, template, values, paperStocks, paperCategories, printingRates, customFields, markupPercent, taxPercent]);
@@ -895,9 +896,25 @@ function PricePanel({
                   🔒 Internal — keep off-screen during customer calls
                 </div>
                 <PriceRow
-                  label="Sheets needed"
+                  label="Press sheets"
                   value={`${calc.ws.toLocaleString()} (${calc.ups}-up on ${calc.plateKey})`}
                 />
+                {calc.cuttingFit && (
+                  <>
+                    <PriceRow
+                      label="Parent paper"
+                      value={`${calc.cuttingFit.parentLabel} · ${calc.cuttingFit.cutsPerParent}/parent`}
+                    />
+                    <PriceRow
+                      label="Cut to"
+                      value={`${calc.cuttingFit.pressSheetW.toFixed(2)} × ${calc.cuttingFit.pressSheetH.toFixed(2)}" (${calc.cuttingFit.upsPerCutW}×${calc.cuttingFit.upsPerCutH} layout)`}
+                    />
+                    <PriceRow
+                      label="Pieces / parent"
+                      value={`${calc.cuttingFit.upsPerParent}`}
+                    />
+                  </>
+                )}
                 {calc.useWorkAndTurn && (
                   <PriceRow label="Method" value={`Work & Turn · ${calc.imp.toLocaleString()} impressions`} />
                 )}

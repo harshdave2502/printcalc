@@ -10,29 +10,13 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 import { FINAL_SIZES } from './sizes';
+import { PLATE_DIMS as PLATE_DIMS_FROM_PLATES, PARENT_SHEETS as PARENT_SHEETS_FROM_PLATES } from './plates';
+import { fitWithPaperCutting, FitWithCuttingResult, parentSheetsFor as parentSheetsForCategory } from './paper-cutting';
 
-// ─── Plate dimensions (usable area after gripper margin) ─────────────────
-export const PLATE_DIMS: Record<string, { w: number; h: number }> = {
-  '15×20"': { w: 14.5, h: 19.5 },
-  '18×23"': { w: 17.5, h: 22.5 },
-  '18×25"': { w: 17.5, h: 24.5 },
-  '20×28"': { w: 19.5, h: 27.5 },
-  '20×29"': { w: 19.0, h: 29.0 },  // B-series plate (different gripper rule)
-  '20×30"': { w: 19.5, h: 29.5 },
-  '25×36"': { w: 24.5, h: 35.5 },
-};
-
-// ─── Parent (paper) sheet specs per plate ─────────────────────────────────
-// cuts = how many plate-size sheets fit in one parent sheet
-export const PARENT_SHEETS: Record<string, { parentW: number; parentH: number; cuts: number }> = {
-  '15×20"': { parentW: 20, parentH: 30, cuts: 2 },
-  '18×23"': { parentW: 23, parentH: 36, cuts: 2 },
-  '18×25"': { parentW: 25, parentH: 36, cuts: 2 },
-  '20×28"': { parentW: 20, parentH: 30, cuts: 1 },
-  '20×29"': { parentW: 20, parentH: 30, cuts: 1 },
-  '20×30"': { parentW: 20, parentH: 30, cuts: 1 },
-  '25×36"': { parentW: 25, parentH: 36, cuts: 1 },
-};
+// ─── Plate + parent sheet sources of truth ────────────────────────────────
+// Live in ./plates.ts so paper-cutting.ts can import without a cycle.
+export const PLATE_DIMS = PLATE_DIMS_FROM_PLATES;
+export const PARENT_SHEETS = PARENT_SHEETS_FROM_PLATES;
 
 // ─── Board paper categories — cannot Work & Turn (rough/smooth sides) ────
 export const BOARD_PAPER_CATS = ['SBS', 'FBB', 'Duplex Grey Back', 'Duplex White Back'];
@@ -473,6 +457,17 @@ export interface ComputePriceResult {
   warnings?: string[];
   suggestions?: SizeSuggestion[];
   wastageExplanation?: string;
+  // Mode B (paper cutting): the chosen parent + press sheet + cuts/parent
+  cuttingFit?: {
+    parentLabel: string;
+    pressSheetW: number;
+    pressSheetH: number;
+    cutsPerParent: number;
+    upsPerParent: number;
+    upsPerCutW: number;
+    upsPerCutH: number;
+    pressOrientation: 'natural' | 'rotated';
+  };
   ws: number;                 // working sheets (plate-size)
   imp: number;                // impressions
   numPlates: number;          // plate setups (1 for W&T or single side, 2 for sheetwise)
@@ -610,44 +605,85 @@ export function computePrice(args: ComputePriceArgs): ComputePriceResult | { rea
   let fitWarnings: string[] = [];
   let fitSuggestions: SizeSuggestion[] | undefined;
   let fitExplanation: string | undefined;
+  // Mode B (paper cutting) — populated when the size is custom.
+  let cuttingFit: FitWithCuttingResult | null = null;
 
   if (mapped) {
     plateKey = mapped.plate;
     ups = mapped.ups;
     fromMap = true;
   } else {
-    const fit = fitCustomSize(w, h, { preferEvenUps });
-    plateKey = fit.plate;
-    ups = fit.ups;
+    // Custom size → Mode B: try cutting the parent paper into press sheets
+    // sized to the piece, then choose the plate to fit the cut.
+    cuttingFit = fitWithPaperCutting({
+      pieceW: w,
+      pieceH: h,
+      paperCategory: stock.category,
+      isBothSides,
+    });
+    if (cuttingFit) {
+      plateKey = cuttingFit.plate;
+      ups = cuttingFit.upsPerCutSheet;
+      orientation = cuttingFit.pieceOrientation;
+      wastagePercent = cuttingFit.paperWastePercent;
+      hasHighWastage = cuttingFit.paperWastePercent > 35 && cuttingFit.upsPerParent < 4;
+      fitWarnings = cuttingFit.warnings;
+      if (hasHighWastage) {
+        fitSuggestions = suggestNearbySizes(w, h);
+        const top = fitSuggestions[0];
+        if (top) {
+          fitExplanation =
+            `At this size we cut ${cuttingFit.parent.label} sheets into ${cuttingFit.pressSheet.w.toFixed(2)}×${cuttingFit.pressSheet.h.toFixed(2)}" pieces — ${cuttingFit.paperWastePercent}% of each parent sheet is left over. ` +
+            `${top.label} fits ${top.ups} ups with only ${top.wastagePercent}% waste — cheaper per piece.`;
+        }
+      }
+    } else {
+      // Truly hopeless — fall back to old plate-only fitter so we never crash.
+      const fit = fitCustomSize(w, h, { preferEvenUps });
+      plateKey = fit.plate;
+      ups = fit.ups;
+      orientation = fit.orientation;
+      wastagePercent = fit.wastagePercent;
+      hasHighWastage = fit.hasHighWastage;
+      fitWarnings = fit.warnings;
+      fitSuggestions = fit.suggestions;
+      fitExplanation = fit.explanation;
+    }
     fromMap = false;
-    orientation = fit.orientation;
-    wastagePercent = fit.wastagePercent;
-    hasHighWastage = fit.hasHighWastage;
-    fitWarnings = fit.warnings;
-    fitSuggestions = fit.suggestions;
-    fitExplanation = fit.explanation;
   }
 
-  // ─ Working sheets at plate size
+  // ─ Working sheets (press sheets) at the chosen layout.
   const ws = Math.ceil(qty / Math.max(ups, 1));
 
-  // W&T requires EVEN ups (we need to split half front, half back)
-  // If ups is odd and both-sides regular paper, fall back to sheetwise (2 plates)
+  // W&T requires EVEN ups per cut sheet (split half front, half back).
   const canUseWT = isBothSides && !isBoardPaper && ups % 2 === 0 && ups >= 2;
-
   const useDoublePlate = isBothSides && (isBoardPaper || !canUseWT);
   const useWorkAndTurn = isBothSides && canUseWT;
 
-  // Impressions: W&T doubles (run sheet through press twice with same plate)
-  // Sheetwise: each plate sees `ws` impressions (sheet through press for plate A, then for plate B)
+  // Impressions:
+  //   • W&T  → sheet runs through press twice on same plate (imp = ws × 2, numPlates = 1)
+  //   • Sheetwise → each of 2 plates sees `ws` impressions (numPlates = 2)
+  //   • Single side → ws impressions on 1 plate
   const imp = useWorkAndTurn ? ws * 2 : ws;
   const numPlates = useDoublePlate ? 2 : 1;
 
-  // ─ Paper cost (uses parent sheet area + category rate)
-  const parent = PARENT_SHEETS[plateKey] || { parentW: 25, parentH: 36, cuts: 2 };
-  const f = (parent.parentW * parent.parentH * 0.2666) / 828;
+  // ─ Paper cost
+  //   Mode A (standard size): parent comes from PARENT_SHEETS[plate] table.
+  //   Mode B (custom + paper cutting): parent + cuts-per-parent come from cuttingFit.
+  let parentW: number, parentH: number, cutsPerParent: number;
+  if (cuttingFit) {
+    parentW = cuttingFit.parent.w;
+    parentH = cuttingFit.parent.h;
+    cutsPerParent = cuttingFit.cutsPerParent;
+  } else {
+    const parent = PARENT_SHEETS[plateKey] || { parentW: 25, parentH: 36, cuts: 2 };
+    parentW = parent.parentW;
+    parentH = parent.parentH;
+    cutsPerParent = parent.cuts;
+  }
+  const f = (parentW * parentH * 0.2666) / 828;
   const ratePerKg = getRatePerKg(paperCategories, stock);
-  const paperCost = ((f * stock.gsm * ratePerKg) / 500) * (ws / parent.cuts);
+  const paperCost = ((f * stock.gsm * ratePerKg) / 500) * (ws / Math.max(cutsPerParent, 1));
 
   // ─ Printing cost — uses the SAME printCost helper as /calculator Full Job
   const colorLabel = COLOR_LABEL[color] || 'Single Color';
@@ -691,6 +727,16 @@ export function computePrice(args: ComputePriceArgs): ComputePriceResult | { rea
     warnings: fitWarnings.length > 0 ? fitWarnings : undefined,
     suggestions: fitSuggestions,
     wastageExplanation: fitExplanation,
+    cuttingFit: cuttingFit ? {
+      parentLabel: cuttingFit.parent.label,
+      pressSheetW: cuttingFit.pressSheet.w,
+      pressSheetH: cuttingFit.pressSheet.h,
+      cutsPerParent: cuttingFit.cutsPerParent,
+      upsPerParent: cuttingFit.upsPerParent,
+      upsPerCutW: cuttingFit.upsPerCutW,
+      upsPerCutH: cuttingFit.upsPerCutH,
+      pressOrientation: cuttingFit.pressOrientation,
+    } : undefined,
     ws,
     imp,
     numPlates,
