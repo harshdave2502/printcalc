@@ -436,6 +436,7 @@ export interface PrintingRate {
   color_option: string;
   fixed_charge: number;
   per_1000_impression: number;
+  sort_order?: number;
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -476,16 +477,6 @@ function platePairsContain(
   targetH: number,
 ): boolean {
   return pairs.some(p => (p.w === targetW && p.h === targetH) || (p.w === targetH && p.h === targetW));
-}
-
-function platePairsContainEitherDim(
-  pairs: Array<{ w: number; h: number }>,
-  targetW: number,
-  targetH: number,
-): boolean {
-  return pairs.some(p =>
-    p.w === targetW || p.h === targetW || p.w === targetH || p.h === targetH
-  );
 }
 
 // Canonical color → list of strings that should be considered the same.
