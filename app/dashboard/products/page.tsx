@@ -32,6 +32,11 @@ interface SubProduct {
   icon: string | null;
   is_enabled: boolean;
   sort_order: number;
+  // Reseller mode
+  product_type: 'manufactured' | 'resold' | null;
+  vendor_name: string | null;
+  vendor_markup_percent: number | null;
+  vendor_gst_percent: number | null;
   default_size_label: string | null;
   default_size_w_inch: number | null;
   default_size_h_inch: number | null;
@@ -89,6 +94,9 @@ const EMPTY_FORM: Partial<SubProduct> = {
   description: '',
   icon: '📦',
   is_enabled: true,
+  product_type: 'manufactured',
+  vendor_markup_percent: 30,
+  vendor_gst_percent: 18,
   default_color: 'four_color',
   default_sides: 'one',
   default_qty: 1000,
@@ -422,16 +430,21 @@ function EditModal({ initial, paperCats, bindings, lams, uvs, pastings, subscrib
     const e: Record<string, string> = {};
     if (!form.display_name?.trim()) e.display_name = 'Product name is required';
     if (!form.template_id) e.template_id = 'Pick a category';
-    if (!form.allowed_size_ids?.length && !form.allow_custom_size) {
-      e.allowed_size_ids = 'Pick at least one allowed size (or enable custom size)';
+
+    const isResold = form.product_type === 'resold';
+    if (!isResold) {
+      // Manufactured mode requires the full allowed-lists set.
+      if (!form.allowed_size_ids?.length && !form.allow_custom_size) {
+        e.allowed_size_ids = 'Pick at least one allowed size (or enable custom size)';
+      }
+      if (form.allowed_size_ids?.length && !form.default_size_id) {
+        e.default_size_id = 'Pick a default size from the allowed sizes';
+      }
+      if (!form.allowed_paper_categories?.length) e.allowed_paper_categories = 'Pick at least one paper category';
+      if (!form.default_paper_category) e.default_paper_category = 'Pick a default paper category';
+      if (!form.allowed_colors?.length) e.allowed_colors = 'Pick at least one color option';
+      if (!form.allowed_sides?.length) e.allowed_sides = 'Pick at least one side option';
     }
-    if (form.allowed_size_ids?.length && !form.default_size_id) {
-      e.default_size_id = 'Pick a default size from the allowed sizes';
-    }
-    if (!form.allowed_paper_categories?.length) e.allowed_paper_categories = 'Pick at least one paper category';
-    if (!form.default_paper_category) e.default_paper_category = 'Pick a default paper category';
-    if (!form.allowed_colors?.length) e.allowed_colors = 'Pick at least one color option';
-    if (!form.allowed_sides?.length) e.allowed_sides = 'Pick at least one side option';
     if (!form.default_qty || Number(form.default_qty) <= 0) e.default_qty = 'Enter a default quantity (e.g. 1000)';
     const slug = (form.slug || slugify(form.display_name || '')).trim();
     if (!slug) e.slug = 'Slug is required';
@@ -459,6 +472,10 @@ function EditModal({ initial, paperCats, bindings, lams, uvs, pastings, subscrib
       description: form.description?.trim() || '',
       icon: form.icon || '📦',
       is_enabled: form.is_enabled ?? true,
+      product_type: form.product_type || 'manufactured',
+      vendor_name: form.vendor_name || null,
+      vendor_markup_percent: form.vendor_markup_percent ?? 30,
+      vendor_gst_percent: form.vendor_gst_percent ?? 18,
       default_size_label: sizeLabel,
       default_size_w_inch: w,
       default_size_h_inch: h,
@@ -512,6 +529,43 @@ function EditModal({ initial, paperCats, bindings, lams, uvs, pastings, subscrib
 
         <div style={{ padding: 26, display: 'flex', flexDirection: 'column', gap: 18 }}>
 
+          {/* MODE — manufactured vs resold from vendor */}
+          <div style={{ padding: 14, background: 'rgba(124,58,237,0.06)', border: `1.5px solid ${TOKENS.colors.borderStrong}`, borderRadius: 10 }}>
+            <div style={{ fontSize: 12, fontWeight: 800, color: TOKENS.colors.text, marginBottom: 8 }}>How is this product priced?</div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button
+                type="button"
+                onClick={() => set('product_type', 'manufactured')}
+                style={modeBtn(form.product_type !== 'resold')}
+              >
+                🏭 You print it
+              </button>
+              <button
+                type="button"
+                onClick={() => set('product_type', 'resold')}
+                style={modeBtn(form.product_type === 'resold')}
+              >
+                📦 You buy from a vendor &amp; resell
+              </button>
+            </div>
+            <div style={{ marginTop: 6, fontSize: 11, color: TOKENS.colors.textMuted, fontWeight: 500 }}>
+              {form.product_type === 'resold'
+                ? 'Vendor gives you a rate sheet (per qty slab). PrintCalc applies your markup + GST.'
+                : 'Paper + plate + printing + finishing math runs in PrintCalc using your live rates.'}
+            </div>
+          </div>
+
+          {/* RESOLD-MODE editor — vendor info, rate table CSV paste, extras */}
+          {form.product_type === 'resold' && initial?.id && (
+            <ResoldSection productId={initial.id} form={form} set={set} />
+          )}
+
+          {form.product_type === 'resold' && !initial?.id && (
+            <div style={{ padding: 12, background: '#FFFBEB', border: '1px solid #FDE68A', borderRadius: 8, fontSize: 12, color: '#92400E', fontWeight: 600 }}>
+              💡 Save the product first (the row needs an ID before vendor rates can be attached). Then re-open this dialog to paste the vendor rate sheet.
+            </div>
+          )}
+
           {/* BASICS */}
           <SectionHeader title="Basics" />
 
@@ -542,6 +596,10 @@ function EditModal({ initial, paperCats, bindings, lams, uvs, pastings, subscrib
           <Field label="Description">
             <textarea value={form.description || ''} onChange={(e) => set('description', e.target.value)} placeholder="Short text shown to customers" rows={2} style={{ ...inputStyle(), fontFamily: 'inherit', resize: 'vertical' }} />
           </Field>
+
+          {/* The "allowed lists" sections only apply to manufactured products.
+              For resold products the variant axes come from the vendor's rate table. */}
+          {form.product_type !== 'resold' && <>
 
           {/* SIZES */}
           <SectionHeader title="Allowed sizes" subtitle="Pick which sizes this product can be made in. Customer only sees these." />
@@ -682,6 +740,15 @@ function EditModal({ initial, paperCats, bindings, lams, uvs, pastings, subscrib
           <RatePicker label="Allowed UV / coating" items={uvs} selected={form.allowed_uv_ids || []} onToggle={(id) => toggleArrayItem('allowed_uv_ids', id)} fallbackUrl="/dashboard" fallbackWhat="UV rates" />
           <RatePicker label="Allowed pasting" items={pastings} selected={form.allowed_pasting_ids || []} onToggle={(id) => toggleArrayItem('allowed_pasting_ids', id)} fallbackUrl="/dashboard" fallbackWhat="pasting rates" />
 
+          </>}
+
+          {/* For resold products, show just default qty here. */}
+          {form.product_type === 'resold' && (
+            <Field label="Default qty (customer's pre-filled quantity)" required error={errors.default_qty}>
+              <input type="number" value={form.default_qty ?? ''} onChange={(e) => set('default_qty', e.target.value ? Number(e.target.value) : undefined)} placeholder="1000" style={inputStyle(!!errors.default_qty)} />
+            </Field>
+          )}
+
           {/* VISIBILITY */}
           <SectionHeader title="Visibility" />
 
@@ -716,6 +783,249 @@ function EditModal({ initial, paperCats, bindings, lams, uvs, pastings, subscrib
       </div>
     </div>
   );
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Resold-mode editor: vendor info + paste-from-Excel rate sheet + extras.
+// ──────────────────────────────────────────────────────────────────────
+
+interface ResoldRateRow {
+  id?: string;
+  size_label: string | null;
+  thickness: string | null;
+  finish: string | null;
+  sides: string | null;
+  rate_1k: number | null;
+  rate_2k: number | null;
+  rate_3k: number | null;
+  rate_5k: number | null;
+  rate_10k: number | null;
+  notes: string | null;
+}
+interface ResoldExtraRow {
+  id?: string;
+  extra_name: string;
+  rate: number;
+  unit: 'per_piece' | 'per_side' | 'per_clip' | 'per_order';
+  is_optional: boolean;
+}
+
+function ResoldSection({ productId, form, set }: {
+  productId: string;
+  form: Partial<SubProduct>;
+  set: <K extends keyof SubProduct>(k: K, v: any) => void;
+}) {
+  const [rates, setRates] = useState<ResoldRateRow[]>([]);
+  const [extras, setExtras] = useState<ResoldExtraRow[]>([]);
+  const [pasteText, setPasteText] = useState('');
+  const [pasteMsg, setPasteMsg] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      const [rRes, eRes] = await Promise.all([
+        supabase.from('subscriber_product_resold_rates').select('*').eq('subscriber_product_id', productId).order('sort_order'),
+        supabase.from('subscriber_product_resold_extras').select('*').eq('subscriber_product_id', productId).order('sort_order'),
+      ]);
+      if (!mounted) return;
+      setRates((rRes.data || []) as ResoldRateRow[]);
+      setExtras((eRes.data || []) as ResoldExtraRow[]);
+    })();
+    return () => { mounted = false; };
+  }, [productId]);
+
+  async function pasteRates() {
+    setBusy(true);
+    setPasteMsg('');
+    // Lightweight CSV/TSV parser inline (mirrors lib/resold.parseRateCsv)
+    const lines = pasteText.replace(/\r/g, '').split('\n').map(l => l.trim()).filter(Boolean);
+    const parsed: ResoldRateRow[] = [];
+    for (const line of lines) {
+      const parts = line.split(/\t|,/).map(s => s.trim());
+      if (parts.length < 5) continue;
+      if (/^(size|finish|thickness)/i.test(parts[0])) continue;
+      const numOrNull = (s: string) => {
+        const n = parseFloat((s || '').replace(/[^\d.]/g, ''));
+        return isFinite(n) && n > 0 ? n : null;
+      };
+      parsed.push({
+        size_label: parts[0] || null,
+        thickness:  parts[1] || null,
+        finish:     parts[2] || null,
+        sides:      parts[3] || null,
+        rate_1k:  numOrNull(parts[4] || ''),
+        rate_2k:  numOrNull(parts[5] || ''),
+        rate_3k:  numOrNull(parts[6] || ''),
+        rate_5k:  numOrNull(parts[7] || ''),
+        rate_10k: numOrNull(parts[8] || ''),
+        notes: null,
+      });
+    }
+    if (parsed.length === 0) {
+      setPasteMsg('No rows parsed. Use 9 tab/comma-separated columns: size, thickness, finish, sides, 1000, 2000, 3000, 5000, 10000.');
+      setBusy(false);
+      return;
+    }
+    // Append (don't wipe existing — subscriber can manually delete rows below).
+    const payload = parsed.map((r, i) => ({ ...r, subscriber_product_id: productId, sort_order: rates.length + i + 1 }));
+    const { error } = await supabase.from('subscriber_product_resold_rates').insert(payload);
+    if (error) {
+      setPasteMsg('Error saving: ' + error.message);
+    } else {
+      setPasteMsg(`✓ Added ${parsed.length} rate rows.`);
+      setPasteText('');
+      const { data } = await supabase.from('subscriber_product_resold_rates').select('*').eq('subscriber_product_id', productId).order('sort_order');
+      setRates((data || []) as ResoldRateRow[]);
+    }
+    setBusy(false);
+  }
+
+  async function deleteRate(id: string) {
+    if (!confirm('Delete this rate row?')) return;
+    await supabase.from('subscriber_product_resold_rates').delete().eq('id', id);
+    setRates(prev => prev.filter(r => r.id !== id));
+  }
+
+  async function addExtra() {
+    const name = prompt('Extra name (e.g. "Plastic Clip", "Transparent Pouch")');
+    if (!name) return;
+    const rateStr = prompt('Rate per piece (₹)', '1.20');
+    if (!rateStr) return;
+    const rate = parseFloat(rateStr) || 0;
+    const unit = (prompt('Unit: per_piece, per_side, per_clip, per_order', 'per_piece') || 'per_piece') as ResoldExtraRow['unit'];
+    const { data, error } = await supabase.from('subscriber_product_resold_extras').insert({
+      subscriber_product_id: productId,
+      extra_name: name,
+      rate,
+      unit,
+      is_optional: true,
+      sort_order: extras.length + 1,
+    }).select().single();
+    if (!error && data) setExtras(prev => [...prev, data as ResoldExtraRow]);
+  }
+
+  async function deleteExtra(id: string) {
+    if (!confirm('Delete this extra?')) return;
+    await supabase.from('subscriber_product_resold_extras').delete().eq('id', id);
+    setExtras(prev => prev.filter(e => e.id !== id));
+  }
+
+  return (
+    <div style={{ background: TOKENS.colors.bgPanel2, border: `1px solid ${TOKENS.colors.border}`, borderRadius: 10, padding: 16 }}>
+      <div style={{ fontSize: 13, fontWeight: 800, color: TOKENS.colors.text, marginBottom: 12 }}>📦 Vendor &amp; rates</div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 110px 110px', gap: 10, marginBottom: 12 }}>
+        <Field label="Vendor name">
+          <input value={form.vendor_name || ''} onChange={(e) => set('vendor_name', e.target.value)} placeholder="e.g. Gandhi Card" style={inputStyle()} />
+        </Field>
+        <Field label="Your markup %">
+          <input type="number" value={form.vendor_markup_percent ?? ''} onChange={(e) => set('vendor_markup_percent', e.target.value ? Number(e.target.value) : null)} placeholder="30" style={inputStyle()} />
+        </Field>
+        <Field label="GST %">
+          <input type="number" value={form.vendor_gst_percent ?? ''} onChange={(e) => set('vendor_gst_percent', e.target.value ? Number(e.target.value) : null)} placeholder="18" style={inputStyle()} />
+        </Field>
+      </div>
+
+      <div style={{ fontSize: 12, fontWeight: 700, color: TOKENS.colors.text, marginBottom: 6 }}>Paste vendor rate sheet</div>
+      <div style={{ fontSize: 11, color: TOKENS.colors.textMuted, fontWeight: 500, marginBottom: 6 }}>
+        From Excel — 9 columns per row, tab or comma separated:<br/>
+        <code style={{ fontFamily: TOKENS.fonts.mono, background: '#fff', padding: '2px 5px', borderRadius: 4 }}>
+          size · thickness · finish · sides · 1000 · 2000 · 3000 · 5000 · 10000
+        </code>
+      </div>
+      <textarea
+        value={pasteText}
+        onChange={(e) => setPasteText(e.target.value)}
+        placeholder={`12 x 18\t12 mic\tMatt\tSS\t12.9\t11.4\t10.8\t9.8\t9.2\n12 x 18\t13 mic\tMatt\tSS\t16\t13.2\t12.1\t10.8\t9.9`}
+        rows={5}
+        style={{ ...inputStyle(), fontFamily: TOKENS.fonts.mono, fontSize: 12, resize: 'vertical' }}
+      />
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 8 }}>
+        <button type="button" onClick={pasteRates} disabled={busy || !pasteText.trim()} style={{ ...ghostBtn(), opacity: busy ? 0.5 : 1 }}>
+          {busy ? 'Saving…' : '⇧ Add these rows'}
+        </button>
+        {pasteMsg && <span style={{ fontSize: 12, color: pasteMsg.startsWith('✓') ? '#047857' : '#92400E', fontWeight: 600 }}>{pasteMsg}</span>}
+      </div>
+
+      {/* Current rate rows */}
+      <div style={{ marginTop: 16, fontSize: 12, fontWeight: 700, color: TOKENS.colors.text }}>
+        Current rates ({rates.length})
+      </div>
+      <div style={{ background: '#fff', border: `1px solid ${TOKENS.colors.border}`, borderRadius: 8, marginTop: 6, maxHeight: 260, overflow: 'auto' }}>
+        {rates.length === 0 ? (
+          <div style={{ padding: 14, fontSize: 12, color: TOKENS.colors.textMuted, fontWeight: 500, textAlign: 'center' }}>
+            No rates yet. Paste above to add.
+          </div>
+        ) : (
+          <table style={{ width: '100%', fontSize: 11, fontFamily: TOKENS.fonts.mono, borderCollapse: 'collapse' }}>
+            <thead style={{ background: TOKENS.colors.bgPanel2, position: 'sticky', top: 0 }}>
+              <tr>
+                {['Size','Thick','Finish','Sides','1k','2k','3k','5k','10k',''].map(h => (
+                  <th key={h} style={{ textAlign: 'left', padding: '6px 8px', fontWeight: 800, color: TOKENS.colors.textMuted }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rates.map(r => (
+                <tr key={r.id} style={{ borderTop: `1px solid ${TOKENS.colors.border}` }}>
+                  <td style={{ padding: '5px 8px' }}>{r.size_label || '—'}</td>
+                  <td style={{ padding: '5px 8px' }}>{r.thickness || '—'}</td>
+                  <td style={{ padding: '5px 8px' }}>{r.finish || '—'}</td>
+                  <td style={{ padding: '5px 8px' }}>{r.sides || '—'}</td>
+                  <td style={{ padding: '5px 8px' }}>{r.rate_1k ?? '—'}</td>
+                  <td style={{ padding: '5px 8px' }}>{r.rate_2k ?? '—'}</td>
+                  <td style={{ padding: '5px 8px' }}>{r.rate_3k ?? '—'}</td>
+                  <td style={{ padding: '5px 8px' }}>{r.rate_5k ?? '—'}</td>
+                  <td style={{ padding: '5px 8px' }}>{r.rate_10k ?? '—'}</td>
+                  <td style={{ padding: '5px 8px', textAlign: 'right' }}>
+                    <button type="button" onClick={() => r.id && deleteRate(r.id)} style={{ background: 'none', border: 'none', color: '#DC2626', cursor: 'pointer', fontSize: 14 }}>×</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      {/* Extras */}
+      <div style={{ marginTop: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{ fontSize: 12, fontWeight: 700, color: TOKENS.colors.text }}>Per-piece extras ({extras.length})</div>
+        <button type="button" onClick={addExtra} style={ghostBtn()}>+ Add extra</button>
+      </div>
+      <div style={{ background: '#fff', border: `1px solid ${TOKENS.colors.border}`, borderRadius: 8, marginTop: 6 }}>
+        {extras.length === 0 ? (
+          <div style={{ padding: 14, fontSize: 12, color: TOKENS.colors.textMuted, fontWeight: 500, textAlign: 'center' }}>
+            No extras. Add things like Plastic Clip (₹1.20/piece) or Transparent Pouch (₹2.00/side).
+          </div>
+        ) : (
+          extras.map(e => (
+            <div key={e.id} style={{ display: 'grid', gridTemplateColumns: '1fr 80px 110px 30px', alignItems: 'center', gap: 8, padding: '8px 12px', borderTop: `1px solid ${TOKENS.colors.border}` }}>
+              <div style={{ fontSize: 13, fontWeight: 700 }}>{e.extra_name}</div>
+              <div style={{ fontFamily: TOKENS.fonts.mono, fontSize: 12, color: TOKENS.colors.textMuted, fontWeight: 700 }}>₹{e.rate}</div>
+              <div style={{ fontSize: 11, color: TOKENS.colors.textMuted, fontWeight: 600 }}>{e.unit}</div>
+              <button type="button" onClick={() => e.id && deleteExtra(e.id)} style={{ background: 'none', border: 'none', color: '#DC2626', cursor: 'pointer', fontSize: 16 }}>×</button>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+function modeBtn(active: boolean): React.CSSProperties {
+  return {
+    flex: 1,
+    padding: '10px 14px',
+    background: active ? TOKENS.colors.primary : '#fff',
+    color: active ? '#fff' : TOKENS.colors.text,
+    fontSize: 13,
+    fontWeight: 800,
+    fontFamily: FONT_DISPLAY,
+    border: `1.5px solid ${active ? TOKENS.colors.primary : TOKENS.colors.border}`,
+    borderRadius: 9,
+    cursor: 'pointer',
+  };
 }
 
 function SectionHeader({ title, subtitle }: { title: string; subtitle?: string }) {

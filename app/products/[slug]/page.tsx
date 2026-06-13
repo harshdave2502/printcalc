@@ -9,6 +9,7 @@ import { TOKENS } from '../../lib/design';
 import { formatPrice } from '../../lib/countries';
 import { computePrice } from '../../lib/calc';
 import { FINAL_SIZES } from '../../lib/sizes';
+import ResoldFlow from './ResoldFlow';
 
 // ─────────────────────────────────────────────────────────────────────────
 // Per-product calculator — renders only fields relevant to this product's
@@ -30,6 +31,11 @@ interface SubscriberProduct {
   default_color: string;
   default_sides: string;
   default_qty: number | null;
+  // Reseller mode
+  product_type: 'manufactured' | 'resold' | null;
+  vendor_name: string | null;
+  vendor_markup_percent: number | null;
+  vendor_gst_percent: number | null;
   // Per-product allowed lists (Phase 1)
   allowed_size_ids: string[] | null;
   default_size_id: string | null;
@@ -360,6 +366,19 @@ export default function ProductCalculator() {
 
   if (hasSession === false) {
     return <SignInRedirect onLogin={() => router.push('/login')} />;
+  }
+
+  // Resold-mode products skip the template-driven manufacturer flow.
+  if (product && product.product_type === 'resold') {
+    return (
+      <div style={{ minHeight: '100vh', background: TOKENS.colors.bgDeep, color: TOKENS.colors.text, fontFamily: TOKENS.fonts.body }}>
+        <PageStyles />
+        <Header product={product} template={template || { accent: TOKENS.colors.primary } as any} />
+        <main style={{ paddingTop: 90 }}>
+          <ResoldFlow product={product as any} currency={currency} />
+        </main>
+      </div>
+    );
   }
 
   if (!product || !template) {
